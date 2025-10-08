@@ -60,7 +60,7 @@ void arm64_arch_timer_interrupt_handler(
     }
     arm64_write_cntpcval(target_ticks);
 
-    printf("Timer interrupt: %d\n", time++);
+    printf("Timer interrupt: %ld\n", time++);
 
     asm volatile("isb sy" ::: "memory"); // Memory barrier
 }

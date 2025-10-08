@@ -120,7 +120,7 @@ void gicv3_init(
 
     /// 2. Clear all interrupts
     gicv3_driver_context->max_interrupt_num = gicv3_get_max_interrupts(gicd_base);
-    printf("max_interrupt_num: %x\n", gicv3_driver_context->max_interrupt_num);
+    printf("max_interrupt_num: %lx\n", gicv3_driver_context->max_interrupt_num);
     //// Clear SPI
     for (int i = 32; i < gicv3_driver_context->max_interrupt_num; i++)
     {
@@ -266,14 +266,14 @@ void gicv3_irq_handler(
     uint64_t irq_number = arm64_gicv3_acknowledge_interrupt();
     if ((irq_number & ICC_IAR_INTID) > gicv3_driver_context->max_interrupt_num)
     {
-        printf("%s: invalid interrupt %d\n", __func__, irq_number);
+        printf("%s: invalid interrupt %ld\n", __func__, irq_number);
         return; // Invalid interrupt number
     }
 
     // Validate the interrupt number
     if (gicv3_driver_context->gicv3_interrupt_handlers[irq_number] == NULL)
     {
-        printf("%s: No handler registered for interrupt %d\n", __func__, irq_number);
+        printf("%s: No handler registered for interrupt %ld\n", __func__, irq_number);
         gicv3_end_of_interrupt(irq_number);
         return; // No handler registered for this interrupt
     }
