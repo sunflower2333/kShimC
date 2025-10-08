@@ -1,0 +1,57 @@
+mainmenu "kShimC $(VERSION) Configuration"
+
+menu "Architecture"
+    source "$srctree/arch/Kconfig"
+endmenu
+
+menu "Drivers"
+    source "$srctree/drivers/Kconfig"
+endmenu
+
+menu "Generic"
+    config CONFIG_KSHIMC_ENABLE_BANNER
+        bool "Enable Boot Banner"
+        default y
+        help
+            Enable or disable the boot banner.
+            If disabled, no banner will be displayed during boot.
+
+    config CONFIG_KSHIMC_BANNER
+        string "Boot Banner"
+        # prompt "Boot Banner"
+        default "kShimC v$(VERSION) $(HOST_INFO) $(BUILD_TIME)"
+        help 
+            A banner message displayed during boot.
+        depends on CONFIG_KSHIMC_ENABLE_BANNER
+
+    choice
+        bool
+        prompt "Debug Level"
+        default CONFIG_KSHIMC_DEBUG_LEVEL_VERBOSE
+
+        config CONFIG_KSHIMC_DEBUG_LEVEL_NONE
+            bool "None"
+            help
+                No debug messages will be printed.
+
+        config CONFIG_KSHIMC_DEBUG_LEVEL_ERROR
+            bool "Error"
+            help
+                Only error messages will be printed.
+        
+        config CONFIG_KSHIMC_DEBUG_LEVEL_WARNING
+            bool "Warning"
+            help
+                Warning and error messages will be printed.
+        
+        config CONFIG_KSHIMC_DEBUG_LEVEL_INFO
+            bool "Info"
+            help
+                Info, warning, and error messages will be printed.
+            
+        config CONFIG_KSHIMC_DEBUG_LEVEL_VERBOSE
+            bool "Verbose"
+            help
+                All debug messages will be printed, including verbose messages.
+    endchoice
+endmenu
