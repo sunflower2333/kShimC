@@ -13,5 +13,6 @@ void *malloc(size_t size);
 void *calloc(size_t nmemb, size_t size);
 void *realloc(void *ptr, size_t size);
 void free(void *ptr);
+// int printf(const char *fmt, ...);
 #define printf(...) bfdev_log_info(__VA_ARGS__)
 #define printf_e(...) bfdev_log_emerg(__VA_ARGS__)

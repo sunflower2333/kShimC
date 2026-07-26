@@ -5,7 +5,7 @@ SECTIONS
 {
     /*. = 0x40200000;*/
     . = LD_START_ADDRESS;
-    __ld_start_address__ = .;
+    __image_start_address__ = .;
     . = ALIGN(8);
     .text.boot : {*(.text.boot)}
     .text : {*(.text)}
@@ -59,4 +59,7 @@ SECTIONS
         . = ALIGN(0x40);
         __stack_top__ = .;
     }
+    . = ALIGN(8);
+    /DISCARD/ : { *(.note.GNU-stack) }
+    __image_end_address__ = .;
 }

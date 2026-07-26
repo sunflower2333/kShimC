@@ -2,7 +2,7 @@ set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -shared -static -Wl,--build-id=none -Wl,-Bsymbolic -Wl,--no-dynamic-linker -Wl,--no-undefined")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -nostdlib -mno-outline-atomics -g -fno-common -nostartfiles -mstrict-align -march=armv8-a -Os -std=gnu23 -fno-pic -fno-pie -fno-plt")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -nostdlib -mno-outline-atomics -g -fno-common -nostartfiles -mstrict-align -march=armv8-a -Os -std=gnu23 -fno-pic -fno-pie -fno-plt -Wall")
 
 # Distinguish windows and linux gcc path
 if (WIN32)
@@ -52,6 +52,7 @@ project(${OUTPUT_NAME} C ASM)
 set(INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/lib/bfdev/include/
     ${CMAKE_BINARY_DIR}/lib/bfdev/generated/
+    ${CMAKE_BINARY_DIR}/generated/
     ${CMAKE_SOURCE_DIR}/src/include/
 )
 
@@ -109,10 +110,10 @@ add_custom_target(guiconfig
 )
 
 # Generate the configuration header file after menuconfig/guiconfig/
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/generated/include)
 add_custom_command(
-    TARGET menuconfig guiconfig
-    COMMAND ${CMAKE_COMMAND} -E env "srctree=$(CMAKE_SOURCE_DIR)/src" genconfig "${CMAKE_SOURCE_DIR}/Kconfig" "--header-path" "${CMAKE_BINARY_DIR}/generated/config.h"
+    TARGET menuconfig guiconfig preprocess_linker_script
+    COMMAND ${CMAKE_COMMAND} -E env "srctree=$(CMAKE_SOURCE_DIR)/src" genconfig "${CMAKE_SOURCE_DIR}/Kconfig" "--header-path" "${CMAKE_BINARY_DIR}/generated/include/config.h"
     DEPENDS menuconfig guiconfig ${CMAKE_BINARY_DIR}/.config
     COMMENT "Generating configuration header file"
 )

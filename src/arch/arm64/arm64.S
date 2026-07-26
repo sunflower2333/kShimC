@@ -8,6 +8,13 @@ ASM_FUNC(arm64_read_mpidr)
     mrs x0, mpidr_el1
     ret
 
+// Read ID_AA64MMFR0_EL1
+// uint64_t arm64_read_mmfr0(void)
+ASM_FUNC(arm64_read_mmfr0_el1)
+    mrs x0, id_aa64mmfr0_el1
+    ret
+
+
 // Enable interrupts
 // void arm64_enable_interrupts(void)
 ASM_FUNC(arm64_enable_interrupts)
@@ -94,6 +101,30 @@ ASM_FUNC(arm64_unset_data_cache)
     isb
     ret
 
+// uint64_t arm64_get_tcr(void)
+ASM_FUNC(arm64_get_tcr)
+    mrs     x0, tcr_el1
+    isb
+    ret
+
+// void arm64_set_tcr(uint64_t tcr)
+ASM_FUNC(arm64_set_tcr)
+    msr     tcr_el1, x0
+    isb
+    ret
+
+// uint64_t arm64_read_mair(void)
+ASM_FUNC(arm64_read_mair)
+    mrs     x0, mair_el1
+    isb
+    ret
+
+// void arm64_set_mair(uint64_t mair)
+ASM_FUNC(arm64_set_mair)
+    msr     mair_el1, x0
+    isb
+    ret
+
 // void arm64_enable_mmu(void)
 ASM_FUNC(arm64_enable_mmu)
     mrs     x0, sctlr_el1 
@@ -115,7 +146,6 @@ ASM_FUNC(arm64_disable_mmu)
     dsb     sy
     isb
     ret
-
 
 
 /* Set up exception vector table */

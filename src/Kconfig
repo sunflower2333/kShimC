@@ -9,49 +9,53 @@ menu "Drivers"
 endmenu
 
 menu "Generic"
-    config CONFIG_KSHIMC_ENABLE_BANNER
+    config ENABLE_BANNER
         bool "Enable Boot Banner"
         default y
         help
             Enable or disable the boot banner.
             If disabled, no banner will be displayed during boot.
 
-    config CONFIG_KSHIMC_BANNER
+    config BANNER
         string "Boot Banner"
         # prompt "Boot Banner"
-        default "kShimC v$(VERSION) $(HOST_INFO) $(BUILD_TIME)"
+        default "kShimC v$(VERSION) $(HOST_INFO) $(BUILD_TIME) \n"
         help 
             A banner message displayed during boot.
-        depends on CONFIG_KSHIMC_ENABLE_BANNER
+        depends on ENABLE_BANNER
 
     choice
         bool
         prompt "Debug Level"
-        default CONFIG_KSHIMC_DEBUG_LEVEL_VERBOSE
+        default DEBUG_LEVEL_VERBOSE
 
-        config CONFIG_KSHIMC_DEBUG_LEVEL_NONE
+        config DEBUG_LEVEL_NONE
             bool "None"
             help
                 No debug messages will be printed.
 
-        config CONFIG_KSHIMC_DEBUG_LEVEL_ERROR
+        config DEBUG_LEVEL_ERROR
             bool "Error"
             help
                 Only error messages will be printed.
-        
-        config CONFIG_KSHIMC_DEBUG_LEVEL_WARNING
+
+        config DEBUG_LEVEL_WARNING
             bool "Warning"
             help
                 Warning and error messages will be printed.
-        
-        config CONFIG_KSHIMC_DEBUG_LEVEL_INFO
+
+        config DEBUG_LEVEL_INFO
             bool "Info"
             help
                 Info, warning, and error messages will be printed.
-            
-        config CONFIG_KSHIMC_DEBUG_LEVEL_VERBOSE
+
+        config DEBUG_LEVEL_VERBOSE
             bool "Verbose"
             help
                 All debug messages will be printed, including verbose messages.
     endchoice
+
+    config ASSERT_HALT
+        bool "Halt on Assert Failure"
+        default y
 endmenu

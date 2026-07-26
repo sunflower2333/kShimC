@@ -1,16 +1,16 @@
 choice
     prompt "MMU Page Size"
-    default CONFIG_PAGE_SIZE_4K
+    default ARM64_PAGE_SIZE_4K
     help
-        Select the page size for the MMU. The default is 4KiB.
+        Select the page size for the ARM64 MMU. The default is 4KiB.
     depends on CONFIG_ARCH_AARCH64
 
-    config CONFIG_PAGE_SIZE_4K
+    config ARM64_PAGE_SIZE_4K
         bool "4KiB"
 
-    config CONFIG_PAGE_SIZE_16K
+    config ARM64_PAGE_SIZE_16K
         bool "16KiB"
 
-    config CONFIG_PAGE_SIZE_64K
+    config ARM64_PAGE_SIZE_64K
         bool "64KiB"
 endchoice

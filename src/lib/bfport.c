@@ -19,6 +19,7 @@ void *init_bfdev_heap()
         return BFDEV_ERR_PTR(-12);
     memory = (void *)bfport_mempool + sizeof(*bfport_mempool);
     bfdev_memalloc_init(bfport_mempool, bfdev_memalloc_first_fit, memory, HEAP_SIZE);
+    return memory;
 }
 
 __bfdev_malloc void *
@@ -71,8 +72,6 @@ bfport_realloc(void *ptr, bfdev_size_t size)
     bfport_free(ptr);
     return new_ptr;
 }
-
-
 static char *itoa(int value, char *buffer, int base)
 {
     char *ptr = buffer;
@@ -107,32 +106,97 @@ static char *itoa(int value, char *buffer, int base)
     return buffer;
 }
 
-static size_t format_integer(char *buf, size_t remaining, long value, int base, 
-                           int width, int zero_pad)
+static char *ulltoa_base(unsigned long long value, char *buffer, int base)
+{
+    static const char digits[] = "0123456789abcdef";
+    char *ptr = buffer;
+    char *ptr1 = buffer;
+    char tmp_char;
+
+    if (base < 2 || base > 16)
+    {
+        *buffer = '\0';
+        return buffer;
+    }
+
+    do
+    {
+        unsigned int digit = (unsigned int)(value % (unsigned)base);
+        *ptr++ = digits[digit];
+        value /= (unsigned)base;
+    } while (value);
+
+    *ptr-- = '\0';
+
+    while (ptr1 < ptr)
+    {
+        tmp_char = *ptr;
+        *ptr = *ptr1;
+        *ptr1 = tmp_char;
+        ptr--;
+        ptr1++;
+    }
+
+    return buffer;
+}
+
+static size_t format_integer(char *buf, size_t remaining, long value, int base,
+                             int width, int zero_pad)
 {
     char tmp_buffer[32];
     char *buf_start = buf;
     itoa(value, tmp_buffer, base);
-    
+
     int len = 0;
-    for (char *p = tmp_buffer; *p; p++) 
+    for (char *p = tmp_buffer; *p; p++)
         len++;
-    
-    // Add padding if needed
-    if (width > len && zero_pad) {
+
+    if (width > len && zero_pad)
+    {
         int pad_len = width - len;
-        for (int i = 0; i < pad_len && remaining > 1; i++) {
+        for (int i = 0; i < pad_len && remaining > 1; i++)
+        {
             *buf++ = '0';
             remaining--;
         }
     }
-    
-    // Copy the number
-    for (char *p = tmp_buffer; *p && remaining > 1; p++) {
+
+    for (char *p = tmp_buffer; *p && remaining > 1; p++)
+    {
         *buf++ = *p;
         remaining--;
     }
-    
+
+    return buf - buf_start;
+}
+
+static size_t format_integer_ull(char *buf, size_t remaining, unsigned long long value, int base,
+                                 int width, int zero_pad)
+{
+    char tmp_buffer[64];
+    char *buf_start = buf;
+    ulltoa_base(value, tmp_buffer, base);
+
+    int len = 0;
+    for (char *p = tmp_buffer; *p; p++)
+        len++;
+
+    if (width > len && zero_pad)
+    {
+        int pad_len = width - len;
+        for (int i = 0; i < pad_len && remaining > 1; i++)
+        {
+            *buf++ = '0';
+            remaining--;
+        }
+    }
+
+    for (char *p = tmp_buffer; *p && remaining > 1; p++)
+    {
+        *buf++ = *p;
+        remaining--;
+    }
+
     return buf - buf_start;
 }
 
@@ -147,132 +211,167 @@ int vsnprintf(char *buffer, size_t size, const char *format, va_list args)
 
     while (*fmt_ptr && remaining > 1)
     {
-        if (*fmt_ptr != '%') {
+        if (*fmt_ptr != '%')
+        {
             *buf_ptr++ = *fmt_ptr++;
             remaining--;
             continue;
         }
 
-        // Handle format specifier
         fmt_ptr++; // Skip '%'
-        
-        // Parse format options
+
         int zero_pad = (*fmt_ptr == '0');
-        if (zero_pad) fmt_ptr++;
-        
-        // Parse width
+        if (zero_pad)
+            fmt_ptr++;
+
         int width = 0;
-        while (*fmt_ptr >= '0' && *fmt_ptr <= '9') {
+        while (*fmt_ptr >= '0' && *fmt_ptr <= '9')
+        {
             width = width * 10 + (*fmt_ptr - '0');
             fmt_ptr++;
         }
-        
-        // Parse length modifier
-        int is_long = (*fmt_ptr == 'l');
-        if (is_long) fmt_ptr++;
 
-        // Handle format specifier
-        switch (*fmt_ptr) {
-            case 'd': {
-                long value = is_long ? va_arg(args, long) : va_arg(args, int);
-                buf_ptr += format_integer(buf_ptr, remaining, value, 10, width, zero_pad);
-                remaining = size - (buf_ptr - buffer);
-                break;
-            }
-                
-            case 'u': {
-                unsigned long value = is_long ? va_arg(args, unsigned long) : va_arg(args, unsigned int);
-                buf_ptr += format_integer(buf_ptr, remaining, value, 10, width, zero_pad);
-                remaining = size - (buf_ptr - buffer);
-                
-                // Handle special case for "%lu.%lus" format
-                if (is_long && fmt_ptr[1] == '.' && fmt_ptr[2] == '%' && 
-                    fmt_ptr[3] == 'l' && fmt_ptr[4] == 'u' && fmt_ptr[5] == 's') {
-                    if (remaining > 1) {
-                        *buf_ptr++ = '.';
-                        remaining--;
-                    }
-                    
-                    unsigned long sec_value = va_arg(args, unsigned long);
-                    buf_ptr += format_integer(buf_ptr, remaining, sec_value, 10, 0, 0);
-                    remaining = size - (buf_ptr - buffer);
-                    
-                    if (remaining > 1) {
-                        *buf_ptr++ = 's';
-                        remaining--;
-                    }
-                    
-                    fmt_ptr += 5;  // Skip ".%lus"
-                }
-                break;
-            }
-                
-            case 'x': {
-                unsigned long value = is_long ? va_arg(args, unsigned long) : va_arg(args, unsigned int);
-                buf_ptr += format_integer(buf_ptr, remaining, value, 16, width, zero_pad);
-                remaining = size - (buf_ptr - buffer);
-                break;
-            }
-                
-            case 's': {
-                char *str = va_arg(args, char *);
-                if (!str) str = "(null)";
-                while (*str && remaining > 1) {
-                    *buf_ptr++ = *str++;
-                    remaining--;
-                }
-                break;
-            }
-                
-            case '%': {
-                if (remaining > 1) {
-                    *buf_ptr++ = '%';
-                    remaining--;
-                }
-                break;
-            }
-                
-            default: {
-                // Unknown format, output as-is with modifiers
-                if (remaining > 1) {
-                    *buf_ptr++ = '%';
-                    remaining--;
-                }
-                
-                if (zero_pad && width > 0 && remaining > 1) {
-                    *buf_ptr++ = '0';
-                    remaining--;
-                    
-                    char width_str[10];
-                    itoa(width, width_str, 10);
-                    for (char *p = width_str; *p && remaining > 1; p++) {
-                        *buf_ptr++ = *p;
-                        remaining--;
-                    }
-                }
-                
-                if (is_long && remaining > 1) {
-                    *buf_ptr++ = 'l';
-                    remaining--;
-                }
-                
-                if (remaining > 1) {
-                    *buf_ptr++ = *fmt_ptr;
-                    remaining--;
-                }
+        int is_long = (*fmt_ptr == 'l');
+        int is_long_long = 0;
+        if (is_long)
+        {
+            fmt_ptr++;
+            if (*fmt_ptr == 'l')
+            {
+                is_long_long = 1;
+                fmt_ptr++;
             }
         }
-        
+
+        switch (*fmt_ptr)
+        {
+        case 'd':
+        {
+            long value = is_long ? va_arg(args, long) : va_arg(args, int);
+            buf_ptr += format_integer(buf_ptr, remaining, value, 10, width, zero_pad);
+            remaining = size - (buf_ptr - buffer);
+            break;
+        }
+
+        case 'u':
+        {
+            unsigned long value = is_long ? va_arg(args, unsigned long) : va_arg(args, unsigned int);
+            buf_ptr += format_integer(buf_ptr, remaining, value, 10, width, zero_pad);
+            remaining = size - (buf_ptr - buffer);
+
+            if (is_long && fmt_ptr[1] == '.' && fmt_ptr[2] == '%' &&
+                fmt_ptr[3] == 'l' && fmt_ptr[4] == 'u' && fmt_ptr[5] == 's')
+            {
+                if (remaining > 1)
+                {
+                    *buf_ptr++ = '.';
+                    remaining--;
+                }
+
+                unsigned long sec_value = va_arg(args, unsigned long);
+                buf_ptr += format_integer(buf_ptr, remaining, sec_value, 10, 0, 0);
+                remaining = size - (buf_ptr - buffer);
+
+                if (remaining > 1)
+                {
+                    *buf_ptr++ = 's';
+                    remaining--;
+                }
+
+                fmt_ptr += 5; // Skip ".%lus"
+            }
+            break;
+        }
+
+        case 'x':
+        {
+            unsigned long long value;
+            if (is_long_long)
+                value = va_arg(args, unsigned long long);
+            else if (is_long)
+                value = va_arg(args, unsigned long);
+            else
+                value = va_arg(args, unsigned int);
+
+            buf_ptr += format_integer_ull(buf_ptr, remaining, value, 16, width, zero_pad);
+            remaining = size - (buf_ptr - buffer);
+            break;
+        }
+
+        case 's':
+        {
+            char *str = va_arg(args, char *);
+            if (!str)
+                str = "(null)";
+            while (*str && remaining > 1)
+            {
+                *buf_ptr++ = *str++;
+                remaining--;
+            }
+            break;
+        }
+
+        case '%':
+        {
+            if (remaining > 1)
+            {
+                *buf_ptr++ = '%';
+                remaining--;
+            }
+            break;
+        }
+
+        default:
+        {
+            if (remaining > 1)
+            {
+                *buf_ptr++ = '%';
+                remaining--;
+            }
+
+            if (zero_pad && width > 0 && remaining > 1)
+            {
+                *buf_ptr++ = '0';
+                remaining--;
+
+                char width_str[10];
+                itoa(width, width_str, 10);
+                for (char *p = width_str; *p && remaining > 1; p++)
+                {
+                    *buf_ptr++ = *p;
+                    remaining--;
+                }
+            }
+
+            if (is_long_long && remaining > 2)
+            {
+                *buf_ptr++ = 'l';
+                *buf_ptr++ = 'l';
+                remaining -= 2;
+            }
+            else if (is_long && remaining > 1)
+            {
+                *buf_ptr++ = 'l';
+                remaining--;
+            }
+
+            if (remaining > 1)
+            {
+                *buf_ptr++ = *fmt_ptr;
+                remaining--;
+            }
+        }
+        }
+
         fmt_ptr++;
     }
 
-    // Ensure null termination
     if (remaining > 0)
         *buf_ptr = '\0';
     else if (size > 0)
         buffer[size - 1] = '\0';
 
-    return buf_ptr - buffer;
+    return (int)(buf_ptr - buffer);
 }
 
 int bfport_vsnprintf(char *s, bfdev_size_t maxlen, const char *fmt, bfdev_va_list arg)
@@ -286,6 +385,8 @@ int bfport_log_write(bfdev_log_message_t *msg)
     pl011_write(0x9000000, msg->buff, msg->length);
     return 0;
 }
+
+#define printf(...) bfdev_log_info(__VA_ARGS__)
 
 /* Alias */
 void *memset(void *s, int c, size_t n) { return bfdev_memset(s, c, n); }

@@ -5,6 +5,7 @@
 #include <bfdev.h>
 #include "error_no.h"
 #include <lib/stdport.h>
+#include <include/config.h>
 // #define HEAP_BASE 0xF8000000
 // #define HEAP_SIZE 0x07C00000
 

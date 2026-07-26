@@ -5,7 +5,7 @@
 #include <timer.h>
 #include <gicv3.h>
 
-#define BANNER "Kernel shim v0.1 build: " __DATE__ " " __TIME__ "\n"
+extern void _arm64_mmu_setup(void);
 
 int kshim_main(
     uint64_t device_tree_address,
@@ -29,7 +29,8 @@ int kshim_main(
     pl011_init(0x9000000); // UART_BASE
 
     // Init other cores
-    printf(BANNER);
+    printf(CONFIG_BANNER"\n");
+    _arm64_mmu_setup();
 
     // Init UART
     // setup_se_geni_uart(0);
@@ -49,6 +50,7 @@ int kshim_main(
     // uint8_t message[] = "Hello, UART!\n";
     // while(1)
     //     geni_uart_write(0, message, 4);
+
 
     while (1) {
         // Wait for interrupt
