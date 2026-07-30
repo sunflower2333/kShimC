@@ -288,6 +288,8 @@ void arm64_mmu_setup(
     // Get PA Range
     max_address_bits = mmfr0 & 0xF; // [3:0] PARange
 
+#if 0
+    // TODO: Complete and validate the MMU register and page-table setup.
     // Calculate and set TCR
     arm64_write_tcr(
         (TCR_TnSZ_CALC(max_address_bits)) |                   // T0SZ
@@ -412,4 +414,9 @@ void arm64_mmu_setup(
             // Aligned
         }
     }
+#else
+    (void)image_start_pa;
+    (void)image_end_pa;
+    (void)max_address_bits;
+#endif
 }

@@ -55,9 +55,10 @@ pg_table_l3:
 // Call after stack setting up
 ASM_FUNC(_arm64_mmu_setup)
     // Set ttbr1_el1 to L-1 table address
-    adrp x0, pg_table_root
-    add x0, x0, :lo12:pg_table_root
-    msr ttbr1_el1, x0
+    // TODO: Restore after selecting the correct root page table.
+    // adrp x0, pg_table_root
+    // add x0, x0, :lo12:pg_table_root
+    // msr ttbr1_el1, x0
     // Setup page tables in C
     // Get kernel start physical address
     adrp x0, __image_start_address__         // load address of program

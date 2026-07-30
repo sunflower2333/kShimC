@@ -1,9 +1,15 @@
 // // geni uart
-// #include <kshim.h>
-// #include <memops.h>
-// #include "qupv3.h"
-// #include "errno.h"
+#include <kshim.h>
+#include <memops.h>
+#include "qupv3.h"
+#include "error_no.h"
 
+#define REG_OUT REG32_OUT
+#define REG_IN REG32_IN
+#define REG_IN_MEM_BARRIER REG32_IN_MEM_BARRIER
+#define REG_MSK_SET REG32_MSK_SET
+#define REG_MSK_CLR REG32_MSK_CLR
+#define REG_MSK_SFT_OUT REG32_MSK_SFT_OUT
 
 // /*
 //  * Reference:
@@ -57,12 +63,12 @@ int setup_se_geni_uart(uint64_t mmio_base)
     // (((*(volatile uint32_t *)(((0x99c000) + 0x68))) & (((0x1U << (8)) - (0x1U << (15))))) >> (8));
 
     // Wait TX finished
-    geni_poll_tx_finish();
+    // geni_poll_tx_finish();
 
     // Abort RX
     {
         REG_IN(HWIO_SE_GENI_S_CMD_CTRL_REG, BIT_SE_GENI_S_CMD_ABORT);
-        uint8_t rx_finished = geni_poll_bit(HWIO_SE_GENI_S_CMD_CTRL_REG, BIT_SE_GENI_S_CMD_ABORT, 0);
+        // uint8_t rx_finished = geni_poll_bit(HWIO_SE_GENI_S_CMD_CTRL_REG, BIT_SE_GENI_S_CMD_ABORT, 0);
         REG_IN(HWIO_SE_GENI_S_IRQ_CLEAR, BIT_SE_GENI_S_IRQ_CLEAR_CMD_ABORT | BIT_SE_GENI_S_IRQ_CLEAR_CMD_DONE);
         REG_IN(HWIO_SE_GENI_FORCE_DEFAULT_REG, BIT_SE_GENI_FORCE_DEFAULT_FORCE_DEFAULT);
     }

@@ -8,15 +8,15 @@ SECTIONS
     __image_start_address__ = .;
     . = ALIGN(8);
     .text.boot : {*(.text.boot)}
-    .text : {*(.text)}
+    .text : {*(.text .text.*)}
 
     . = ALIGN(8);
-    .rodata . : {*(.ro_data)}
+    .rodata : {*(.rodata .rodata.* .ro_data .ro_data.*)}
     .data : { 
-        *(.data);
+        *(.data .data.*);
     }
 
-    .bss : {
+    .bss (NOLOAD) : {
         __bss_start__ = .;
         *(.bss*);
         *(COMMON);
@@ -50,15 +50,22 @@ SECTIONS
         . = ALIGN(8);
     }
 
-    . = ALIGN(8);
+    .heap (NOLOAD) : {
+        . = ALIGN(16);
+        __heap_start = .;
+        . = . + 0x10000;
+        __heap_end = .;
+    }
 
-    .stack : {
+    .stack (NOLOAD) : {
+        . = ALIGN(0x40);
         __stack_base__ = .;
         /* primary stack */
         . = . + LD_STACK_SIZE;
         . = ALIGN(0x40);
         __stack_top__ = .;
     }
+
     . = ALIGN(8);
     /DISCARD/ : { *(.note.GNU-stack) }
     __image_end_address__ = .;

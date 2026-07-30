@@ -2,5 +2,5 @@
 .vscode/
 .cache/
 
-build
+build/
 CMakeFiles

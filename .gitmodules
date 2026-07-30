@@ -1,3 +1,3 @@
-[submodule "lib/bfdev"]
-	path = lib/bfdev
-	url = https://github.com/openbfdev/bfdev
+[submodule "lib/picolibc"]
+	path = lib/picolibc
+	url = https://github.com/picolibc/picolibc

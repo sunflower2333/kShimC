@@ -1,5 +1,4 @@
 #include <kshim.h>
-#include <lib/bfport.h>
 #include <geni_uart.h>
 #include <pl011_uart.h>
 #include <timer.h>
@@ -13,9 +12,6 @@ int kshim_main(
     uint64_t kernel_arg2,
     uint64_t kernel_arg3)
 {
-    // Init heap
-    init_bfdev_heap();
-
     // Init GICv3
     // qemu
     gicv3_init(0x8000000, 0x80a0000, 0); // GICD_BASE, GICR_BASE, GICR_STRIDE
@@ -30,7 +26,7 @@ int kshim_main(
 
     // Init other cores
     printf(CONFIG_BANNER"\n");
-    _arm64_mmu_setup();
+    // _arm64_mmu_setup();
 
     // Init UART
     // setup_se_geni_uart(0);
