@@ -1,0 +1,27 @@
+TB323FU / Canoe key-resource bring-up
+
+This change adds offline-tested device-tree resource parsing for Lenovo Legion Y700 Gen 5 (TB323FU / SM8850P). It is not a complete board port or an installation image.
+
+The stock DT places PMICs under a spmi child of qcom,canoe-spmi-pmic-arb. Shared core/channel/observer/channel-map regions are on the parent; configuration, interrupt and channel-owner regions are on the child. Controller enumeration and PMIC identity now agree on this layout while preserving the existing generic layout.
+
+The PON node has two address entries named hlos and pbs. The parser selects the unique hlos entry rather than treating the second address as a size. The resource fixture covers power, volume-down and volume-up descriptors, disabled buses, a missing core region, invalid SID and GPIO bounds. These tests only parse data; they do not perform device MMIO.
+
+Canoe/Kaanapali ordinary TLMM GPIO inputs use base + gpio * 0x1000 + 4. GPIO 0 through 216 are ordinary inputs; GPIO217 is UFS reset and is excluded. The GPIO101 volume-up mapping is derived from the stock tree and cross-checked against:
+https://github.com/torvalds/linux/blob/5e0f8396d4805a3e7f753fa58c8c55f1f3cc2160/drivers/pinctrl/qcom/pinctrl-kaanapali.c
+The fixture is a minimal description of the relevant stock hardware connections, not a complete bootable DT.
+
+Baseline and dependencies:
+kShimC feature/2610: 121734f64dd97d26efaf94a264cdbe7ac0551e53
+DualBootKernelPatcher feature/2610: 2276163d066596cb0750e76cbfeec5c193b1779f
+CrDK remains pinned at b6c3335136b7f6b28271917de11e8f11982975fc, available on Project-Aloha/CrDK backup/2610. No CrDK or packer production changes are included.
+
+Remaining board work:
+- Confirm actual key reads and firmware-granted SPMI/MMIO access on hardware.
+- Adapt continuous-splash discovery to the board's SDE/HFI resources. The current stock tree exposes more pipe/mixer slots than the existing reader accepts.
+- Add Novatek SPI touch support if required for the boot menu; FTM4/FTM5 are not substitutes.
+- Supply the mainline board DT and define how runtime memory, reservations, boot arguments and initramfs information reach that DT. The current runtime selects a payload DT; it does not merge these properties.
+- Validate Android boot container sizing, boot-chain requirements and recovery before physical testing.
+
+Hardware has not been accessed for this adaptation. No boot image has been flashed or packaged for installation. Builds of existing profiles validate code compilation only and do not declare those profiles suitable for TB323FU.
+
+Validation on 2026-10-03 (Docker, 192.168.88.9): the new fixture fails on the unmodified baseline at SPMI discovery and passes after the change; all 15 host tests pass with ASan/UBSan. The existing HDK8450 capability profile builds a 4 MiB Manifest runtime with no unresolved symbols, exercising the enabled key/SPMI code. All six Manifest QEMU cases pass with that runtime. Separate packer-only tests preserve the original TB323FU kernel byte-for-byte through unpacking and repacking, including independent payload-DT references. No physical device testing has occurred.

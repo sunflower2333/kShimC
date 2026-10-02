@@ -112,3 +112,24 @@ target_compile_definitions(dt_test PRIVATE "GENERATED_FIXTURES=\"${CMAKE_CURRENT
 kshim_test(mmu_test mmu_test.c "${KSHIM_ROOT}/src/arch/arm64/mmu.c")
 target_include_directories(mmu_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(mmu_test PRIVATE kshim_dt)
+# TB323FU key resource regression fixture.
+set(TB323FU_KEYS_DTS "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/tb323fu-keys.dts")
+set(TB323FU_KEYS_DTB "${CMAKE_CURRENT_BINARY_DIR}/fixtures/tb323fu-keys.dtb")
+
+add_custom_command(
+    OUTPUT "${TB323FU_KEYS_DTB}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/fixtures"
+    COMMAND "${DTC_EXECUTABLE}" -I dts -O dtb -o "${TB323FU_KEYS_DTB}" "${TB323FU_KEYS_DTS}"
+    DEPENDS "${TB323FU_KEYS_DTS}"
+    VERBATIM)
+
+add_custom_target(tb323fu_fixture DEPENDS "${TB323FU_KEYS_DTB}")
+
+kshim_test(tb323fu_keys_test
+    tb323fu_keys_test.c
+    ${KSHIM_ROOT}/src/dt/keys.c
+    ${KSHIM_ROOT}/src/drivers/keys.c)
+
+target_link_libraries(tb323fu_keys_test PRIVATE kshim_dt)
+add_dependencies(tb323fu_keys_test tb323fu_fixture)
+target_compile_definitions(tb323fu_keys_test PRIVATE FIXTURE_PATH="${TB323FU_KEYS_DTB}")

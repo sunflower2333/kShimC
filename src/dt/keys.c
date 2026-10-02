@@ -71,8 +71,10 @@ static int QcomFdtIsPmicGpioCompatible(const char *Value, int Length)
 #define QcomFdtNodeAvailable dt_available
 
 /* Only these verified TLMM layouts use base + gpio * 0x1000 + 4 for
- * ordinary GPIO inputs.  GPIO210 is a special UFS-reset output on both
- * platforms.  Other SoCs can have multiple tiles and require manual input
+ * ordinary GPIO inputs.  Regular GPIOs cover 0..216 on canoe and
+ * kaanapali (0..209 on sm8450 and sm8550); the final pin (217, resp.
+ * 210) is a special UFS-reset output and is excluded from the linear
+ * count.  Other SoCs can have multiple tiles and require manual input
  * register descriptors until their complete layout is supported here. */
 static uint32_t QcomFdtLinearTlmmGpioCount(const void *Blob, int Provider)
 {
@@ -80,6 +82,8 @@ static uint32_t QcomFdtLinearTlmmGpioCount(const void *Blob, int Provider)
     const char *Compatible;
     uint32_t GpioCount;
   } Layouts[] = {
+      {"qcom,canoe-tlmm", 217U},
+      {"qcom,kaanapali-tlmm", 217U},
       {"qcom,sm8450-tlmm", 210U},
       {"qcom,sm8550-tlmm", 210U},
   };
