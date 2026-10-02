@@ -9,12 +9,12 @@
 .global _start
 
 _start:
-    b       _platform_init        // Code 1, Goto ShellCode
+    b       _platform_init        // Code 1, go to ShimLoader
 
 _LinuxStart:
     nop                 // Code 2
     .quad   0           // Image load offset
-    .quad   0x00400000  // Effective Image size
+    .quad   LD_IMAGE_SIZE // Effective Image size
     .long   0           // Flags L
     .long   0           // Flags H
 
@@ -34,24 +34,52 @@ _KernelSize:
 
 _platform_init:
     /* Store linux kernel params */
-    mov x10, x0
-    mov x11, x1
-    mov x12, x2
-    mov x13, x3
+    mov x19, x0
+    mov x20, x1
+    mov x21, x2
+    mov x22, x3
+
+#if defined(KSHIM_STANDALONE) && KSHIM_STANDALONE
+    // A directly loaded standalone image has no base-image manifest metadata.
+    mov x23, xzr
+    mov x24, xzr
+    mov x25, xzr
+#else
+    // The attached Shim is entered by BL at BaseImage + 0x0.
+    // LR therefore points to BaseImage + 0x4.
+    sub x23, x30, #4
+    ldr x24, [x23, #0x20]
+    ldr x25, [x23, #0x28]
+    add x24, x23, x24
+#endif
 
     /* Clear registers */
     mov x29, xzr // Clean frame
 
-    /* Set svc mode */
+    /* Configure the current EL without changing the bootloader-selected EL. */
+    mrs x9, CurrentEL
+    cmp x9, #0x8
+    b.eq _setup_el2
+    cmp x9, #0x4
+    b.ne _dead
+
+_setup_el1:
     mrs x0, sctlr_el1
     orr x0, x0, #SCTLR_SPAN_BIT
     msr sctlr_el1, x0
-
-_setup_simd:
-    /* Not trap simd */
     mrs x0, cpacr_el1
     orr x0, x0, CPACR_FPEN_BIT
     msr cpacr_el1, x0
+    isb sy
+    b _setup_gots
+
+_setup_el2:
+    mrs x0, sctlr_el2
+    orr x0, x0, #SCTLR_SPAN_BIT
+    msr sctlr_el2, x0
+    mrs x0, cptr_el2
+    bic x0, x0, #(1 << 10) // CPTR_EL2.TFP
+    msr cptr_el2, x0
     isb sy
 
 // Calculate and fix got address
@@ -66,7 +94,7 @@ _setup_gots:
     sub x2, x2, x1          // size of gots (x2 -x1)
 
     // check gots size
-    cbz x2, _setup_stack    // go over if gots size is 0
+    cbz x2, _setup_bss      // BSS is required even when no GOT is emitted
 
     // Pre sub size
     subs x2, x2, #0x8       // 8 bytes per got entry
@@ -110,7 +138,7 @@ _setup_relocation:
     // Rela
     mov  x0, #0                     // old_image_start
     mov  x1, x14                    // new_image_start
-    stp  x0, x1, [sp, #0x10]!       // push old_image_start and new_image_start
+    stp  x0, x1, [sp, #-0x10]!      // push within the reserved stack
     adrp x2, __reladyn_start__      // rela start address
     add  x2, x2, :lo12:__reladyn_start__
     adrp x3, __reladyn_end__        // rela end address
@@ -126,13 +154,48 @@ _setup_relocation:
     bl do_relocation_rel            // call relocation function
 
 _start_kshim:
-    mov  x0, x10
-    mov  x1, x11
-    mov  x2, x12
-    mov  x3, x13
-    adrp x4, kshim_main
-    add  x4, x4, :lo12:kshim_main
-    br   x4
+    mov  x0, x19
+    mov  x1, x20
+    mov  x2, x21
+    mov  x3, x22
+    mov  x4, x23
+    mov  x5, x24
+    mov  x6, x25
+    adrp x7, kshim_main
+    add  x7, x7, :lo12:kshim_main
+    br   x7
+
+.global arm64_boot_linux
+arm64_boot_linux:
+    mov  x8, x0
+    mov  x10, x2
+    mov  x0, x1
+    mov  x1, xzr
+    mov  x2, xzr
+    mov  x3, xzr
+    msr  daifset, #0xf
+    mrs  x9, cntp_ctl_el0
+    bic  x9, x9, #1
+    msr  cntp_ctl_el0, x9
+    dsb  sy
+    isb
+    add  x8, x8, x10
+    br   x8
+
+.global arm64_boot_image
+arm64_boot_image:
+    mov  x8, x0
+    mov  x0, x1
+    mov  x1, x2
+    mov  x2, x3
+    mov  x3, x4
+    msr  daifset, #0xf
+    mrs  x9, cntp_ctl_el0
+    bic  x9, x9, #1
+    msr  cntp_ctl_el0, x9
+    dsb  sy
+    isb
+    br   x8
 
 /* Should never get here */
 _dead:
@@ -156,4 +219,3 @@ _aligned_mem64_set_zero_simd_loop:
     b.hs _aligned_mem64_set_zero_simd_loop // x1 >= 0, continue loop
 _ret:
     ret
-

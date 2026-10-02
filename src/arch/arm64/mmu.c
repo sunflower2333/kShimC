@@ -1,422 +1,614 @@
+#include <kshim_mmu.h>
+
+#include <config.h>
+#include <dt.h>
+#include <qcom_dt.h>
+#include <kshim_console.h>
+#include <libfdt.h>
+
+#include <stddef.h>
 #include <stdint.h>
-#include <asm/arm64_mmu.h>
-#include <arm64/mmu.h>
-#include <bitops.h>
-#include <debug.h>
+#include <string.h>
 
-#ifdef CONFIG_ARM64_PAGE_SIZE_4K
-typedef struct
-{
-    uint64_t attributes : 5;       // [63:59]
-    uint64_t ignored1 : 8;         // [58:51]
-    uint64_t res0_1 : 3;           // [50:48]
-    uint64_t next_level_addr : 36; // [47:12]
-    uint64_t ignored0 : 10;        // [11:2]
-    uint64_t type : 2;             // should be 2'b11
-} __attribute__((packed)) arm64_mmu_table_desc_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_table_desc_t) == 8);
+#define MMU_PAGE_SHIFT 12U
+#define MMU_PAGE_SIZE UINT64_C(0x1000)
+#define MMU_TABLE_ENTRIES 512U
+#define MMU_TABLE_COUNT 64U
+#define MMU_MAX_REGIONS 128U
+#define MMU_ADDRESS_MASK UINT64_C(0x0000fffffffff000)
 
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 9;       // [47:39]
-    uint64_t res0_1 : 22;           // [38:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 3;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l0_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l0_t) == 8);
+#define DESC_INVALID UINT64_C(0)
+#define DESC_BLOCK UINT64_C(1)
+#define DESC_TABLE UINT64_C(3)
+#define DESC_PAGE UINT64_C(3)
+#define DESC_TYPE_MASK UINT64_C(3)
+#define DESC_ATTR_INDEX(index) ((uint64_t)(index) << 2)
+#define DESC_AP_RO (UINT64_C(1) << 7)
+#define DESC_SH_OUTER (UINT64_C(2) << 8)
+#define DESC_SH_INNER (UINT64_C(3) << 8)
+#define DESC_AF (UINT64_C(1) << 10)
+#define DESC_PXN (UINT64_C(1) << 53)
+#define DESC_UXN (UINT64_C(1) << 54)
 
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 18;      // [47:30]
-    uint64_t res0_1 : 13;           // [29:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 3;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l1_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l1_t) == 8);
+#define MAIR_NORMAL_WB UINT64_C(0xff)
+#define MAIR_NORMAL_NC UINT64_C(0x44)
+#define MAIR_DEVICE_nGnRnE UINT64_C(0x00)
+#define MAIR_VALUE (MAIR_NORMAL_WB | (MAIR_NORMAL_NC << 8) | \
+                    (MAIR_DEVICE_nGnRnE << 16))
 
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 27;      // [47:21]
-    uint64_t res0_1 : 4;            // [20:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 3;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l2_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l2_t) == 8);
+#define SCTLR_M (UINT64_C(1) << 0)
+#define SCTLR_C (UINT64_C(1) << 2)
+#define SCTLR_SA (UINT64_C(1) << 3)
+#define SCTLR_I (UINT64_C(1) << 12)
 
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0 : 2;              // [49:48]
-    uint64_t output_addr : 36;      // [47:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b11
-} arm64_mmu_page_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_page_t) == 8);
+#define CURRENT_EL1 UINT64_C(4)
+#define CURRENT_EL2 UINT64_C(8)
 
-#define NEXT_LEVEL_ADDRESS_L1(next_level_address) (((uint64_t)next_level_address) >> 12 & 0xFFFFFFFFFULL)
-#define LVL1_BLK_SIZE SIZE_G(1)
-#define LVL2_BLK_SIZE SIZE_M(2)
-
-#elif defined(CONFIG_ARM64_PAGE_SIZE_16K)
-typedef struct
-{
-    uint64_t attributes : 5;       // [63:59]
-    uint64_t ignored1 : 8;         // [58:51]
-    uint64_t res0_1 : 3;           // [50:48]
-    uint64_t next_level_addr : 34; // [47:14]
-    uint64_t res0 : 2;             // [12:13]
-    uint64_t ignored0 : 10;        // [11:2]
-    uint64_t type : 2;             // should be 2'b11
-} arm64_mmu_table_desc_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_table_desc_t) == 8);
-
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 12;      // [47:36]
-    uint64_t res0_1 : 19;           // [35:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 4;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l1_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l1_t) == 8);
-
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 23;      // [47:25]
-    uint64_t res0_1 : 8;            // [24:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 4;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l2_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l2_t) == 8);
-
-#define NEXT_LEVEL_ADDRESS_L1(next_level_address) (((uint64_t)next_level_address) >> 14 & 0xFFFFFFFFCULL)
-#define LVL1_BLK_SIZE SIZE_G(64)
-#define LVL2_BLK_SIZE SIZE_M(32)
-
-#elif defined(CONFIG_ARM64_PAGE_SIZE_64K)
-typedef struct
-{
-    uint64_t attributes : 5;       // [63:59]
-    uint64_t ignored1 : 8;         // [58:51]
-    uint64_t res0_1 : 3;           // [50:48]
-    uint64_t next_level_addr : 32; // [47:16]
-    uint64_t res0 : 4;             // [12:15]
-    uint64_t ignored0 : 10;        // [11:2]
-    uint64_t type : 2;             // should be 2'b11
-} arm64_mmu_table_desc_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_table_desc_t) == 8);
-
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 6;       // [47:42]
-    uint64_t res0_1 : 25;           // [41:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 4;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l1_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l1_t) == 8);
-
-typedef struct
-{
-    uint64_t upper_attributes : 14; // [63:50]
-    uint64_t res0_2 : 2;            // [49:48]
-    uint64_t output_addr : 19;      // [47:29]
-    uint64_t res0_1 : 13;           // [29:17]
-    uint64_t nT : 1;                // [16:16]
-    uint64_t res0_0 : 4;            // [15:12]
-    uint64_t lower_attributes : 10; // [11:2]
-    uint64_t type : 2;              // should be 2'b01
-} arm64_mmu_block_l2_t;
-COMPILER_ASSERT(sizeof(arm64_mmu_block_l2_t) == 8);
-
-#define NEXT_LEVEL_ADDRESS_L2(next_level_address) (((uint64_t)next_level_address) >> 16 & 0xFFFFFFFFULL)
-#define LVL1_BLK_SIZE SIZE_T(4)
-#define LVL2_BLK_SIZE SIZE_M(512)
-
-#else
-#error "No page size configured"
+#ifndef CONFIG_KSHIM_FB_RENDER_ADDRESS
+#define CONFIG_KSHIM_FB_RENDER_ADDRESS 0U
+#endif
+#ifndef CONFIG_KSHIM_FB_WIDTH
+#define CONFIG_KSHIM_FB_WIDTH 0U
+#endif
+#ifndef CONFIG_KSHIM_FB_HEIGHT
+#define CONFIG_KSHIM_FB_HEIGHT 0U
+#endif
+#ifndef CONFIG_KSHIM_FB_STRIDE
+#define CONFIG_KSHIM_FB_STRIDE 0U
+#endif
+#ifndef CONFIG_KSHIM_FB_FORMAT
+#define CONFIG_KSHIM_FB_FORMAT 0U
+#endif
+#ifndef CONFIG_KSHIM_UEFI_LOAD_ADDRESS
+#define CONFIG_KSHIM_UEFI_LOAD_ADDRESS 0U
+#endif
+#ifndef CONFIG_KSHIM_UEFI_MAX_SIZE
+#define CONFIG_KSHIM_UEFI_MAX_SIZE 0U
+#endif
+#ifndef CONFIG_KSHIM_QEMU_PLATFORM
+#define CONFIG_KSHIM_QEMU_PLATFORM 0
+#endif
+#ifndef CONFIG_KSHIM_SMP_SELFTEST
+#define CONFIG_KSHIM_SMP_SELFTEST 0
 #endif
 
-typedef struct
-{
-    uint64_t pa_start;   // physical address start
-    uint64_t va_start;   // virtual address start
-    uint64_t size;       // size of the memory region
-    uint32_t attributes; // memory attributes
-} arm64_memory_descriptor_t;
+typedef uint64_t translation_table_t[MMU_TABLE_ENTRIES];
 
-// add a memory mapping entry to the page table
-void arm64_mmu_add_entry()
+typedef struct {
+    translation_table_t *root;
+    size_t tables_used;
+    kshim_mmu_region_t regions[MMU_MAX_REGIONS];
+    size_t region_count;
+    uint64_t entry_el;
+    uint8_t configured;
+} mmu_context_t;
+
+static translation_table_t mTables[MMU_TABLE_COUNT]
+    __attribute__((aligned(MMU_PAGE_SIZE), section(".mmu_tables")));
+static mmu_context_t mMmu;
+
+extern unsigned char __image_start_address__[];
+extern unsigned char __image_end_address__[];
+
+static uint64_t align_down(uint64_t value, uint64_t alignment)
 {
-    // 对于内核空间，应当能够访问所有的RAM区域，这需要从FDT解析可用内存
-    // 可以先使用简易版本
+    return value & ~(alignment - 1U);
 }
 
-enum MMFR_PARange
+static int align_up(uint64_t value, uint64_t alignment, uint64_t *result)
 {
-    MMFR_PAR_32BIT, // 4GB
-    MMFR_PAR_36BIT, // 64GB
-    MMFR_PAR_40BIT, // 1TB
-    MMFR_PAR_42BIT, // 4TB
-    MMFR_PAR_44BIT, // 16TB
-    MMFR_PAR_48BIT, // 256TB
-    MMFR_PAR_52BIT, // 4PB
-    MMFR_PAR_56BIT, // 64PB
-    MMFR_PAR_INVALID = 0xF
-};
+    if (value > UINT64_MAX - (alignment - 1U))
+        return -1;
+    *result = (value + alignment - 1U) & ~(alignment - 1U);
+    return 0;
+}
 
-// Device Memory: 0b0000dd00
-#define MAIR_ATTR_DEVICE_nGnRnE 0x00 // Device nGnRnE, dd=2'b00
-#define MAIR_ATTR_DEVICE_nGnRE 0x04  // Device nGnRE, dd=2'b01
-#define MAIR_ATTR_DEVICE_nGRE 0x08   // Device nGRE, dd=2'b10
-#define MAIR_ATTR_DEVICE_GRE 0x0C    // Device GRE, dd=2'b11
-
-// Normal Memory
-#define MAIR_ATTR_NORMAL_POLICY_NRNW 0b00                                                    // RW Allocate Not Allowed
-#define MAIR_ATTR_NORMAL_POLICY_WO 0b01                                                      // Allow Write Allocate
-#define MAIR_ATTR_NORMAL_POLICY_RO 0b10                                                      // Allow Read Allocate
-#define MAIR_ATTR_NORMAL_POLICY_RW (MAIR_ATTR_NORMAL_POLICY_WO | MAIR_ATTR_NORMAL_POLICY_RO) // Allow RW Allocate
-
-#define MAIR_ATTR_NORMAL_POLICY_WT(RW_POLICY) ((0b00 << 2) | (RW_POLICY))  // Write-Through Transient
-#define MAIR_ATTR_NORMAL_POLICY_NC (0b01 << 2)                             // Non-Cacheable
-#define MAIR_ATTR_NORMAL_POLICY_WB(RW_POLICY) ((0b01 << 2) | (RW_POLICY))  // Write-Back Transient
-#define MAIR_ATTR_NORMAL_POLICY_WTN(RW_POLICY) ((0b10 << 2) | (RW_POLICY)) // Write-Through Non-Transient
-#define MAIR_ATTR_NORMAL_POLICY_WBN(RW_POLICY) ((0b11 << 2) | (RW_POLICY)) // Write-Back Non-Transient
-#define MAIR_ATTR_NORMAL_OUTER_SHIFT(POLICY) ((POLICY) << 4)               // Outer Cache Policy Shift
-
-// Normal Non-Cacheable
-#define MAIR_ATTR_NORMAL_NC                                       \
-    ((MAIR_ATTR_NORMAL_OUTER_SHIFT(MAIR_ATTR_NORMAL_POLICY_NC)) | \
-     (MAIR_ATTR_NORMAL_POLICY_NC))
-// Normal Write-Back Transient
-#define MAIR_ATTR_NORMAL_WB(RW_POLICY)                                       \
-    ((MAIR_ATTR_NORMAL_OUTER_SHIFT(MAIR_ATTR_NORMAL_POLICY_WB(RW_POLICY))) | \
-     (MAIR_ATTR_NORMAL_POLICY_WB(RW_POLICY)))
-// Normal Write-Through Transient
-#define MAIR_ATTR_NORMAL_WT(RW_POLICY)                                       \
-    ((MAIR_ATTR_NORMAL_OUTER_SHIFT(MAIR_ATTR_NORMAL_POLICY_WT(RW_POLICY))) | \
-     (MAIR_ATTR_NORMAL_POLICY_WT(RW_POLICY)))
-// Normal Write-Through Non-Transient
-#define MAIR_ATTR_NORMAL_WTN(RW_POLICY)                                       \
-    ((MAIR_ATTR_NORMAL_OUTER_SHIFT(MAIR_ATTR_NORMAL_POLICY_WTN(RW_POLICY))) | \
-     (MAIR_ATTR_NORMAL_POLICY_WTN(RW_POLICY)))
-// Normal Write-Back Non-Transient
-#define MAIR_ATTR_NORMAL_WBN(RW_POLICY)                                       \
-    ((MAIR_ATTR_NORMAL_OUTER_SHIFT(MAIR_ATTR_NORMAL_POLICY_WBN(RW_POLICY))) | \
-     (MAIR_ATTR_NORMAL_POLICY_WBN(RW_POLICY)))
-
-// MAIR attribute id
-#define MAIR_ATTR_ID_DEVICE_nGnRnE 0
-#define MAIR_ATTR_ID_DEVICE_nGnRE 1
-#define MAIR_ATTR_ID_NORMAL_NC 2
-#define MAIR_ATTR_ID_NORMAL_WB 3
-#define MAIR_ATTR_ID_NORMAL_WT 4
-#define MAIR_ATTR_ID_NORMAL_WBN 5
-#define MAIR_ATTR_ID_NORMAL_WTN 6
-
-// Calculate MAIR attribute
-#define MAIR_ATTR_WITH_OFFSET(ATTR, ID) ((ATTR) << ((ID) * 8))
-
-#define TCR_TnSZ_CALC(ADDR_BITS) (64 - (ADDR_BITS))
-#define TCR_TG0_SHIFTER(VAL) ((VAL) << 14)
-#define TCR_T1SZ_SHIFTER(VAL) ((VAL) << 16)
-#define TCR_TG1_SHIFTER(VAL) ((VAL) << 30)
-#define TCR_IPS_SHIFTER(VAL) ((VAL) << 32)
-#define TCR_SH0_SHIFTER(VAL) ((VAL) << 12)
-#define TCR_SH1_SHIFTER(VAL) ((VAL) << 28)
-#define TCR_ORGN0_SHIFTER(VAL) ((VAL) << 10)
-#define TCR_ORGN1_SHIFTER(VAL) ((VAL) << 8)
-
-extern uint64_t arm64_read_mmfr0_el1(void);
-extern uint64_t arm64_write_tcr(uint64_t tcr);
-extern uint64_t arm64_write_mair(uint64_t mair);
-
-//  4KiB granule needs 5-level(-1~3) page table in 52-bit VA mode with FEAT_LVA
-//  4KiB granule needs 4-level(-1~3) page table
-//  16KiB granule needs 4-level(0~3) page table
-//  64KiB granule needs 3-level(1~3) page table
-
-extern uint8_t pg_table_l0[ARM64_PAGE_TABLE_SIZE];
-extern uint8_t pg_table_l1[ARM64_PAGE_TABLE_SIZE];
-extern uint8_t pg_table_l2[ARM64_PAGE_TABLE_SIZE];
-#ifndef CONFIG_ARM64_PAGE_SIZE_64K
-// 64K only use 3-level page table
-extern uint8_t pg_table_l3[ARM64_PAGE_TABLE_SIZE];
-#endif /* CONFIG_ARM64_PAGE_SIZE_64K */
-
-// Table Attributes [63:59]
-#define TABLE_ATTR_PXN_BTI BIT(0)
-#define TABLE_ATTR_UXN_BIT BIT(1)
-#define TABLE_ATTR_AP_BITS GENBITS(3, 2) // 00: EL
-#define TABLE_ATTR_NS_BIT BIT(4)
-
-void arm64_mmu_setup(
-    uint64_t image_start_pa, // kernel physical start address
-    uint64_t image_end_pa    // kernel physical end address
-)
+static uint64_t block_size(unsigned level)
 {
-    // Read MMFR0
-    uint64_t mmfr0 = arm64_read_mmfr0_el1();
-    uint8_t max_address_bits = 0;
+    return UINT64_C(1) << (MMU_PAGE_SHIFT + 9U * (3U - level));
+}
 
-    // Check PARange
-    printf("mmfr0: 0x%lx\n", mmfr0);
-    ASSERT(mmfr0 & 0xF < 7);
+static unsigned table_index(uint64_t address, unsigned level)
+{
+    return (unsigned)((address >> (MMU_PAGE_SHIFT + 9U * (3U - level))) &
+                      UINT64_C(0x1ff));
+}
 
-    // Get PA Range
-    max_address_bits = mmfr0 & 0xF; // [3:0] PARange
+static translation_table_t *allocate_table(void)
+{
+    translation_table_t *table;
 
-#if 0
-    // TODO: Complete and validate the MMU register and page-table setup.
-    // Calculate and set TCR
-    arm64_write_tcr(
-        (TCR_TnSZ_CALC(max_address_bits)) |                   // T0SZ
-        (TCR_T1SZ_SHIFTER(TCR_TnSZ_CALC(max_address_bits))) | // T1SZ
-        (TCR_TG0_SHIFTER(ARM64_TCR_TG(0))) |                  // TG0
-        (TCR_TG1_SHIFTER(ARM64_TCR_TG(1))) |                  // TG1
-        (TCR_IPS_SHIFTER(max_address_bits)) |                 // IPS
-        (TCR_SH1_SHIFTER(0b11)) |                             // SH1 Inner Shareable
-        (TCR_SH0_SHIFTER(0b11)) |                             // SH0 Inner Shareable
-        (TCR_ORGN0_SHIFTER(0b01)) |                           // ORGN0 Outer Write-Back Read-Allocate Write-Allocate Cacheable
-        (TCR_ORGN1_SHIFTER(0b01))                             // ORGN1 Inner Write-Back Read-Allocate Write-Allocate Cacheable
-    );
+    if (mMmu.tables_used >= MMU_TABLE_COUNT)
+        return NULL;
+    table = &mTables[mMmu.tables_used++];
+    memset(table, 0, sizeof(*table));
+    return table;
+}
 
-    // Setup MAIR
-    arm64_write_mair(
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_DEVICE_nGnRnE, MAIR_ATTR_ID_DEVICE_nGnRnE) |
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_DEVICE_nGnRE, MAIR_ATTR_ID_DEVICE_nGnRE) |
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_NORMAL_NC, MAIR_ATTR_ID_NORMAL_NC) |
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_NORMAL_WB(MAIR_ATTR_NORMAL_POLICY_RW), MAIR_ATTR_ID_NORMAL_WB) |
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_NORMAL_WT(MAIR_ATTR_NORMAL_POLICY_RW), MAIR_ATTR_ID_NORMAL_WT) |
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_NORMAL_WBN(MAIR_ATTR_NORMAL_POLICY_RW), MAIR_ATTR_ID_NORMAL_WBN) |
-        MAIR_ATTR_WITH_OFFSET(MAIR_ATTR_NORMAL_WTN(MAIR_ATTR_NORMAL_POLICY_RW), MAIR_ATTR_ID_NORMAL_WTN));
+static translation_table_t *next_table(uint64_t *entry, unsigned level)
+{
+    uint64_t descriptor = *entry;
+    translation_table_t *table;
 
-    // For 4KiB granule, we need 4-level page table
-    arm64_mmu_table_desc_t *table_level_0[ARM64_PAGE_TABLE_SIZE / sizeof(arm64_mmu_table_desc_t)] = (arm64_mmu_table_desc_t *)pg_table_l0;
-    arm64_mmu_table_desc_t *table_level_1[ARM64_PAGE_TABLE_SIZE / sizeof(arm64_mmu_table_desc_t)] = (arm64_mmu_table_desc_t *)pg_table_l1;
-    arm64_mmu_table_desc_t *table_level_2[ARM64_PAGE_TABLE_SIZE / sizeof(arm64_mmu_table_desc_t)] = (arm64_mmu_table_desc_t *)pg_table_l2;
-#ifndef CONFIG_ARM64_PAGE_SIZE_64K
-    arm64_mmu_table_desc_t *table_level_3[ARM64_PAGE_TABLE_SIZE / sizeof(arm64_mmu_table_desc_t)] = (arm64_mmu_table_desc_t *)pg_table_l3;
-#endif
+    if ((descriptor & DESC_TYPE_MASK) == DESC_TABLE)
+        return (translation_table_t *)(uintptr_t)(descriptor & MMU_ADDRESS_MASK);
 
-    // Clear root page table
-    memset(table_level_0, 0, sizeof(table_level_0));
-    memset(table_level_1, 0, sizeof(table_level_1));
-    memset(table_level_2, 0, sizeof(table_level_2));
-#ifndef CONFIG_ARM64_PAGE_SIZE_64K
-    memset(table_level_3, 0, sizeof(table_level_3));
-#endif
+    table = allocate_table();
+    if (table == NULL)
+        return NULL;
 
-    // Point to next level page table
-    table_level_0[0]->type = 0b11; // table descriptor
-    table_level_0[0]->next_level_addr = NEXT_LEVEL_ADDRESS_L1(pg_table_l1);
+    if ((descriptor & DESC_TYPE_MASK) == DESC_BLOCK) {
+        uint64_t base = descriptor & MMU_ADDRESS_MASK;
+        uint64_t attributes = descriptor &
+            ~(MMU_ADDRESS_MASK | DESC_TYPE_MASK);
+        uint64_t size = block_size(level + 1U);
+        uint64_t type = level + 1U == 3U ? DESC_PAGE : DESC_BLOCK;
 
-    // Set default table attributes
-    table_level_0[0]->attributes = (TABLE_ATTR_PXN_BTI | // 1
-                                    TABLE_ATTR_UXN_BIT | // 1
-                                    // set TABLE_ATTR_AP_BITS to 00
-                                    TABLE_ATTR_NS_BIT // 1
-    );
-
-    // 4KiB Block Size:
-    //  Level 1: 1GB
-    //  Level 2: 2MB
-    // 16KiB Block Size:
-    //  Level 1: 64GB
-    //  Level 2: 32MB
-    // 64KiB Block Size:
-    //  Level 0: 4TB
-    //  Level 1: 512MB
-    uint64_t image_size = image_start_pa - image_end_pa;
-
-    if (image_start_pa % ARM64_PAGE_TABLE_SIZE)
-    {
-        printf("[WARNING] arm64_mmu: pa not aligned");
-        // round to lower aligned address
-        image_size += (image_start_pa % ARM64_PAGE_TABLE_SIZE);
-        image_start_pa -= (image_start_pa % ARM64_PAGE_TABLE_SIZE);
-    }
-    ASSERT(image_size != 0);
-    if (image_size % ARM64_PAGE_TABLE_SIZE)
-    {
-        printf("[WARNING] arm64_mmu: size not aligned");
-        // round to larger aligned address
-        image_size += ARM64_PAGE_TABLE_SIZE - (image_size % ARM64_PAGE_TABLE_SIZE);
+        for (unsigned index = 0; index < MMU_TABLE_ENTRIES; index++)
+            (*table)[index] = (base + (uint64_t)index * size) |
+                              attributes | type;
     }
 
-    // Try map region block
-    if ((image_size >= LVL1_BLK_SIZE) && (image_size - (image_start_pa % LVL1_BLK_SIZE) >= LVL1_BLK_SIZE))
-    {
-        // request region size is larger than block size after base PA aligned
-        uint64_t size_to_align_l1 = image_start_pa % LVL1_BLK_SIZE;
-        if (size_to_align_l1)
-        {
-            // base address not aligned to blk size
-            // map unaligned space to next level
-            if ((image_size >= LVL2_BLK_SIZE) && (image_size - (image_start_pa % LVL2_BLK_SIZE) >= LVL2_BLK_SIZE))
-            {
-                // request region size is larger than block size after base PA aligned
-                uint64_t size_to_align_l2 = image_start_pa % LVL2_BLK_SIZE;
-                if (size_to_align_l2)
-                {
-                    // base address not aligned to smaller blk size
-                    // map unaligned space to next level pages
-                    ASSERT((image_size - (image_start_pa % ARM64_PAGE_TABLE_SIZE) >= ARM64_PAGE_TABLE_SIZE));
-                    ASSERT(image_start_pa % ARM64_PAGE_TABLE_SIZE == 0);
-                    ASSERT((image_size % ARM64_PAGE_TABLE_SIZE == 0) && (image_size >= ARM64_PAGE_TABLE_SIZE));
-                    uint64_t count_pages = size_to_align_l2 / ARM64_PAGE_TABLE_SIZE;
-                    ASSERT(count_pages <= ARM64_PAGE_TABLE_SIZE / sizeof(arm64_mmu_page_t));
-                    // Allocate memory store pages
-                    arm64_mmu_page_t *pages = malloc(count_pages * sizeof(arm64_mmu_page_t) + ARM64_PAGE_TABLE_SIZE);
-                    while ((uint64_t)pages % ARM64_PAGE_TABLE_SIZE)
-                    {
-                        pages = (uint64_t)pages++;
-                    }
-                    for (int i = 0; i < count_pages; i++){
-                        pages->lower_attributes = ;
-                        pages->upper_attributes = ;
-                        pages->output_addr = (image_start_pa+i*ARM64_PAGE_TABLE_SIZE);
-                        pages->type = 0b11;
-                    }
-                }
-                else
-                {
-                }
+    *entry = ((uint64_t)(uintptr_t)table & MMU_ADDRESS_MASK) | DESC_TABLE;
+    return table;
+}
+
+static uint64_t descriptor_attributes(
+    kshim_mmu_memory_type_t type, uint32_t permissions)
+{
+    uint64_t attributes = DESC_AF;
+
+    if (type == KSHIM_MMU_NORMAL_WB)
+        attributes |= DESC_ATTR_INDEX(0U) | DESC_SH_INNER;
+    else if (type == KSHIM_MMU_NORMAL_NC)
+        attributes |= DESC_ATTR_INDEX(1U) | DESC_SH_OUTER;
+    else
+        attributes |= DESC_ATTR_INDEX(2U) | DESC_SH_OUTER;
+
+    if ((permissions & KSHIM_MMU_WRITE) == 0U)
+        attributes |= DESC_AP_RO;
+    if ((permissions & KSHIM_MMU_EXECUTE) == 0U)
+        attributes |= DESC_PXN | DESC_UXN;
+    return attributes;
+}
+
+static int map_range(
+    uint64_t base, uint64_t size, kshim_mmu_memory_type_t type,
+    uint32_t permissions)
+{
+    uint64_t end;
+    uint64_t address;
+    uint64_t attributes;
+
+    if (size == 0U || base > UINT64_MAX - size)
+        return -1;
+    address = align_down(base, MMU_PAGE_SIZE);
+    if (align_up(base + size, MMU_PAGE_SIZE, &end) != 0 ||
+        end <= address || end > (UINT64_C(1) << 48))
+        return -1;
+    attributes = descriptor_attributes(type, permissions);
+
+    while (address < end) {
+        translation_table_t *table = mMmu.root;
+        uint64_t remaining = end - address;
+
+        for (unsigned level = 0; level <= 3U; level++) {
+            uint64_t span = block_size(level);
+            uint64_t *entry = &(*table)[table_index(address, level)];
+            uint64_t entry_type = *entry & DESC_TYPE_MASK;
+
+            if (level >= 1U && (entry_type != DESC_TABLE || level == 3U) &&
+                (address & (span - 1U)) == 0U && remaining >= span) {
+                uint64_t descriptor_type = level == 3U ? DESC_PAGE : DESC_BLOCK;
+                *entry = (address & MMU_ADDRESS_MASK) |
+                         attributes | descriptor_type;
+                address += span;
+                break;
             }
-            else
-            {
-            }
+            if (level == 3U)
+                return -1;
+            table = next_table(entry, level);
+            if (table == NULL)
+                return -2;
         }
-        else
-        {
-            // Aligned
-        }
+    }
+    return 0;
+}
+
+static int add_region(const kshim_mmu_region_t *region)
+{
+    int status;
+
+    if (region == NULL || region->size == 0U)
+        return 0;
+    if (region->type > KSHIM_MMU_DEVICE ||
+        (region->permissions & KSHIM_MMU_READ) == 0U ||
+        mMmu.region_count >= MMU_MAX_REGIONS)
+        return -1;
+    uint64_t end;
+    if (region->base > UINT64_MAX - region->size ||
+        align_up(region->base + region->size, MMU_PAGE_SIZE, &end)) return -1;
+    uint64_t start = align_down(region->base, MMU_PAGE_SIZE);
+    for (size_t i = 0; i < mMmu.region_count; ++i) {
+        const kshim_mmu_region_t *old = &mMmu.regions[i];
+        uint64_t old_end;
+        if (align_up(old->base + old->size, MMU_PAGE_SIZE, &old_end)) return -1;
+        if (start < old_end && align_down(old->base, MMU_PAGE_SIZE) < end &&
+            (old->type != region->type || old->permissions != region->permissions)) return -1;
+    }
+    status = map_range(
+        region->base, region->size, region->type, region->permissions);
+    if (status != 0)
+        return status;
+    mMmu.regions[mMmu.region_count++] = *region;
+    return 0;
+}
+
+static int range_within(
+    uint64_t base, uint64_t size, uint64_t outer_base, uint64_t outer_size)
+{
+    return size <= outer_size && base >= outer_base &&
+        base - outer_base <= outer_size - size;
+}
+
+static int ranges_overlap(
+    uint64_t first_base, uint64_t first_size,
+    uint64_t second_base, uint64_t second_size)
+{
+    if (first_size == 0U || second_size == 0U ||
+        first_base > UINT64_MAX - first_size ||
+        second_base > UINT64_MAX - second_size)
+        return 0;
+    return first_base < second_base + second_size &&
+        second_base < first_base + first_size;
+}
+
+/* Read a big-endian FDT cell tuple without consulting UEFI's memory map. */
+static uint64_t current_el(void)
+{
+#if defined(__aarch64__)
+    uint64_t value;
+    __asm__ volatile("mrs %0, CurrentEL" : "=r"(value));
+    return value & UINT64_C(0xc);
+#else
+    return CURRENT_EL1;
+#endif
+}
+
+#if defined(__aarch64__)
+static uint64_t physical_size_encoding(void)
+{
+#if defined(__aarch64__)
+    uint64_t mmfr0;
+    __asm__ volatile("mrs %0, id_aa64mmfr0_el1" : "=r"(mmfr0));
+    mmfr0 &= UINT64_C(0xf);
+    return mmfr0 > 5U ? 5U : mmfr0;
+#else
+    return 5U;
+#endif
+}
+
+#endif
+
+static int enable_at_el(uint64_t exception_level)
+{
+#if defined(__aarch64__)
+    uint64_t root;
+    uint64_t tcr;
+    uint64_t sctlr;
+    uint64_t ps = physical_size_encoding();
+
+    if (!mMmu.configured ||
+        (exception_level != CURRENT_EL1 && exception_level != CURRENT_EL2))
+        return -1;
+    root = (uint64_t)(uintptr_t)mMmu.root;
+    __asm__ volatile("dsb ishst" ::: "memory");
+
+    if (exception_level == CURRENT_EL1) {
+        /* 48-bit TTBR0, WB table walks, inner-shareable, TTBR1 disabled. */
+        tcr = UINT64_C(16) | (UINT64_C(1) << 8) |
+              (UINT64_C(1) << 10) | (UINT64_C(3) << 12) |
+              (UINT64_C(1) << 23) | (UINT64_C(16) << 16) |
+              (UINT64_C(2) << 30) | (ps << 32);
+        __asm__ volatile(
+            "tlbi vmalle1\n"
+            "dsb ish\n"
+            "isb\n"
+            "msr mair_el1, %0\n"
+            "msr tcr_el1, %1\n"
+            "msr ttbr0_el1, %2\n"
+            "isb"
+            : : "r"(MAIR_VALUE), "r"(tcr), "r"(root) : "memory");
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+        sctlr |= SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_SA;
+        __asm__ volatile("msr sctlr_el1, %0\nisb" : : "r"(sctlr) : "memory");
+    } else {
+        uint64_t hcr;
+
+        /* Use the non-VHE EL2 translation regime and keep execution at EL2. */
+        __asm__ volatile("mrs %0, hcr_el2" : "=r"(hcr));
+        hcr &= ~((UINT64_C(1) << 34) | (UINT64_C(1) << 27));
+        __asm__ volatile("msr hcr_el2, %0\nisb" : : "r"(hcr) : "memory");
+        tcr = UINT64_C(16) | (UINT64_C(1) << 8) |
+              (UINT64_C(1) << 10) | (UINT64_C(3) << 12) |
+              (ps << 16) | (UINT64_C(1) << 23) |
+              (UINT64_C(1) << 31);
+        __asm__ volatile(
+            "tlbi alle2\n"
+            "dsb ish\n"
+            "isb\n"
+            "msr mair_el2, %0\n"
+            "msr tcr_el2, %1\n"
+            "msr ttbr0_el2, %2\n"
+            "isb"
+            : : "r"(MAIR_VALUE), "r"(tcr), "r"(root) : "memory");
+        __asm__ volatile("mrs %0, sctlr_el2" : "=r"(sctlr));
+        sctlr |= SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_SA;
+        __asm__ volatile("msr sctlr_el2, %0\nisb" : : "r"(sctlr) : "memory");
+    }
+    return 0;
+#else
+    (void)exception_level;
+    return mMmu.configured ? 0 : -1;
+#endif
+}
+
+static void clean_range(uint64_t base, uint64_t size)
+{
+#if defined(__aarch64__)
+    uint64_t ctr;
+    uint64_t line_size;
+    uint64_t end;
+
+    if (size == 0U || base > UINT64_MAX - size)
+        return;
+    __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+    line_size = UINT64_C(4) << ((ctr >> 16) & UINT64_C(0xf));
+    end = base + size;
+    for (uint64_t address = align_down(base, line_size);
+         address < end; address += line_size)
+        __asm__ volatile("dc civac, %0" : : "r"(address) : "memory");
+#else
+    (void)base;
+    (void)size;
+#endif
+}
+
+static void disable_at_el(uint64_t exception_level)
+{
+#if defined(__aarch64__)
+    uint64_t sctlr;
+
+    __asm__ volatile("dsb sy" ::: "memory");
+    if (exception_level == CURRENT_EL1) {
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+        sctlr &= ~(SCTLR_M | SCTLR_C | SCTLR_I);
+        __asm__ volatile(
+            "msr sctlr_el1, %0\n"
+            "isb\n"
+            "tlbi vmalle1\n"
+            "dsb sy\n"
+            "isb"
+            : : "r"(sctlr) : "memory");
+    } else if (exception_level == CURRENT_EL2) {
+        __asm__ volatile("mrs %0, sctlr_el2" : "=r"(sctlr));
+        sctlr &= ~(SCTLR_M | SCTLR_C | SCTLR_I);
+        __asm__ volatile(
+            "msr sctlr_el2, %0\n"
+            "isb\n"
+            "tlbi alle2\n"
+            "dsb sy\n"
+            "isb"
+            : : "r"(sctlr) : "memory");
     }
 #else
-    (void)image_start_pa;
-    (void)image_end_pa;
-    (void)max_address_bits;
+    (void)exception_level;
 #endif
+}
+
+int kshim_mmu_configure(const kshim_mmu_config_t *config)
+{
+    kshim_mmu_region_t region;
+    uint64_t image_base = (uint64_t)(uintptr_t)__image_start_address__;
+    uint64_t image_end = (uint64_t)(uintptr_t)__image_end_address__;
+
+    if (config == NULL || config->extra_region_count > KSHIM_MMU_MAX_EXTRA_REGIONS ||
+        (config->extra_region_count != 0U && config->extra_regions == NULL) ||
+        image_end <= image_base)
+        return -1;
+
+    memset(&mMmu, 0, sizeof(mMmu));
+    memset(mTables, 0, sizeof(mTables));
+    mMmu.root = allocate_table();
+    if (mMmu.root == NULL)
+        return -2;
+
+    /* Map only memory owned by this runtime and explicit device resources.
+     * Reservation entries and no-map pools never become an implicit RAM map. */
+    if (config->fdt) {
+        struct dt_range reservations[128]; bool no_map[128]; size_t count;
+        if (dt_validate(config->fdt, fdt_totalsize(config->fdt)) ||
+            dt_reservations(config->fdt, reservations, no_map, 128, &count)) return -1;
+        for (size_t i = 0; i < count; ++i) {
+            for (size_t j = 0; j < config->extra_region_count; ++j) {
+                const kshim_mmu_region_t *extra = &config->extra_regions[j];
+                if (no_map[i] && extra->type == KSHIM_MMU_NORMAL_WB &&
+                    ranges_overlap(reservations[i].base, reservations[i].size, extra->base, extra->size)) return -1;
+            }
+        }
+    }
+
+    region = (kshim_mmu_region_t){
+        .base = image_base,
+        .size = image_end - image_base,
+        .type = KSHIM_MMU_NORMAL_WB,
+        .permissions = KSHIM_MMU_READ | KSHIM_MMU_WRITE | KSHIM_MMU_EXECUTE,
+    };
+    if (add_region(&region) != 0)
+        return -2;
+
+    if (config->fdt != NULL && fdt_check_header(config->fdt) == 0) {
+        uint64_t fdt_base = (uint64_t)(uintptr_t)config->fdt;
+        uint64_t fdt_size = (uint32_t)fdt_totalsize(config->fdt);
+
+        if (!range_within(
+                fdt_base, fdt_size, image_base, image_end - image_base)) {
+            region = (kshim_mmu_region_t){
+                .base = fdt_base,
+                .size = fdt_size,
+                .type = KSHIM_MMU_NORMAL_WB,
+                .permissions = KSHIM_MMU_READ,
+            };
+            if (add_region(&region) != 0)
+                return -2;
+        }
+    }
+
+    region = (kshim_mmu_region_t){
+        .base = config->framebuffer_base,
+        .size = config->framebuffer_size,
+        .type = KSHIM_MMU_NORMAL_NC,
+        .permissions = KSHIM_MMU_READ | KSHIM_MMU_WRITE,
+    };
+    if (add_region(&region) != 0)
+        return -2;
+
+    region = (kshim_mmu_region_t){
+        .base = config->uefi_base,
+        .size = config->uefi_size,
+        .type = KSHIM_MMU_NORMAL_WB,
+        .permissions = KSHIM_MMU_READ | KSHIM_MMU_WRITE | KSHIM_MMU_EXECUTE,
+    };
+    if (add_region(&region) != 0)
+        return -2;
+
+    for (size_t index = 0; index < config->extra_region_count; index++) {
+        if (add_region(&config->extra_regions[index]) != 0)
+            return -2;
+    }
+
+    if (config->map_qemu_test_windows) {
+        const kshim_mmu_region_t qemu_regions[] = {
+            {UINT64_C(0x08000000), UINT64_C(0x00010000), KSHIM_MMU_DEVICE,
+             KSHIM_MMU_READ | KSHIM_MMU_WRITE},
+            {UINT64_C(0x080a0000), UINT64_C(0x00100000), KSHIM_MMU_DEVICE,
+             KSHIM_MMU_READ | KSHIM_MMU_WRITE},
+            {UINT64_C(0x44000000), UINT64_C(0x00c00000), KSHIM_MMU_NORMAL_NC,
+             KSHIM_MMU_READ | KSHIM_MMU_WRITE},
+            {UINT64_C(0x46000000), MMU_PAGE_SIZE, KSHIM_MMU_NORMAL_WB,
+             KSHIM_MMU_READ | KSHIM_MMU_WRITE},
+        };
+
+        for (size_t index = 0;
+             index < sizeof(qemu_regions) / sizeof(qemu_regions[0]); index++) {
+            /* The configured scanout mapping supersedes the broad QEMU
+             * fallback window. Mapping both creates conflicting leaf entries
+             * and prevents SMP initialization in the UI profile. */
+            if (index == 2U && ranges_overlap(
+                    config->framebuffer_base, config->framebuffer_size,
+                    qemu_regions[index].base, qemu_regions[index].size))
+                continue;
+            if (add_region(&qemu_regions[index]) != 0)
+                return -2;
+        }
+    }
+
+    mMmu.entry_el = current_el();
+    mMmu.configured = 1U;
+#if defined(__aarch64__)
+    clean_range((uint64_t)(uintptr_t)&mMmu, sizeof(mMmu));
+    clean_range((uint64_t)(uintptr_t)mTables, sizeof(mTables));
+    __asm__ volatile("dsb sy" ::: "memory");
+#endif
+    return 0;
+}
+
+int kshim_mmu_configure_default(const void *fdt)
+{
+    struct kshim_resources *r = kshim_resources_get();
+    kshim_mmu_region_t extras[KSHIM_MMU_MAX_EXTRA_REGIONS];
+    size_t count = r->mapping_count;
+    if (count + 1 > KSHIM_MMU_MAX_EXTRA_REGIONS) return -1;
+    memcpy(extras, r->mappings, count * sizeof(*extras));
+    if (kshim_console_base()) extras[count++] = (kshim_mmu_region_t){
+        kshim_console_base(), kshim_console_size(), KSHIM_MMU_DEVICE, KSHIM_MMU_READ | KSHIM_MMU_WRITE};
+    kshim_mmu_config_t config = {
+        .fdt = fdt,
+        .framebuffer_base = r->framebuffer.render_address,
+        .framebuffer_size = r->framebuffer.buffer_size ? r->framebuffer.buffer_size :
+            (uint64_t)(r->framebuffer.stride ? r->framebuffer.stride :
+                r->framebuffer.width * r->framebuffer.bpp / 8) * r->framebuffer.height,
+        .uefi_base = CONFIG_KSHIM_UEFI_LOAD_ADDRESS, .uefi_size = CONFIG_KSHIM_UEFI_MAX_SIZE,
+        .extra_regions = extras, .extra_region_count = count,
+        .map_qemu_test_windows = CONFIG_KSHIM_QEMU_PLATFORM || CONFIG_KSHIM_SMP_SELFTEST,
+    };
+    return kshim_mmu_configure(&config);
+}
+
+int kshim_mmu_enable_current_cpu(void)
+{
+    return enable_at_el(current_el());
+}
+
+int kshim_mmu_enable_secondary(uint64_t entry_el)
+{
+    if (entry_el != mMmu.entry_el)
+        return -1;
+    return enable_at_el(entry_el);
+}
+
+int kshim_mmu_is_enabled(void)
+{
+#if defined(__aarch64__)
+    uint64_t value;
+    uint64_t exception_level = current_el();
+
+    if (exception_level == CURRENT_EL1)
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r"(value));
+    else if (exception_level == CURRENT_EL2)
+        __asm__ volatile("mrs %0, sctlr_el2" : "=r"(value));
+    else
+        return 0;
+    return (value & SCTLR_M) != 0U;
+#else
+    return mMmu.configured != 0U;
+#endif
+}
+
+uint64_t kshim_mmu_entry_el(void)
+{
+    return mMmu.entry_el;
+}
+
+uint64_t kshim_mmu_root_table(void)
+{
+    return (uint64_t)(uintptr_t)mMmu.root;
+}
+
+int kshim_mmu_prepare_handoff(void)
+{
+    if (!mMmu.configured)
+        return 0;
+    for (size_t index = 0; index < mMmu.region_count; index++) {
+        if (mMmu.regions[index].type == KSHIM_MMU_NORMAL_WB &&
+            (mMmu.regions[index].permissions & KSHIM_MMU_WRITE))
+            clean_range(mMmu.regions[index].base, mMmu.regions[index].size);
+    }
+#if defined(__aarch64__)
+    __asm__ volatile("dsb sy\nic iallu\ndsb sy\nisb" ::: "memory");
+#endif
+    disable_at_el(current_el());
+    return 0;
+}
+
+void kshim_mmu_cpu_off_prepare(void)
+{
+    (void)kshim_mmu_prepare_handoff();
+}
+
+void _arm64_mmu_setup(void)
+{
+    if (!mMmu.configured && kshim_mmu_configure_default(NULL) != 0)
+        return;
+    (void)kshim_mmu_enable_current_cpu();
 }

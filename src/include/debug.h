@@ -1,6 +1,6 @@
 #pragma once
 #include <lib/stdport.h>
-#include <include/config.h>
+#include <config.h>
 
 #ifdef CONFIG_ASSERT_HALT
 #define ASSERT(x)                                                   \

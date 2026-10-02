@@ -8,7 +8,148 @@ menu "Drivers"
     source "$srctree/drivers/Kconfig"
 endmenu
 
+menu "Qualcomm Input"
+    config QCOM_KEYS
+        bool "Enable Qualcomm key input"
+        default y
+        help
+            Enable the debounced Qualcomm PON/GPIO key backend.  Volume Up
+            maps to menu up, Volume Down maps to menu down, and Power maps to
+            menu confirm.
+
+    config QCOM_SPMI
+        bool "Enable polled Qualcomm PMIC Arbiter SPMI reader"
+        default n
+        depends on QCOM_KEYS
+        help
+            Enable CrDK SPMI and PMIC GPIO input using controllers, bus IDs
+            and slave IDs discovered from the runtime device tree.
+
+    config QCOM_KEY_DEBOUNCE_SAMPLES
+        int "Key debounce samples"
+        range 1 32
+        default 2
+endmenu
+
+menu "Touch input"
+    config KSHIM_TOUCH
+        bool "Enable DT-selected ST FTM4/FTM5 touch input"
+        default n
+endmenu
+
+menu "Multicore"
+    config KSHIM_SMP
+        bool "Enable PSCI workers"
+        default n
+    config KSHIM_SMP_SELFTEST
+        bool "Run QEMU PSCI self-test and exit"
+        depends on KSHIM_SMP
+        select KSHIM_LVGL
+        default n
+    config KSHIM_SMP_WORKERS
+        int "Maximum secondary workers"
+        depends on KSHIM_SMP
+        range 0 7
+        default 3
+endmenu
+
+menu "Framebuffer and UI"
+    config KSHIM_QEMU_PLATFORM
+        bool "Enable QEMU test memory and framebuffer"
+        default y
+        help
+            Permit virtual test windows. Console resources are always read
+            from DT. Disable these test windows for physical boards.
+
+    config KSHIM_FRAMEBUFFER
+        bool "Enable validated continuous splash framebuffer UI"
+        default y
+
+    config KSHIM_FB_RENDER_ADDRESS
+        depends on KSHIM_QEMU_PLATFORM
+        hex "Framebuffer render address"
+        default 0x0
+        help
+            Virtual test surface only. Physical platforms discover the live
+            scanout layout from SDE and its DT reserved-memory region.
+
+    config KSHIM_FB_WIDTH
+        depends on KSHIM_QEMU_PLATFORM
+        int "Framebuffer width"
+        range 64 4096
+        default 128
+
+    config KSHIM_FB_HEIGHT
+        depends on KSHIM_QEMU_PLATFORM
+        int "Framebuffer height"
+        range 48 4096
+        default 64
+
+    config KSHIM_FB_STRIDE
+        depends on KSHIM_QEMU_PLATFORM
+        int "Framebuffer stride in bytes"
+        range 0 2147483647
+        default 0
+        help
+            Zero selects the minimum stride for the selected pixel format.
+
+    config KSHIM_FB_FORMAT
+        depends on KSHIM_QEMU_PLATFORM
+        int "Framebuffer format (1=mono LSB, 2=mono MSB, 3=gray8, 4=RGB565, 5/6=32-bit)"
+        range 1 6
+        default 1
+        help
+            LVGL renders color pixels and converts them to this target format.
+
+    config KSHIM_LVGL
+        bool "Enable LVGL liquid glass menu"
+        default y
+        help
+            Build the pinned LVGL menu. The Qualcomm Volume Up, Volume Down,
+            and Power actions are mapped to up, down, and confirm respectively.
+
+    config KSHIM_UI_DARK
+        bool "Dark menu theme"
+        default y
+        depends on KSHIM_LVGL
+
+    config KSHIM_LVGL_BUFFER_BYTES
+        int "LVGL partial render buffer size"
+        range 128 1048576
+        default 16384
+        depends on KSHIM_LVGL
+        help
+            Bytes per partial color render buffer. It must hold at least
+            one framebuffer row. Board profiles use 256 KiB buffers.
+
+endmenu
+
 menu "Generic"
+    config KSHIM_UEFI_TEST_MENU
+        bool "Two entries that both launch the embedded UEFI FD"
+        default n
+        help
+            Requires KSHIM_UEFI_PAYLOAD in CMake. The two names select the
+            same payload, copied into its board-specific FD reservation.
+
+    config KSHIM_MENU_ENTRY1
+        string "First menu entry"
+        default "Boot"
+
+    config KSHIM_MENU_ENTRY2
+        string "Second menu entry"
+        default "Recovery"
+
+    config KSHIM_UEFI_LOAD_ADDRESS
+        hex "UEFI FD destination/entry address"
+        default 0xFFC00000
+        depends on KSHIM_UEFI_TEST_MENU
+
+    config KSHIM_UEFI_MAX_SIZE
+        hex "UEFI FD reserved size"
+        default 0x400000
+        depends on KSHIM_UEFI_TEST_MENU
+
     config ENABLE_BANNER
         bool "Enable Boot Banner"
         default y

@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/OnePlusOSS/android_kernel_oneplus_sm8250",
+  "revision": "cad09e061ef6cf689a4a1e54d27562e0f042236a",
+  "license": "GPL-2.0-only",
+  "implementation": "src/drivers/st_ftm4.c",
+  "sources": {
+    "drivers/input/touchscreen/st/fts.c": "660dc42360cd9f2e80ca60a5123fe204f0c921d06a337fabc6fb6641852f9ac1",
+    "drivers/input/touchscreen/st/fts.h": "d120f32e8895c94d733e0f85b902a21c567b8f0b07b59dc75335ccb6ebc23527",
+    "drivers/input/touchscreen/st/fts_lib/ftsHardware.h": "a9830660e67870399c25da11c168d63a417c27fda196533eedb6047c6db399f6",
+    "drivers/input/touchscreen/st/fts_lib/ftsSoftware.h": "a72b1ce29b34ee80959a08d4925fca82607bc89e97a7b961c5ba23c5af4a57bf",
+    "drivers/input/touchscreen/st/fts_lib/ftsIO.c": "885792e583614d729fc795c854fb81abf2b74d1a17379d07b0168fbc03ac829a",
+    "drivers/input/touchscreen/st/fts_lib/ftsTool.c": "fb8e399c05bd574164092925ba5df238e07bd05554309c91e945cdd709c0c10c",
+    "drivers/input/touchscreen/st/fts_lib/ftsTool.h": "e856714404a633c441ce678d6ec8d0b4ff040c4b46afcc70cfb14385988da330"
+  },
+  "protocol": {
+    "chip_id": "0x7036",
+    "address": "0x49",
+    "hardware_read": "0xb6 + big-endian 16-bit address; one leading dummy response byte",
+    "fifo": "0x85 READONE, 8-byte records, at most 64 per poll",
+    "ready_wait": "500 ms with 10 ms polling, from ftsTool.h TIMEOUT_RESOLUTION and GENERAL_TIMEOUT",
+    "quiesce": "SENSE_OFF then IRQ disable; both must succeed before handoff, and failure remains retryable",
+    "coordinates": [
+      1440,
+      2880
+    ],
+    "hdk_flip_x": true,
+    "hdk_flip_y": true
+  },
+  "excluded": "Firmware update, flash erase/program, calibration and manufacturing writes",
+  "branch": "oneplus/SM8250_Q_10.0",
+  "source_note": "Pinned OnePlus Android source; host and source evidence only, no hardware validation."
+}

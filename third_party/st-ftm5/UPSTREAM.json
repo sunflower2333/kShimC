@@ -1,0 +1,47 @@
+{
+  "repository": "https://github.com/MiCode/Xiaomi_Kernel_OpenSource",
+  "branch": "andromeda-p-oss",
+  "revision": "74347f5521fb444936f5986ff0937264307d78fe",
+  "upstream_license": "GPL-2.0-only",
+  "implementation": "src/drivers/st_ftm5.c (freestanding protocol implementation; vendor source is not linked)",
+  "sources": {
+    "drivers/input/touchscreen/fts_521/fts.c": "09476281f0c656d3f9794fa84a2da305fa8d5737933332dfa991cdf7c62c1f8a",
+    "drivers/input/touchscreen/fts_521/fts.h": "1b695d5922c841bb399d937362ec91f83a8c6fe02b1667ef5bd249e73a18db63",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsHardware.h": "5b004329cf669edb035d62c836578f7003e78922760c5f5de04368327e72e15b",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsSoftware.h": "814e40b498026d0d9933ce9027e96881465050992dbf4956d2b7d1f74ae432e7",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsIO.c": "73f4fef364cbf50b6462230e9eabf69bffa606d4db23e3ee1b0030c195075ec7",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsCore.c": "4d4fc6604e7c8247a1735e23eeb08debc2d90d962403516be3d9770286b15f8a",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsTool.c": "90683e7e84116390644aeec3cdc955e6eeaee5dbcf2fd42fb90b241811e3fefe",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsTime.h": "8943cb0fae18967c1cd2e124a592d7063491e314fb0e77b2d804ee4ad5712c39",
+    "drivers/input/touchscreen/fts_521/fts_lib/ftsError.h": "b57904c4934d785d1734784df69be79d3b3bc280c98d43a5c4d1c925b2aea444",
+    "arch/arm64/boot/dts/qcom/andromeda-sm8150.dtsi": "b4c8aecf19d37cba8212b63cdbcfda6842e2cbcd565b7635324a33203f700d86",
+    "arch/arm64/boot/dts/qcom/sm8150-qupv3.dtsi": "1ffb504e54b9d26c9ee8b87d74e4021dbd2701673276f9ee3b397518ae4a0f62",
+    "arch/arm64/boot/dts/qcom/sm8150-pinctrl.dtsi": "4ce085bab029c19a58a992d5b2f7c94a7fc7d3bc86eb78e1b4b8bbc04626c08d",
+    "arch/arm64/boot/dts/qcom/sm8150-regulator.dtsi": "80d7a9f1ca35dd46402e3f6f69c27418725d0f9220cc13106d3e55f084740bff",
+    "arch/arm64/boot/dts/qcom/andromeda-pinctrl.dtsi": "f5f198a2a8e58608066f26932e0435fccbe898d12be14c4adc5ac0e1d2baba15",
+    "drivers/clk/qcom/gcc-sm8150.c": "2182e349b2d51b07d3bd57df51fd37266db8c5926e154640863aaf5079420ef6",
+    "drivers/pinctrl/qcom/pinctrl-sm8150.c": "d30aa1541f30ea966b0e261bbc94c131cf399b3fb11592b5f1d6253b9535eb07",
+    "arch/arm64/configs/andromeda_user_defconfig": "c12ec06247a9a70338eb3567c5af68aa5a5600a63047dd5b9e688b0f3eb84f43",
+    "drivers/input/touchscreen/fts_521/Kconfig": "ade0d0d38b1ee31108debf6de97ab39a6199e82c6add0604529613e01a4632d2"
+  },
+  "protocol": {
+    "chip_id": "0x3936",
+    "address": "0x49",
+    "bus": "I2C at 400 kHz on the phone; SPI adapter is not a verified phone variant",
+    "ready_timeout_ms": 100,
+    "ready_poll_interval_ms": 2,
+    "fifo": "0x86 on I2C; 8-byte records, 32 entries, remaining count in event[7] bits 0..4",
+    "coordinates": [
+      1080,
+      2340
+    ],
+    "scan_on": "a0 00 01",
+    "scan_off": "a0 00 00",
+    "interrupts": "ftsCore.c fts_enableInterrupt/fts_disableInterrupt control the Linux host IRQ only. The freestanding port polls the active-low TLMM GPIO; no FTM4 IER write applies.",
+    "motion": "fts.c uses the ENTER handler for MOTION, so an untracked moving finger establishes a contact",
+    "hover": "touch type 5 reports BTN_TOUCH=0 and must not press the UI",
+    "reset": "Unexpected READY cancels contacts and stops polling; scan-disable remains retryable"
+  },
+  "excluded": "Firmware flashing, erase/program, calibration and manufacturing writes",
+  "validation": "GitHub source and host models; physical phone input is not yet tested"
+}

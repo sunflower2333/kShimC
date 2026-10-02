@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -shared -static -Wl,--build-id=none -Wl,-Bsymbolic -Wl,--no-dynamic-linker -Wl,--no-undefined")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -nostdlib -mno-outline-atomics -g -fno-common -nostartfiles -mstrict-align -march=armv8-a -Os -std=gnu2x -fno-pic -fno-pie -fno-plt -Wall")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -shared -static -Wl,--build-id=none -Wl,-Bsymbolic -Wl,--no-dynamic-linker -Wl,--no-undefined -Wl,--gc-sections")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -nostdlib -mno-outline-atomics -g -fno-common -nostartfiles -mstrict-align -march=armv8-a -Os -std=gnu2x -fno-pic -fno-pie -fno-plt -ffunction-sections -fdata-sections -Wall")
 
 # Distinguish windows and linux gcc path
 if (WIN32)
@@ -47,12 +49,45 @@ set(OUTPUT_NAME kShimC)
 set(KSHIMC_VERSION "0.0.1")
 project(${OUTPUT_NAME} C ASM)
 
-set(KSHIM_CONFIG_BANNER "kShimC v${KSHIMC_VERSION}")
-configure_file(
-    ${CMAKE_SOURCE_DIR}/src/include/config.h.in
-    ${CMAKE_BINARY_DIR}/generated/include/config.h
-    @ONLY
+option(KSHIM_STANDALONE "Boot directly as an ARM64 Image instead of an attached manifest runtime" OFF)
+set(KSHIM_LINK_ADDRESS "0x40200000" CACHE STRING "Runtime link address")
+set(KSHIM_RUNTIME_SLOT_SIZE "0x400000" CACHE STRING "Reserved runtime bytes (4 MiB for manifest protocol)")
+set(KSHIM_UEFI_PAYLOAD "" CACHE FILEPATH "Optional raw UEFI FD for standalone test menu")
+add_compile_definitions(KSHIM_STANDALONE=$<BOOL:${KSHIM_STANDALONE}>
+    KSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} KSHIM_RUNTIME_SLOT_SIZE=${KSHIM_RUNTIME_SLOT_SIZE})
+
+# Generate common variables pass to Kconfig
+set(HOST_ARCH "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+string(TIMESTAMP BUILD_TIME "%Y-%m-%d %H:%M:%S" UTC)
+get_filename_component(COMPILER_BASENAME "${CMAKE_C_COMPILER}" NAME)
+set(HOST_INFO "$ENV{USER}$ENV{USERNAME}@$ENV{HOSTNAME}$ENV{COMPUTERNAME} ${COMPILER_BASENAME} (${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION})")
+set(KCONFIG_ENV "srctree=${CMAKE_SOURCE_DIR}/src" "HOST_ARCH=${HOST_ARCH}" "HOST_INFO=${HOST_INFO}"
+                "BUILD_TIME=${BUILD_TIME}" "ARCH=${CMAKE_SYSTEM_PROCESSOR}" "VERSION=${KSHIMC_VERSION}"
 )
+
+find_program(MENUCONFIG_EXECUTABLE menuconfig)
+find_program(GUICONFIG_EXECUTABLE guiconfig)
+find_program(GENCONFIG_EXECUTABLE genconfig)
+
+if(NOT GENCONFIG_EXECUTABLE)
+    message(FATAL_ERROR "genconfig (Python kconfiglib) is required")
+endif()
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_BINARY_DIR}/.config" "${CMAKE_SOURCE_DIR}/Kconfig"
+    "${CMAKE_SOURCE_DIR}/src/Kconfig" "${CMAKE_SOURCE_DIR}/src/drivers/Kconfig"
+    "${CMAKE_SOURCE_DIR}/tools/configure_kconfig.py")
+execute_process(COMMAND ${CMAKE_COMMAND} -E env ${KCONFIG_ENV}
+    ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/configure_kconfig.py
+    --root ${CMAKE_SOURCE_DIR} --config ${CMAKE_BINARY_DIR}/.config
+    --header ${CMAKE_BINARY_DIR}/generated/include/config.h
+    --cmake ${CMAKE_BINARY_DIR}/generated/config.cmake
+    RESULT_VARIABLE CONFIG_STATUS)
+if(NOT CONFIG_STATUS EQUAL 0)
+    message(FATAL_ERROR "Kconfig evaluation failed")
+endif()
+include(${CMAKE_BINARY_DIR}/generated/config.cmake)
+add_custom_target(generate_config)
 
 # Build Picolibc for the existing kShimC runtime and startup environment.
 set(__THREAD_LOCAL_STORAGE OFF CACHE BOOL "" FORCE)
@@ -74,14 +109,77 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/picolibc ${CMAKE_BINARY_DIR}/lib/picoli
 # Add include directories
 set(INCLUDE_DIRS
     ${CMAKE_BINARY_DIR}/generated/
+    ${CMAKE_BINARY_DIR}/generated/include/
     ${CMAKE_SOURCE_DIR}/src/include/
+    ${CMAKE_SOURCE_DIR}/lib/libfdt/include/
 )
 
 include_directories(${INCLUDE_DIRS})
 
 # Define the executable target, including assembly and C source files
-file(GLOB SRC_FILES "src/*.c" "src/lib/*.c" "src/arm64/*.c" "src/arm64/*.S")
-include(${CMAKE_SOURCE_DIR}/src/src.cmake)
+set(SRC_FILES
+    src/core/main.c src/core/platform.c src/core/uefi_boot.c src/core/picoport.c
+    src/dt/dt.c src/dt/console.c src/dt/resources.c
+    src/drivers/console.c src/drivers/pl011.c src/drivers/keys.c
+    src/arch/arm64/exception.c src/arch/arm64/relocation.c src/arch/arm64/mmu.c
+    src/arch/arm64/psci.c src/arch/arm64/timer.c src/arch/arm64/smp.c src/arch/arm64/smp_selftest.c src/arch/arm64/gicv3.c
+    src/arch/arm64/startup.S src/arch/arm64/mpstartup.S src/arch/arm64/arm64.S
+    src/arch/arm64/psci.S src/arch/arm64/timer.S src/arch/arm64/smc.S src/arch/arm64/gicv3.S
+    lib/libfdt/fdt.c lib/libfdt/fdt_check.c lib/libfdt/fdt_ro.c lib/libfdt/fdt_addresses.c
+    lib/libfdt/fdt_rw.c lib/libfdt/fdt_sw.c lib/libfdt/fdt_wip.c lib/libfdt/fdt_empty_tree.c lib/libfdt/fdt_strerror.c)
+
+if(CONFIG_QCOM_KEYS OR CONFIG_QCOM_SPMI)
+    list(APPEND SRC_FILES src/dt/spmi.c)
+endif()
+if(CONFIG_QCOM_KEYS OR CONFIG_KSHIM_TOUCH)
+    list(APPEND SRC_FILES src/dt/gpio.c)
+endif()
+if(CONFIG_QCOM_KEYS)
+    list(APPEND SRC_FILES src/dt/keys.c src/drivers/qcom_keys.c)
+endif()
+if(CONFIG_KSHIM_TOUCH)
+    list(APPEND SRC_FILES src/dt/touch.c src/drivers/st_ftm4.c src/drivers/st_ftm5.c)
+endif()
+if(CONFIG_KSHIM_FRAMEBUFFER)
+    list(APPEND SRC_FILES src/dt/splash.c)
+endif()
+if(CONFIG_KSHIM_FRAMEBUFFER OR CONFIG_KSHIM_LVGL)
+    list(APPEND SRC_FILES src/ui/framebuffer.c)
+endif()
+if(CONFIG_KSHIM_TOUCH OR CONFIG_KSHIM_LVGL)
+    list(APPEND SRC_FILES src/drivers/touch.c)
+endif()
+if(CONFIG_KSHIM_LVGL)
+    list(APPEND SRC_FILES src/ui/glass_renderer.c src/ui/lvgl_port.c src/ui/lvgl_os.c)
+endif()
+set(CRDK_SPMI ${CONFIG_QCOM_SPMI} CACHE BOOL "" FORCE)
+set(CRDK_GPIO ${CONFIG_QCOM_KEYS} CACHE BOOL "" FORCE)
+set(CRDK_GENI ${CONFIG_KSHIM_TOUCH} CACHE BOOL "" FORCE)
+set(CRDK_DISPLAY ${CONFIG_KSHIM_FRAMEBUFFER} CACHE BOOL "" FORCE)
+# Console type is selected from DT, so UART support remains a capability in every profile.
+set(CRDK_UART ON CACHE BOOL "" FORCE)
+
+if(CONFIG_KSHIM_LVGL)
+set(LV_CONF_BUILD_DISABLE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
+set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
+set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
+set(LV_CONF_PATH "${CMAKE_SOURCE_DIR}/src/include/lv_conf.h" CACHE FILEPATH "" FORCE)
+add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
+include(${CMAKE_SOURCE_DIR}/ports/lvgl/CMakeLists.txt)
+kshim_enable_lvgl_smp_adapter(lvgl "${CMAKE_SOURCE_DIR}/third_party/lvgl")
+target_link_libraries(lvgl PRIVATE c)
+
+add_library(kshim_glass STATIC
+    third_party/liquid-glass/ui_glass_optics.c
+    third_party/liquid-glass/ui_glass_motion.c
+    third_party/liquid-glass/liquid_glass_motion.c
+    third_party/liquid-glass/liquid_glass_compositor_core.c)
+target_include_directories(kshim_glass PUBLIC third_party/liquid-glass)
+target_link_libraries(kshim_glass PRIVATE c)
+set(KSHIM_UI_LIBRARIES lvgl kshim_glass)
+endif()
+add_subdirectory(ports/crdk)
+target_link_libraries(crdk PRIVATE c)
 
 # Specify the linker script
 set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/src/arch/arm64/aarch64.lds")
@@ -89,16 +187,25 @@ set(PROCESSED_LINKER_SCRIPT "${CMAKE_BINARY_DIR}/aarch64.lds")
 file(GLOB LINKER_HEADERS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/include/ld/*")
 add_custom_command(
     OUTPUT ${PROCESSED_LINKER_SCRIPT}
-    COMMAND ${CMAKE_C_COMPILER} -E -P -x c ${LINKER_SCRIPT} -o ${PROCESSED_LINKER_SCRIPT} -I${CMAKE_SOURCE_DIR}/src/include/ -D__LD_SCRIPT__
+    COMMAND ${CMAKE_C_COMPILER} -E -P -x c ${LINKER_SCRIPT} -o ${PROCESSED_LINKER_SCRIPT} -I${CMAKE_SOURCE_DIR}/src/include/ -D__LD_SCRIPT__ -DKSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} -DKSHIM_RUNTIME_SLOT_SIZE=${KSHIM_RUNTIME_SLOT_SIZE}
     DEPENDS ${LINKER_SCRIPT} ${LINKER_HEADERS}
     COMMENT "Preprocessing linker script"
 )
 
 add_custom_target(preprocess_linker_script ALL DEPENDS ${PROCESSED_LINKER_SCRIPT})
 add_executable(${OUTPUT_NAME}.elf ${SRC_FILES})
+if(KSHIM_UEFI_PAYLOAD)
+    get_filename_component(KSHIM_UEFI_PAYLOAD "${KSHIM_UEFI_PAYLOAD}" ABSOLUTE)
+    configure_file(src/arch/arm64/uefi_payload.S.in ${CMAKE_BINARY_DIR}/uefi_payload.S @ONLY)
+    set_source_files_properties(${CMAKE_BINARY_DIR}/uefi_payload.S PROPERTIES OBJECT_DEPENDS "${KSHIM_UEFI_PAYLOAD}")
+    target_sources(${OUTPUT_NAME}.elf PRIVATE ${CMAKE_BINARY_DIR}/uefi_payload.S)
+    target_compile_definitions(${OUTPUT_NAME}.elf PRIVATE KSHIM_HAS_UEFI_PAYLOAD=1)
+endif()
 add_dependencies(${OUTPUT_NAME}.elf preprocess_linker_script)
 target_link_libraries(${OUTPUT_NAME}.elf PRIVATE
     "-Wl,--start-group"
+    ${KSHIM_UI_LIBRARIES}
+    crdk
     c
     gcc
     "-Wl,--end-group"
@@ -110,19 +217,6 @@ add_custom_command(TARGET ${OUTPUT_NAME}.elf POST_BUILD
     COMMAND ${CMAKE_OBJCOPY} -O binary ${OUTPUT_NAME}.elf ${OUTPUT_NAME}.bin
     COMMENT "Generating executable binary"
 )
-
-# Generate common variables pass to Kconfig
-set(HOST_ARCH "${CMAKE_HOST_SYSTEM_PROCESSOR}")
-string(TIMESTAMP BUILD_TIME "%Y-%m-%d %H:%M:%S" UTC)
-get_filename_component(COMPILER_BASENAME "${CMAKE_C_COMPILER}" NAME)
-set(HOST_INFO "$ENV{USER}$ENV{USERNAME}@$ENV{HOSTNAME}$ENV{COMPUTERNAME} ${COMPILER_BASENAME} (${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION})")
-set(KCONFIG_ENV "srctree=${CMAKE_SOURCE_DIR}/src" "HOST_ARCH=${HOST_ARCH}" "HOST_INFO=${HOST_INFO}"
-                "BUILD_TIME=${BUILD_TIME}" "ARCH=${CMAKE_SYSTEM_PROCESSOR}" "VERSION=${KSHIMC_VERSION}"
-)
-
-find_program(MENUCONFIG_EXECUTABLE menuconfig)
-find_program(GUICONFIG_EXECUTABLE guiconfig)
-find_program(GENCONFIG_EXECUTABLE genconfig)
 
 if(MENUCONFIG_EXECUTABLE AND GENCONFIG_EXECUTABLE)
     add_custom_target(menuconfig

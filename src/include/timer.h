@@ -8,7 +8,7 @@ extern uint64_t arm64_read_cntpctl(void);
 extern uint64_t arm64_read_cntpcval(void);
 extern uint64_t arm64_read_cntptval(void);
 extern void arm64_write_cntpctl(uint64_t cntp_ctlr);
-extern void arm64_write_cntpcval(uint32_t cntp_cval);
+extern void arm64_write_cntpcval(uint64_t cntp_cval);
 extern void arm64_write_cntptval(uint64_t cntp_ctlr);
 
 uint64_t delay(uint64_t micro_seconds);
