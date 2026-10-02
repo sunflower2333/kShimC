@@ -1,4 +1,4 @@
-TB323FU / Canoe key-resource bring-up
+TB323FU / Canoe offline bring-up
 
 This change adds offline-tested device-tree resource parsing for Lenovo Legion Y700 Gen 5 (TB323FU / SM8850P). It is not a complete board port or an installation image.
 
@@ -13,11 +13,11 @@ The fixture is a minimal description of the relevant stock hardware connections,
 Baseline and dependencies:
 kShimC feature/2610: 121734f64dd97d26efaf94a264cdbe7ac0551e53
 DualBootKernelPatcher feature/2610: 2276163d066596cb0750e76cbfeec5c193b1779f
-CrDK remains pinned at b6c3335136b7f6b28271917de11e8f11982975fc, available on Project-Aloha/CrDK backup/2610. No CrDK or packer production changes are included.
+CrDK remains pinned at b6c3335136b7f6b28271917de11e8f11982975fc, available on Project-Aloha/CrDK backup/2610. The upstream CrDK checkout and the packer remain unchanged. The Canoe splash extension lives in kShimC's existing ports/crdk patch, which introduces DisplayLib; that library does not exist at the pinned upstream CrDK revision.
 
 Remaining board work:
 - Confirm actual key reads and firmware-granted SPMI/MMIO access on hardware.
-- Adapt continuous-splash discovery to the board's SDE/HFI resources. The current stock tree exposes more pipe/mixer slots than the existing reader accepts.
+- Validate inherited scanout, framebuffer format and firmware-granted display access on hardware. The offline Canoe reader does not initialize the panel or DSI.
 - Add Novatek SPI touch support if required for the boot menu; FTM4/FTM5 are not substitutes.
 - Supply the mainline board DT and define how runtime memory, reservations, boot arguments and initramfs information reach that DT. The current runtime selects a payload DT; it does not merge these properties.
 - Validate Android boot container sizing, boot-chain requirements and recovery before physical testing.
@@ -25,3 +25,18 @@ Remaining board work:
 Hardware has not been accessed for this adaptation. No boot image has been flashed or packaged for installation. Builds of existing profiles validate code compilation only and do not declare those profiles suitable for TB323FU.
 
 Validation on 2026-10-03 (Docker, 192.168.88.9): the new fixture fails on the unmodified baseline at SPMI discovery and passes after the change; all 15 host tests pass with ASan/UBSan. The existing HDK8450 capability profile builds a 4 MiB Manifest runtime with no unresolved symbols, exercising the enabled key/SPMI code. All six Manifest QEMU cases pass with that runtime. Separate packer-only tests preserve the original TB323FU kernel byte-for-byte through unpacking and repacking, including independent payload-DT references. No physical device testing has occurred.
+
+Canoe continuous-splash extension
+
+For qcom,sde-hw-version 0xd0000000, the DT adapter accepts four VIG and six DMA pipes, six stock CTLs, and eight real layer mixers. It skips zero/dummy (0x0f0f) entries while retaining each real mixer's original hardware index. The stock HFI node is disabled; the enabled qcom,sde-kms node supplies the MMIO resources.
+
+This generation uses CTL_PIPE_ACTIVE / CTL_LAYER_ACTIVE and the mixer's background/per-stage source selectors instead of legacy CTL_LAYER routing. The reader requires exactly one supported source per active mixer and agreement with the active-pipe mask. The existing legacy route remains selected for other versions and does not require the added stage properties.
+
+Register facts were cross-checked against the manufacturer's public SM8850 display driver, fixed at 5ab2a689ff87d7d28c511f1762cf41c1b90d965a:
+https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8850/blob/5ab2a689ff87d7d28c511f1762cf41c1b90d965a/vendor/qcom/opensource/display-drivers/msm/sde/sde_hw_catalog.c
+https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8850/blob/5ab2a689ff87d7d28c511f1762cf41c1b90d965a/vendor/qcom/opensource/display-drivers/msm/sde/sde_hw_ctl.c
+https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8850/blob/5ab2a689ff87d7d28c511f1762cf41c1b90d965a/vendor/qcom/opensource/display-drivers/msm/sde/sde_hw_lm.c
+
+The splash reader only reads display MMIO. It retains the existing linear RGB565/8888 formats and contiguous two-half framebuffer checks. Compressed, multirect, overlapping or inconsistent configurations are rejected. A 10-bpc panel specification does not establish the boot framebuffer's format. Real bootloader register state, framebuffer caching/access and actual menu rendering remain untested. This is not a TB323FU installation image or proof of Linux panel support.
+
+Display validation on 2026-10-03 (Docker, 192.168.88.9): the new dual-scanout fixture compiles against the previous code and fails at the expected success assertion. With the Canoe extension, all 16 ASan/UBSan host tests pass (7.81 seconds), including DMA4/5 and VIG routes, LM6/7, sparse mixer IDs, dummy-active slots, pipe-mask mismatch, unsupported rect/format/compression, out-of-reservation address, duplicate/out-of-range stage offsets, and a changing scanout address. Mock display writes and legacy CTL reads are forbidden by assertions in the Canoe test. The existing HDK8450 capability profile builds a 4 MiB ARM64 runtime with no undefined symbols; all six Manifest QEMU tests pass. These are offline software checks, not TB323FU boot/display acceptance.

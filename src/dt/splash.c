@@ -39,18 +39,46 @@ int kshim_dt_splash(const void *f, const struct CrIo *io,
     if (sde < 0 || dt_reg_named(f, sde, "mdp_phys", &reg)) return -1;
     struct CrSplashResources resources = {.base = reg.base, .size = reg.size,
         .reserved_base = memory.base, .reserved_size = memory.size};
-    int pipes = offsets(f, sde, "qcom,sde-sspp-off", resources.pipe, 8);
+    uint32_t version;
+    bool canoe = dt_u32(f, sde, "qcom,sde-hw-version", &version) == 0 && version == 0xd0000000;
+    resources.lm_source_select = canoe;
+    int pipes = offsets(f, sde, "qcom,sde-sspp-off", resources.pipe, canoe ? 10 : 8);
     int ctls = offsets(f, sde, "qcom,sde-ctl-off", resources.ctl, 8);
-    int count = offsets(f, sde, "qcom,sde-mixer-off", resources.mixer, 6);
+    int count;
+    if (canoe) {
+        uint32_t raw[12];
+        int raw_n = offsets(f, sde, "qcom,sde-mixer-off", raw, 12);
+        if (raw_n < 1) return -1;
+        count = 0;
+        for (int i = 0; i < raw_n; ++i) {
+            if (raw[i] == 0 || raw[i] == 0xf0f) continue;
+            if (i >= 8) return -1;
+            /* Keep the DT slot as the hardware LM index: dummy slots (0 / 0xf0f)
+               still consume positions, so a compacted index would mis-address LMs. */
+            resources.mixer_id[count] = (uint8_t)i;
+            resources.mixer[count] = raw[i];
+            ++count;
+        }
+        if (count < 1) return -1;
+    } else {
+        count = offsets(f, sde, "qcom,sde-mixer-off", resources.mixer, 6);
+    }
     if (pipes < 1 || ctls < 1 || count < 1) return -1;
     resources.pipe_count = pipes; resources.ctl_count = ctls; resources.mixer_count = count;
-    unsigned vig = 0, dma = 0;
+    if (canoe) {
+        int stages = offsets(f, sde, "qcom,sde-mixer-blend-op-off", resources.stage, 11);
+        uint32_t blendstages;
+        if (stages < 1 || dt_u32(f, sde, "qcom,sde-mixer-blendstages", &blendstages) ||
+            blendstages != (uint32_t)stages) return -1;
+        resources.stage_count = stages;
+    }
+    unsigned vig = 0, dma = 0, dma_max = canoe ? 6 : 4;
     for (int i = 0; i < pipes; ++i) {
         int len;
         const char *type = fdt_stringlist_get(f, sde, "qcom,sde-sspp-type", i, &len);
         if (!type) return -1;
         if (len == 3 && !memcmp(type, "vig", 3) && vig < 4) resources.pipe_id[i] = vig++;
-        else if (len == 3 && !memcmp(type, "dma", 3) && dma < 4) resources.pipe_id[i] = 4 + dma++;
+        else if (len == 3 && !memcmp(type, "dma", 3) && dma < dma_max) resources.pipe_id[i] = 4 + dma++;
         else return -1;
     }
     struct CrSplash scanout;

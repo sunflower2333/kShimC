@@ -910,10 +910,9 @@ index 0000000..a93bc74
 +int CrQupQuiesce(struct CrQupContext *p);
 diff --git a/Include/Library/cr_splash.h b/Include/Library/cr_splash.h
 new file mode 100644
-index 0000000..7f5f36d
 --- /dev/null
 +++ b/Include/Library/cr_splash.h
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,25 @@
 +/* SPDX-License-Identifier: MIT */
 +#pragma once
 +#include <Library/cr_geni.h>
@@ -923,9 +922,13 @@ index 0000000..7f5f36d
 +    uintptr_t base;
 +    size_t size;
 +    uint64_t reserved_base, reserved_size;
-+    uint32_t pipe[8], ctl[8], mixer[6];
-+    uint8_t pipe_id[8]; /* VIG0..3=0..3, DMA0..3=4..7 */
++    uint32_t pipe[10], ctl[8], mixer[8];
++    uint8_t pipe_id[10]; /* VIG0..3=0..3, DMA0..5=4..9 */
 +    unsigned pipe_count, ctl_count, mixer_count;
++    bool lm_source_select;
++    uint8_t mixer_id[8];
++    uint32_t stage[11];
++    unsigned stage_count;
 +};
 +struct CrSplash {
 +    uintptr_t address;
@@ -2148,10 +2151,9 @@ index 0000000..d4ce06e
 +  BaseLib
 diff --git a/Library/DisplayLib/splash.c b/Library/DisplayLib/splash.c
 new file mode 100644
-index 0000000..baed76e
 --- /dev/null
 +++ b/Library/DisplayLib/splash.c
-@@ -0,0 +1,127 @@
+@@ -0,0 +1,204 @@
 +/* SPDX-License-Identifier: MIT */
 +#include <Library/cr_splash.h>
 +#include <oskal/cr_string.h>
@@ -2170,13 +2172,13 @@ index 0000000..baed76e
 +        .op = rd(r, io, base + 56), .secure = rd(r, io, base + 112),
 +        .rect = rd(r, io, base + 0x170)};
 +}
-+struct routing { unsigned mask; int mixer[8]; uint32_t out[8], op[8]; };
-+static int active(const struct CrSplashResources *r, const struct CrIo *io, struct routing *route)
++struct routing { unsigned mask; int mixer[10]; uint32_t out[10], op[10]; };
++static int active_legacy(const struct CrSplashResources *r, const struct CrIo *io, struct routing *route)
 +{
 +    static const unsigned shift[] = {0, 3, 6, 26, 18, 21};
 +    static const unsigned ext_shift[] = {0, 2, 4, 6, 16, 18};
 +    cr_memset(route, 0, sizeof(*route));
-+    for (unsigned p = 0; p < 8; ++p) route->mixer[p] = -1;
++    for (unsigned p = 0; p < 10; ++p) route->mixer[p] = -1;
 +    unsigned mixers = 0;
 +    for (unsigned c = 0; c < r->ctl_count; ++c) {
 +        unsigned base = r->ctl[c];
@@ -2207,6 +2209,65 @@ index 0000000..baed76e
 +    }
 +    return 0;
 +}
++static int active_lm(const struct CrSplashResources *r, const struct CrIo *io, struct routing *route)
++{
++    cr_memset(route, 0, sizeof(*route));
++    for (unsigned p = 0; p < 10; ++p) route->mixer[p] = -1;
++    for (unsigned c = 0; c < r->ctl_count; ++c) {
++        unsigned base = r->ctl[c];
++        if (!rd(r, io, base + 0xf4)) continue;
++        uint32_t pipe_active = rd(r, io, base + 0x12c);
++        uint32_t lm_active = rd(r, io, base + 0x130);
++        if ((pipe_active & ~0x000f003fU) || !pipe_active || !lm_active) return CR_BUS_UNSUPPORTED;
++        unsigned supplied = 0;
++        for (unsigned m = 0; m < r->mixer_count; ++m) supplied |= 1U << r->mixer_id[m];
++        if (lm_active & ~supplied) return CR_BUS_UNSUPPORTED;
++        unsigned acc = 0;
++        for (unsigned i = 0; i < 8; ++i) {
++            if (!(lm_active & (1U << i))) continue;
++            unsigned m;
++            for (m = 0; m < r->mixer_count; ++m) if (r->mixer_id[m] == i) break;
++            if (m == r->mixer_count) return CR_BUS_UNSUPPORTED;
++            uint32_t lbase = r->mixer[m];
++            uint32_t sel[1 + 11];
++            unsigned n = 0, chosen = 0, selected = 0;
++            sel[n++] = rd(r, io, lbase + 0x14);
++            for (unsigned s = 0; s < r->stage_count; ++s)
++                sel[n++] = rd(r, io, lbase + r->stage[s] + 4);
++            for (unsigned g = 0; g < n; ++g) {
++                uint32_t v = sel[g];
++                if (v >> 16) return CR_BUS_UNSUPPORTED;
++                for (unsigned b = 0; b < 2; ++b) {
++                    unsigned byte = (v >> (b * 8)) & 0xff;
++                    if (byte == 0xc0) continue;
++                    unsigned type = (byte >> 6) & 3;
++                    unsigned id = byte & 0xf;
++                    if (((byte >> 4) & 3) || type > 1) return CR_BUS_UNSUPPORTED;
++                    unsigned mapped;
++                    if (type == 0) { if (id > 5) return CR_BUS_UNSUPPORTED; mapped = 4 + id; }
++                    else { if (id > 3) return CR_BUS_UNSUPPORTED; mapped = id; }
++                    unsigned p;
++                    for (p = 0; p < r->pipe_count; ++p) if (r->pipe_id[p] == mapped) break;
++                    if (p == r->pipe_count || route->mixer[p] >= 0) return CR_BUS_UNSUPPORTED;
++                    unsigned hw = mapped < 4 ? 16 + mapped : mapped - 4;
++                    if (!(pipe_active & (1U << hw))) return CR_BUS_UNSUPPORTED;
++                    if (selected) return CR_BUS_UNSUPPORTED;
++                    selected = 1; chosen = p;
++                    acc |= 1U << hw;
++                }
++            }
++            if (!selected) return CR_BUS_UNSUPPORTED;
++            route->mask |= 1U << chosen;
++            route->mixer[chosen] = (int)m;
++            route->out[chosen] = rd(r, io, lbase + 4);
++            route->op[chosen] = rd(r, io, lbase) & (1U << 31);
++        }
++        if (acc != pipe_active) return CR_BUS_UNSUPPORTED;
++    }
++    return 0;
++}
++static int active(const struct CrSplashResources *r, const struct CrIo *io, struct routing *route)
++{ return r->lm_source_select ? active_lm(r, io, route) : active_legacy(r, io, route); }
 +static int format(const struct scan *s, enum CrSplashFormat *f, unsigned *bytes)
 +{
 +    /* Linear, tightly packed, interleaved RGB only; no rotate/YUV/DX/solid-fill. */
@@ -2224,18 +2285,36 @@ index 0000000..baed76e
 +int CrSplashRead(const struct CrSplashResources *r, const struct CrIo *io, struct CrSplash *fb)
 +{
 +    if (!r || !io || !io->read32 || !fb || !r->base || r->base > UINTPTR_MAX - r->size ||
-+        !r->pipe_count || r->pipe_count > 8 || !r->ctl_count || r->ctl_count > 8 ||
-+        !r->mixer_count || r->mixer_count > 6 || !r->reserved_size) return CR_BUS_INVALID;
++        !r->pipe_count || !r->ctl_count || !r->mixer_count || !r->reserved_size) return CR_BUS_INVALID;
++    bool canoe = r->lm_source_select;
++    if (r->pipe_count > (canoe ? 10 : 8) || r->ctl_count > 8 || r->mixer_count > (canoe ? 8 : 6))
++        return CR_BUS_INVALID;
 +    unsigned ids = 0;
 +    for (unsigned p = 0; p < r->pipe_count; ++p) {
-+        if (r->pipe_id[p] > 7 || (ids & (1U << r->pipe_id[p])) ||
++        if (r->pipe_id[p] > (canoe ? 9 : 7) || (ids & (1U << r->pipe_id[p])) ||
 +            (r->pipe[p] & 3) || !within(0, r->size, r->pipe[p], 0x174)) return CR_BUS_INVALID;
 +        ids |= 1U << r->pipe_id[p];
 +    }
++    unsigned ctl_span = canoe ? 0x134 : 0xf8;
 +    for (unsigned c = 0; c < r->ctl_count; ++c)
-+        if ((r->ctl[c] & 3) || !within(0, r->size, r->ctl[c], 0xf8)) return CR_BUS_INVALID;
++        if ((r->ctl[c] & 3) || !within(0, r->size, r->ctl[c], ctl_span)) return CR_BUS_INVALID;
 +    for (unsigned m = 0; m < r->mixer_count; ++m)
-+        if ((r->mixer[m] & 3) || !within(0, r->size, r->mixer[m], 8)) return CR_BUS_INVALID;
++        if ((r->mixer[m] & 3) || !within(0, r->size, r->mixer[m], canoe ? 0x18 : 8)) return CR_BUS_INVALID;
++    if (canoe) {
++        if (!r->stage_count || r->stage_count > 11) return CR_BUS_INVALID;
++        unsigned mids = 0;
++        for (unsigned m = 0; m < r->mixer_count; ++m) {
++            if (r->mixer_id[m] > 7 || (mids & (1U << r->mixer_id[m]))) return CR_BUS_INVALID;
++            mids |= 1U << r->mixer_id[m];
++        }
++        for (unsigned i = 0; i < r->stage_count; ++i) {
++            if ((r->stage[i] & 3) || r->stage[i] < 0x40) return CR_BUS_INVALID;
++            for (unsigned j = i + 1; j < r->stage_count; ++j)
++                if (r->stage[i] == r->stage[j]) return CR_BUS_INVALID;
++            for (unsigned m = 0; m < r->mixer_count; ++m)
++                if (!within(0, r->size, (uint64_t)r->mixer[m] + r->stage[i], 8)) return CR_BUS_INVALID;
++        }
++    }
 +    struct routing route, again;
 +    if (active(r, io, &route) || !route.mask) return CR_BUS_UNSUPPORTED;
 +    struct scan scans[2]; unsigned count = 0, pipe[2], bytes = 0;

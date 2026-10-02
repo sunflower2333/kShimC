@@ -133,3 +133,24 @@ kshim_test(tb323fu_keys_test
 target_link_libraries(tb323fu_keys_test PRIVATE kshim_dt)
 add_dependencies(tb323fu_keys_test tb323fu_fixture)
 target_compile_definitions(tb323fu_keys_test PRIVATE FIXTURE_PATH="${TB323FU_KEYS_DTB}")
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fixtures)
+
+set(TB323FU_SPLASH_DTB
+    ${CMAKE_CURRENT_BINARY_DIR}/fixtures/tb323fu-splash.dtb)
+
+add_custom_command(
+    OUTPUT ${TB323FU_SPLASH_DTB}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/fixtures
+    COMMAND ${DTC_EXECUTABLE} -I dts -O dtb -o ${TB323FU_SPLASH_DTB}
+            ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/tb323fu-splash.dts
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/tb323fu-splash.dts
+    VERBATIM)
+
+add_custom_target(tb323fu_splash_fixture DEPENDS ${TB323FU_SPLASH_DTB})
+
+kshim_test(tb323fu_splash_test tb323fu_splash_test.c)
+target_link_libraries(tb323fu_splash_test PRIVATE kshim_dt)
+add_dependencies(tb323fu_splash_test tb323fu_splash_fixture)
+target_compile_definitions(tb323fu_splash_test PRIVATE
+    FIXTURE_PATH="${TB323FU_SPLASH_DTB}")
