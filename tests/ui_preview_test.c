@@ -71,7 +71,21 @@ static uint64_t WritePpm(
     assert(Different > Framebuffer->height);
     assert(fclose(File) == 0);
     printf("%s  %016" PRIx64 "\n", Path, Hash);
+    fflush(stdout);
     return Hash;
+}
+
+/* 记录确认入口和动画状态，保留原始像素断言。 */
+static void TraceConfirmation(const char *Stage, const kshim_lvgl_t *Ui)
+{
+    printf("CONFIRM %s: index=%d ready=%u elapsed=%u\n", Stage,
+           Ui->PendingIndex, (unsigned)Ui->Ready, (unsigned)Ui->ElapsedMs);
+    printf("CONFIRM %s: animation=%u scale_x=%ld scale_y=%ld running=%u\n", Stage,
+           (unsigned)(lv_anim_get(Ui->BootButton, NULL) != NULL),
+           (long)lv_obj_get_style_transform_scale_x(Ui->BootButton, LV_PART_MAIN),
+           (long)lv_obj_get_style_transform_scale_y(Ui->BootButton, LV_PART_MAIN),
+           (unsigned)lv_anim_count_running());
+    fflush(stdout);
 }
 
 static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
@@ -105,7 +119,6 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     memset(Inputs, 0, sizeof(Inputs));
     assert(QcomKeysInit(&Keys, Descriptors, 3U, ReadInput, NULL) == 0);
 
-    /* The display reservation's tail on a device: font and textures. */
     static uint8_t Scratch[4U << 20] __attribute__((aligned(64)));
     kshim_lvgl_set_scratch(Scratch, sizeof(Scratch));
     kshim_lvgl_t Ui;
@@ -131,10 +144,16 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     uint64_t FocusHash = WritePpm(Directory, "focus-130ms", &Framebuffer);
     assert(FocusHash != ReadyHash);
 
-    assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) ==
-           LV_RESULT_OK);
+    assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
+    TraceConfirmation("requested", &Ui);
     Advance(&Ui, KSHIM_UI_CONFIRM_DURATION_MS / 2U);
+    TraceConfirmation("sampled", &Ui);
     uint64_t ConfirmHash = WritePpm(Directory, "confirm-90ms", &Framebuffer);
+    if (ConfirmHash == FocusHash) {
+        /* 强制刷新只用于诊断，不替代对自动刷新帧的断言。 */
+        lv_refr_now(Ui.Display);
+        (void)WritePpm(Directory, "confirm-diagnostic-refresh", &Framebuffer);
+    }
     assert(ConfirmHash != FocusHash);
     assert(kshim_lvgl_take_index(&Ui) == 2);
 
