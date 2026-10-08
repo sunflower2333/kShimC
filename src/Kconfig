@@ -115,44 +115,24 @@ menu "Framebuffer and UI"
         depends on KSHIM_LVGL
         default KSHIM_MENU_STYLE_FLAT
         help
-            Select the device boot menu appearance, not the host menuconfig
-            colors. Selection, touch confirmation and boot actions are shared.
-            Only FLAT allocates and updates animated background textures.
+            Select the device boot menu appearance, not host menuconfig colors.
+            Input and boot actions are shared. Only FLAT uses animated textures.
+            Modern styles do not enable LVGL's built-in default theme.
 
         config KSHIM_MENU_STYLE_FLAT
             bool "FLAT - original dark acrylic"
-            help
-                Borderless indigo panel, blue focus and animated backdrop.
-                This is the compatible default for existing configurations.
-
         config KSHIM_MENU_STYLE_CLASSIC
-            bool "CLASSIC - framed firmware menu"
-            help
-                Opaque navy panel, square framed rows and blue selection.
-
+            bool "CLASSIC - existing framed firmware menu"
         config KSHIM_MENU_STYLE_CARDS
-            bool "CARDS - light rounded cards"
-            help
-                Light panel, separated rounded white cards, outlined blue
-                focus and a solid blue Boot button. No background animation.
-
+            bool "CARDS - existing light rounded cards"
         config KSHIM_MENU_STYLE_TERMINAL
-            bool "TERMINAL - green terminal look"
-            help
-                Near-black background, green square frames and reverse-video
-                selection. Keeps the existing CJK-capable font, not monospace.
-
+            bool "TERMINAL - existing green terminal look"
         config KSHIM_MENU_STYLE_MINIMAL
-            bool "MINIMAL - quiet monochrome"
-            help
-                Borderless black panel with square rows and a left-side focus
-                marker. No animated background or decorative shadows.
-
+            bool "MINIMAL - existing quiet monochrome"
         config KSHIM_MENU_STYLE_HIGH_CONTRAST
-            bool "HIGH_CONTRAST - black and white"
-            help
-                Black surfaces, white frames and reverse-video selection.
-                No translucent surfaces or animated background.
+            bool "HIGH_CONTRAST - existing black and white"
+
+        source "$srctree/ui/styles/Kconfig"
     endchoice
 
     config KSHIM_UI_SCRATCH_BASE
@@ -166,11 +146,9 @@ menu "Framebuffer and UI"
         depends on KSHIM_LVGL
         help
             RAM outside the runtime slot for the inflated Noto Sans CJK font
-            (about 840 KiB) and, for FLAT only, two background textures. On Qualcomm
-            boards the display reservation past the scanout frame is used;
-            this window is only for platforms without one, such as the QEMU
-            test profile. Without scratch memory the menu falls back to a
-            Latin-only font on a plain background.
+            (about 840 KiB) and, for FLAT only, two background textures.
+            Qualcomm boards use the display reservation past scanout.
+            Without scratch the menu uses the existing Latin fallback font.
 
     config KSHIM_LVGL_BUFFER_BYTES
         int "LVGL partial render buffer size"
@@ -178,9 +156,8 @@ menu "Framebuffer and UI"
         default 16384
         depends on KSHIM_LVGL
         help
-            Bytes per partial color render buffer. It must hold at least
-            one framebuffer row. Board profiles use 256 KiB buffers.
-
+            Bytes per partial color render buffer. Must hold one framebuffer
+            row. Board profiles use 256 KiB buffers.
 endmenu
 
 menu "Generic"
@@ -194,16 +171,13 @@ menu "Generic"
     config KSHIM_MENU_ENTRY1
         string "First menu entry"
         default "Boot"
-
     config KSHIM_MENU_ENTRY2
         string "Second menu entry"
         default "Recovery"
-
     config KSHIM_UEFI_LOAD_ADDRESS
         hex "UEFI FD destination/entry address"
         default 0xFFC00000
         depends on KSHIM_UEFI_TEST_MENU
-
     config KSHIM_UEFI_MAX_SIZE
         hex "UEFI FD reserved size"
         default 0x400000
@@ -215,44 +189,25 @@ menu "Generic"
         help
             Enable or disable the boot banner.
             If disabled, no banner will be displayed during boot.
-
     config BANNER
         string "Boot Banner"
-        # prompt "Boot Banner"
         default "kShimC v$(VERSION) $(HOST_INFO) $(BUILD_TIME) \n"
-        help 
-            A banner message displayed during boot.
         depends on ENABLE_BANNER
 
     choice
         bool
         prompt "Debug Level"
         default DEBUG_LEVEL_VERBOSE
-
         config DEBUG_LEVEL_NONE
             bool "None"
-            help
-                No debug messages will be printed.
-
         config DEBUG_LEVEL_ERROR
             bool "Error"
-            help
-                Only error messages will be printed.
-
         config DEBUG_LEVEL_WARNING
             bool "Warning"
-            help
-                Warning and error messages will be printed.
-
         config DEBUG_LEVEL_INFO
             bool "Info"
-            help
-                Info, warning, and error messages will be printed.
-
         config DEBUG_LEVEL_VERBOSE
             bool "Verbose"
-            help
-                All debug messages will be printed, including verbose messages.
     endchoice
 
     config ASSERT_HALT

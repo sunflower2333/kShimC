@@ -1,0 +1,22 @@
+/* 仅编入一个现代风格，运行时不分配主题表。 */
+#if defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT
+#include "fluent.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL3) && CONFIG_KSHIM_MENU_STYLE_MATERIAL3
+#include "material3.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_SURFACE) && CONFIG_KSHIM_MENU_STYLE_SURFACE
+#include "surface.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_CUPERTINO) && CONFIG_KSHIM_MENU_STYLE_CUPERTINO
+#include "cupertino.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS
+#include "glass.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_AURORA) && CONFIG_KSHIM_MENU_STYLE_AURORA
+#include "aurora.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_SOFT_UI) && CONFIG_KSHIM_MENU_STYLE_SOFT_UI
+#include "soft_ui.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_BENTO) && CONFIG_KSHIM_MENU_STYLE_BENTO
+#include "bento.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_NEON) && CONFIG_KSHIM_MENU_STYLE_NEON
+#include "neon.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD
+#include "nord.h"
+#endif

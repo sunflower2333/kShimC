@@ -31,6 +31,26 @@ typedef struct {
     uint8_t RadiusMax;
     uint8_t RowGapDivisor;
     uint8_t AnimatedBackdrop;
+    /* 现代风格的可选几何与效果；旧预设零初始化，不改变原有行为。 */
+    uint8_t Modern;
+    uint8_t Layout;       /* 0=列表，1=Surface 双栏，2=Bento 自适应卡片 */
+    uint8_t Divider;
+    uint8_t PanelRadius;
+    uint8_t BootRadius;   /* 255=胶囊按钮 */
+    uint8_t RowGap;
+    uint8_t FocusSlide;
+    uint16_t PressScale;
+    uint8_t PanelShadow;
+    uint8_t RowShadow;
+    uint8_t FocusGlow;
+    uint8_t FocusOutline;
+    uint32_t ScreenEnd;
+    uint32_t PanelEnd;
+    uint32_t FocusEnd;
+    uint32_t Press;
+    uint32_t PressText;
+    uint32_t Shadow;
+    uint32_t Navigation;
 } kshim_menu_style_t;
 
 /* 拒绝手工构造的多选配置，避免静默采用第一个分支。 */
@@ -39,10 +59,32 @@ typedef struct {
     (defined(CONFIG_KSHIM_MENU_STYLE_CARDS) && CONFIG_KSHIM_MENU_STYLE_CARDS) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_TERMINAL) && CONFIG_KSHIM_MENU_STYLE_TERMINAL) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_MINIMAL) && CONFIG_KSHIM_MENU_STYLE_MINIMAL) + \
-    (defined(CONFIG_KSHIM_MENU_STYLE_HIGH_CONTRAST) && CONFIG_KSHIM_MENU_STYLE_HIGH_CONTRAST) > 1
+    (defined(CONFIG_KSHIM_MENU_STYLE_HIGH_CONTRAST) && CONFIG_KSHIM_MENU_STYLE_HIGH_CONTRAST) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL3) && CONFIG_KSHIM_MENU_STYLE_MATERIAL3) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_SURFACE) && CONFIG_KSHIM_MENU_STYLE_SURFACE) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_CUPERTINO) && CONFIG_KSHIM_MENU_STYLE_CUPERTINO) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_AURORA) && CONFIG_KSHIM_MENU_STYLE_AURORA) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_SOFT_UI) && CONFIG_KSHIM_MENU_STYLE_SOFT_UI) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_BENTO) && CONFIG_KSHIM_MENU_STYLE_BENTO) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_NEON) && CONFIG_KSHIM_MENU_STYLE_NEON) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD) > 1
 #error "Select exactly one KSHIM_MENU_STYLE preset"
 #endif
 
+#if (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL3) && CONFIG_KSHIM_MENU_STYLE_MATERIAL3) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_SURFACE) && CONFIG_KSHIM_MENU_STYLE_SURFACE) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_CUPERTINO) && CONFIG_KSHIM_MENU_STYLE_CUPERTINO) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_AURORA) && CONFIG_KSHIM_MENU_STYLE_AURORA) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_SOFT_UI) && CONFIG_KSHIM_MENU_STYLE_SOFT_UI) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_BENTO) && CONFIG_KSHIM_MENU_STYLE_BENTO) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_NEON) && CONFIG_KSHIM_MENU_STYLE_NEON) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD)
+#include "styles/modern.h"
+#else
 static const kshim_menu_style_t mMenuStyle = {
 #if defined(CONFIG_KSHIM_MENU_STYLE_CLASSIC) && CONFIG_KSHIM_MENU_STYLE_CLASSIC
     .Name = "CLASSIC",
@@ -203,6 +245,7 @@ static const kshim_menu_style_t mMenuStyle = {
     .AnimatedBackdrop = 1U,
 #endif
 };
+#endif /* modern / legacy */
 
 /* 计算行和 Boot 按钮的圆角，小尺寸控件不超过半高。 */
 static inline uint32_t kshim_menu_style_radius(uint32_t Height)

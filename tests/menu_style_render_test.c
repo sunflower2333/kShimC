@@ -37,7 +37,7 @@ static void CheckChrome(kshim_lvgl_t *Ui)
     assert(lv_obj_get_style_bg_opa(Panel, LV_PART_MAIN) == mMenuStyle.PanelOpacity);
     assert(lv_obj_get_style_outline_width(Panel, LV_PART_MAIN) == mMenuStyle.PanelOutlineWidth);
     assert(lv_obj_get_style_border_width(Panel, LV_PART_MAIN) == 0);
-    if (mMenuStyle.RadiusMax == 0U)
+    if (mMenuStyle.Modern == 0U && mMenuStyle.RadiusMax == 0U)
         assert(lv_obj_get_style_radius(Panel, LV_PART_MAIN) == 0);
 
     lv_group_focus_obj(First);
@@ -51,7 +51,8 @@ static void CheckChrome(kshim_lvgl_t *Ui)
     assert(lv_obj_get_style_border_opa(Second, LV_PART_MAIN) ==
            (mMenuStyle.BorderAtRest != 0U ? LV_OPA_COVER : LV_OPA_TRANSP));
     assert(lv_obj_get_style_border_side(First, LV_PART_MAIN) ==
-           (mMenuStyle.LeftBorderOnly != 0U ? LV_BORDER_SIDE_LEFT : LV_BORDER_SIDE_FULL));
+           (mMenuStyle.Divider != 0U ? LV_BORDER_SIDE_BOTTOM :
+            mMenuStyle.LeftBorderOnly != 0U ? LV_BORDER_SIDE_LEFT : LV_BORDER_SIDE_FULL));
     assert(lv_obj_get_style_radius(First, LV_PART_MAIN) ==
            (int32_t)kshim_menu_style_radius((uint32_t)lv_obj_get_height(First)));
 
@@ -61,7 +62,8 @@ static void CheckChrome(kshim_lvgl_t *Ui)
     CheckColor(lv_obj_get_style_bg_color(Ui->BootButton, LV_PART_MAIN), mMenuStyle.BootPressed);
     lv_obj_remove_state(Ui->BootButton, LV_STATE_PRESSED);
     lv_obj_add_state(First, LV_STATE_PRESSED);
-    CheckColor(lv_obj_get_style_text_color(First, LV_PART_MAIN), mMenuStyle.FocusText);
+    CheckColor(lv_obj_get_style_text_color(First, LV_PART_MAIN),
+               mMenuStyle.Modern != 0U ? mMenuStyle.PressText : mMenuStyle.FocusText);
     lv_obj_remove_state(First, LV_STATE_PRESSED);
     assert(kshim_lvgl_take_index(Ui) == -1);
 }

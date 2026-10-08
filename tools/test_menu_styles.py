@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""编译六种菜单预设，检查兼容默认值、颜色对比度与非法多选配置。"""
+"""编译十六种菜单预设，检查兼容默认值、颜色对比度与非法多选配置。"""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,7 @@ import shlex
 import subprocess
 import tempfile
 
-STYLES = ("FLAT", "CLASSIC", "CARDS", "TERMINAL", "MINIMAL", "HIGH_CONTRAST")
+STYLES = ('FLAT', 'CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD')
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tests/menu_style_tokens_test.c"
 FIELDS = ("screen", "panel", "text", "muted", "item", "focus", "focus_text",
@@ -58,6 +58,52 @@ def check_preset(
     return dict(zip(FIELDS, (int(v, 16) for v in values[1:])))
 
 
+# 将背景与前景按整数 alpha 合成，检查玻璃透明度及渐变状态的可读性。
+def mix(background: int, foreground: int, opacity: int) -> int:
+    return sum(((((background >> shift) & 255) * (255 - opacity) +
+                  ((foreground >> shift) & 255) * opacity + 127) // 255) << shift
+               for shift in (0, 8, 16))
+
+
+# 从真正编译的 C 预设读取效果字段，覆盖渐变中间值和按压态而非只看色板名。
+def check_effects(compiler: list[str], temporary: Path, name: str) -> None:
+    fields = ("Modern", "Screen", "ScreenEnd", "Panel", "PanelEnd", "PanelOpacity",
+              "Item", "ItemOpacity", "Muted", "Text", "Focus", "FocusEnd", "FocusOpacity",
+              "FocusText", "Press", "PressText", "Boot", "BootPressed", "BootText")
+    source = temporary / "effects.c"
+    source.write_text('#include <stdio.h>\n#include "menu_style.h"\nint main(void) { printf("' +
+                      ' '.join('%u' for _ in fields) + '\\n", ' +
+                      ', '.join('(unsigned)mMenuStyle.' + f for f in fields) + '); return 0; }\n')
+    executable = temporary / "effects"
+    result = run(compiler + ["-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-I", str(ROOT / "src/ui"),
+                            f"-DCONFIG_KSHIM_MENU_STYLE_{name}=1", str(source), "-o", str(executable)])
+    if result.returncode:
+        raise RuntimeError(f"Effect probe failed: {result.stderr}")
+    result = run([str(executable)])
+    if result.returncode:
+        raise RuntimeError(f"Effect probe execution failed: {result.stderr}")
+    values = dict(zip(fields, map(int, result.stdout.split())))
+    if not values["Modern"]:
+        return
+    ratios = []
+    for opacity in range(0, 256, 17):
+        panel = mix(values["Panel"], values["PanelEnd"], opacity)
+        focus = mix(values["Focus"], values["FocusEnd"], opacity)
+        for screen in (values["Screen"], values["ScreenEnd"]):
+            surface = mix(screen, panel, values["PanelOpacity"])
+            item = mix(surface, values["Item"], values["ItemOpacity"])
+            selected = mix(surface, focus, values["FocusOpacity"])
+            ratios.extend((contrast(values["Text"], surface), contrast(values["Muted"], surface),
+                           contrast(values["Muted"], item), contrast(values["FocusText"], selected)))
+    ratios.extend((contrast(values["PressText"], values["Press"]),
+                   contrast(values["BootText"], values["Boot"]),
+                   contrast(values["BootText"], values["BootPressed"])))
+    if min(ratios) < 4.5:
+        raise RuntimeError(f"{name}: composed/pressed contrast {min(ratios):.2f}:1")
+    print(f"PASS: {name} composed gradients/alpha/pressed text >= {min(ratios):.2f}:1")
+
+
 # 验证真实 Kconfig choice、旧配置默认值、生成头文件与禁用 LVGL 的行为。
 def check_kconfig(compiler: list[str], temporary: Path) -> None:
     try:
@@ -82,7 +128,7 @@ def check_kconfig(compiler: list[str], temporary: Path) -> None:
     if choice.selection is not None or any(config.syms[f"KSHIM_MENU_STYLE_{n}"].tri_value
                                           for n in STYLES):
         raise RuntimeError("Style choice remains enabled without LVGL")
-    print("PASS: Kconfig default, six generated headers, one-hot selection and LVGL-off")
+    print("PASS: Kconfig default, 16 generated headers, one-hot selection and LVGL-off")
 
 
 # 运行完整的轻量预设矩阵；实际 LVGL 渲染测试由 tests/CMakeLists.txt 提供。
@@ -132,7 +178,9 @@ def main() -> int:
                                         f"-DCONFIG_KSHIM_MENU_STYLE_{second}=1"])
                 if result.returncode == 0 or "Select exactly one KSHIM_MENU_STYLE preset" not in result.stderr:
                     raise RuntimeError(f"Invalid multi-selection not diagnosed: {first}, {second}")
-            print("PASS: zero-valued symbols, explicit 0/1 symbols and all 15 invalid pairs")
+            print("PASS: zero-valued symbols, explicit 0/1 symbols and all 120 invalid pairs")
+            for name in STYLES:
+                check_effects(compiler, temporary, name)
             if args.kconfig:
                 check_kconfig(compiler, temporary)
         return 0

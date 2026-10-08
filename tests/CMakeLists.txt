@@ -4,7 +4,8 @@ enable_testing()
 
 get_filename_component(KSHIM_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(KSHIM_TEST_MENU_STYLE "FLAT" CACHE STRING "Boot menu preset used by host UI tests")
-set(KSHIM_TEST_MENU_STYLES FLAT CLASSIC CARDS TERMINAL MINIMAL HIGH_CONTRAST)
+set(KSHIM_TEST_MENU_STYLES FLAT CLASSIC CARDS TERMINAL MINIMAL HIGH_CONTRAST
+    FLUENT MATERIAL3 SURFACE CUPERTINO GLASS AURORA SOFT_UI BENTO NEON NORD)
 set_property(CACHE KSHIM_TEST_MENU_STYLE PROPERTY STRINGS ${KSHIM_TEST_MENU_STYLES})
 if(NOT KSHIM_TEST_MENU_STYLE IN_LIST KSHIM_TEST_MENU_STYLES)
     message(FATAL_ERROR "Unknown KSHIM_TEST_MENU_STYLE: ${KSHIM_TEST_MENU_STYLE}")
@@ -27,7 +28,7 @@ add_subdirectory("${KSHIM_ROOT}/third_party/lvgl" lvgl)
 add_subdirectory("${KSHIM_ROOT}/ports/crdk" crdk)
 set(KSHIM_UI_FONT_BLOB "${KSHIM_ROOT}/src/ui/fonts/noto_sans_cjk_sc.ksf")
 configure_file("${KSHIM_ROOT}/src/ui/fonts/ui_font_blob.S.in"
-               "${CMAKE_CURRENT_BINARY_DIR}/ui_font_blob.S" @ONLY)
+    "${CMAKE_CURRENT_BINARY_DIR}/ui_font_blob.S" @ONLY)
 set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/ui_font_blob.S"
     PROPERTIES OBJECT_DEPENDS "${KSHIM_UI_FONT_BLOB}")
 add_library(kshim_backdrop STATIC "${KSHIM_ROOT}/src/ui/backdrop.c"
@@ -35,6 +36,7 @@ add_library(kshim_backdrop STATIC "${KSHIM_ROOT}/src/ui/backdrop.c"
 target_include_directories(kshim_backdrop PUBLIC "${KSHIM_ROOT}/src/include")
 target_link_libraries(kshim_backdrop PUBLIC lvgl)
 
+# 创建带断言和严格告警的主机测试目标。
 function(kshim_test Target)
     add_executable(${Target} ${ARGN})
     target_compile_options(${Target} PRIVATE -Wall -Wextra -Werror -UNDEBUG)
@@ -43,56 +45,35 @@ function(kshim_test Target)
     add_test(NAME ${Target} COMMAND ${Target})
 endfunction()
 
-kshim_test(qualcomm_test qualcomm_test.c
-    "${KSHIM_ROOT}/src/drivers/keys.c"
-    "${KSHIM_ROOT}/src/dt/keys.c"
-)
+kshim_test(qualcomm_test qualcomm_test.c "${KSHIM_ROOT}/src/drivers/keys.c" "${KSHIM_ROOT}/src/dt/keys.c")
 target_include_directories(qualcomm_test PRIVATE "${KSHIM_ROOT}/lib/libfdt/include")
-
 kshim_test(spmi_test spmi_test.c "${KSHIM_ROOT}/src/drivers/qcom_keys.c")
 target_link_libraries(spmi_test PRIVATE crdk_spmi)
-
 kshim_test(framebuffer_test framebuffer_test.c "${KSHIM_ROOT}/src/ui/framebuffer.c")
-kshim_test(lvgl_test lvgl_test.c "${KSHIM_ROOT}/src/ui/lvgl_port.c"
-    "${KSHIM_ROOT}/src/ui/framebuffer.c" "${KSHIM_ROOT}/src/drivers/keys.c")
-target_link_libraries(lvgl_test PRIVATE lvgl kshim_backdrop m)
-target_sources(lvgl_test PRIVATE "${KSHIM_ROOT}/src/drivers/touch.c")
 
-kshim_test(lvgl_hdk_test lvgl_test.c "${KSHIM_ROOT}/src/ui/lvgl_port.c"
+set(KSHIM_TEST_UI_SOURCES "${KSHIM_ROOT}/src/ui/lvgl_port.c"
     "${KSHIM_ROOT}/src/ui/framebuffer.c" "${KSHIM_ROOT}/src/drivers/keys.c")
-target_compile_definitions(lvgl_hdk_test PRIVATE CONFIG_KSHIM_UEFI_TEST_MENU=1
-    "CONFIG_KSHIM_MENU_ENTRY1=\"UEFI A\"" "CONFIG_KSHIM_MENU_ENTRY2=\"UEFI B\"")
-target_link_libraries(lvgl_hdk_test PRIVATE lvgl kshim_backdrop m)
-target_sources(lvgl_hdk_test PRIVATE "${KSHIM_ROOT}/src/drivers/touch.c")
-
-add_executable(ui_preview_test ui_preview_test.c
-    "${KSHIM_ROOT}/src/ui/lvgl_port.c" "${KSHIM_ROOT}/src/ui/framebuffer.c"
-    "${KSHIM_ROOT}/src/drivers/keys.c")
+kshim_test(lvgl_test lvgl_test.c ${KSHIM_TEST_UI_SOURCES} "${KSHIM_ROOT}/src/drivers/touch.c")
+kshim_test(lvgl_hdk_test lvgl_test.c ${KSHIM_TEST_UI_SOURCES} "${KSHIM_ROOT}/src/drivers/touch.c")
+kshim_test(menu_style_render_test menu_style_render_test.c ${KSHIM_TEST_UI_SOURCES})
+kshim_test(menu_modern_test menu_modern_test.c ${KSHIM_TEST_UI_SOURCES})
+add_executable(ui_preview_test ui_preview_test.c ${KSHIM_TEST_UI_SOURCES})
 target_include_directories(ui_preview_test PRIVATE "${KSHIM_ROOT}/src/include")
-target_compile_definitions(ui_preview_test PRIVATE CONFIG_KSHIM_UEFI_TEST_MENU=1
-    "CONFIG_KSHIM_MENU_ENTRY1=\"UEFI A\"" "CONFIG_KSHIM_MENU_ENTRY2=\"UEFI B\"")
-target_link_libraries(ui_preview_test PRIVATE lvgl kshim_backdrop m)
-
-# 同一预设运行原有交互回归和样式专项，避免测试与预览风格不一致。
-kshim_test(menu_style_render_test menu_style_render_test.c
-    "${KSHIM_ROOT}/src/ui/lvgl_port.c" "${KSHIM_ROOT}/src/ui/framebuffer.c"
-    "${KSHIM_ROOT}/src/drivers/keys.c")
-target_link_libraries(menu_style_render_test PRIVATE lvgl kshim_backdrop m)
-foreach(target lvgl_test lvgl_hdk_test ui_preview_test menu_style_render_test)
-    target_compile_definitions(${target} PRIVATE
-        CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1)
+foreach(target lvgl_test lvgl_hdk_test menu_style_render_test menu_modern_test ui_preview_test)
+    target_link_libraries(${target} PRIVATE lvgl kshim_backdrop m)
+    target_compile_definitions(${target} PRIVATE CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1)
+endforeach()
+foreach(target lvgl_hdk_test ui_preview_test)
+    target_compile_definitions(${target} PRIVATE CONFIG_KSHIM_UEFI_TEST_MENU=1
+        "CONFIG_KSHIM_MENU_ENTRY1=\"UEFI A\"" "CONFIG_KSHIM_MENU_ENTRY2=\"UEFI B\"")
 endforeach()
 
 kshim_test(qcom_bus_test qcom_bus_test.c)
-kshim_test(qcom_touch_platform_test qcom_touch_platform_test.c
-   )
-kshim_test(hdk8250_touch_platform_test hdk8250_touch_platform_test.c
-   )
+kshim_test(qcom_touch_platform_test qcom_touch_platform_test.c)
+kshim_test(hdk8250_touch_platform_test hdk8250_touch_platform_test.c)
 kshim_test(touch_test touch_test.c "${KSHIM_ROOT}/src/drivers/touch.c")
-kshim_test(st_ftm5_test st_ftm5_test.c "${KSHIM_ROOT}/src/drivers/st_ftm5.c"
-    "${KSHIM_ROOT}/src/drivers/touch.c")
-kshim_test(st_ftm4_test st_ftm4_test.c "${KSHIM_ROOT}/src/drivers/st_ftm4.c"
-    "${KSHIM_ROOT}/src/drivers/touch.c")
+kshim_test(st_ftm5_test st_ftm5_test.c "${KSHIM_ROOT}/src/drivers/st_ftm5.c" "${KSHIM_ROOT}/src/drivers/touch.c")
+kshim_test(st_ftm4_test st_ftm4_test.c "${KSHIM_ROOT}/src/drivers/st_ftm4.c" "${KSHIM_ROOT}/src/drivers/touch.c")
 
 add_library(kshim_dt STATIC
     "${KSHIM_ROOT}/src/dt/dt.c" "${KSHIM_ROOT}/src/dt/spmi.c"
@@ -108,13 +89,11 @@ foreach(target qualcomm_test qcom_bus_test qcom_touch_platform_test hdk8250_touc
     target_link_libraries(${target} PRIVATE kshim_dt)
 endforeach()
 add_link_options(-Wl,--gc-sections)
-
 kshim_test(dt_test dt_test.c "${KSHIM_ROOT}/src/dt/keys.c" "${KSHIM_ROOT}/src/drivers/keys.c")
 target_compile_definitions(dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\"")
 target_link_libraries(dt_test PRIVATE kshim_dt)
 kshim_test(crdk_poll_test crdk_poll_test.c)
 target_link_libraries(crdk_poll_test PRIVATE crdk)
-
 find_program(DTC_EXECUTABLE dtc REQUIRED)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dtb
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/fixtures

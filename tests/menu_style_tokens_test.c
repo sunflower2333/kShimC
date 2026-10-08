@@ -31,11 +31,17 @@ int main(void)
         assert(mMenuStyle.AnimatedBackdrop == 1U);
         assert(mMenuStyle.RadiusMin == 8U && mMenuStyle.RadiusMax == 16U);
         assert(mMenuStyle.RowBorderWidth == 0U && mMenuStyle.PanelOutlineWidth == 0U);
-    } else {
+    } else if (mMenuStyle.Modern == 0U) {
         assert(mMenuStyle.AnimatedBackdrop == 0U);
         assert(mMenuStyle.PanelOpacity == 255U);
         assert(mMenuStyle.ItemOpacity == 255U);
         assert(mMenuStyle.FocusOpacity == 255U);
+    }
+    if (mMenuStyle.Modern != 0U) {
+        assert(mMenuStyle.Layout <= 2U);
+        assert(mMenuStyle.PressScale >= 248U && mMenuStyle.PressScale <= 256U);
+        assert(mMenuStyle.RowGap <= 12U);
+        assert(mMenuStyle.AnimatedBackdrop == 0U);
     }
     printf("%s %06x %06x %06x %06x %06x %06x %06x %06x %06x %06x %06x\n",
            mMenuStyle.Name, (unsigned)mMenuStyle.Screen, (unsigned)mMenuStyle.Panel,
