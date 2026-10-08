@@ -105,10 +105,55 @@ menu "Framebuffer and UI"
         bool "Enable LVGL boot menu"
         default y
         help
-            Build the pinned LVGL menu: a flat, borderless acrylic panel
-            over an animated gradient, in one dark theme. The Qualcomm Volume
-            Up, Volume Down, and Power actions are mapped to up, down, and
-            confirm respectively.
+            Build the pinned LVGL boot menu with a selectable visual style.
+            The default FLAT style retains the animated acrylic panel.
+            Qualcomm Volume Up, Volume Down, and Power map to up, down,
+            and confirm respectively. See docs/menu-styles.md.
+
+    choice KSHIM_MENU_STYLE
+        prompt "Boot menu style"
+        depends on KSHIM_LVGL
+        default KSHIM_MENU_STYLE_FLAT
+        help
+            Select the device boot menu appearance, not the host menuconfig
+            colors. Selection, touch confirmation and boot actions are shared.
+            Only FLAT allocates and updates animated background textures.
+
+        config KSHIM_MENU_STYLE_FLAT
+            bool "FLAT - original dark acrylic"
+            help
+                Borderless indigo panel, blue focus and animated backdrop.
+                This is the compatible default for existing configurations.
+
+        config KSHIM_MENU_STYLE_CLASSIC
+            bool "CLASSIC - framed firmware menu"
+            help
+                Opaque navy panel, square framed rows and blue selection.
+
+        config KSHIM_MENU_STYLE_CARDS
+            bool "CARDS - light rounded cards"
+            help
+                Light panel, separated rounded white cards, outlined blue
+                focus and a solid blue Boot button. No background animation.
+
+        config KSHIM_MENU_STYLE_TERMINAL
+            bool "TERMINAL - green terminal look"
+            help
+                Near-black background, green square frames and reverse-video
+                selection. Keeps the existing CJK-capable font, not monospace.
+
+        config KSHIM_MENU_STYLE_MINIMAL
+            bool "MINIMAL - quiet monochrome"
+            help
+                Borderless black panel with square rows and a left-side focus
+                marker. No animated background or decorative shadows.
+
+        config KSHIM_MENU_STYLE_HIGH_CONTRAST
+            bool "HIGH_CONTRAST - black and white"
+            help
+                Black surfaces, white frames and reverse-video selection.
+                No translucent surfaces or animated background.
+    endchoice
 
     config KSHIM_UI_SCRATCH_BASE
         hex "UI scratch memory base (fallback)"
@@ -121,7 +166,7 @@ menu "Framebuffer and UI"
         depends on KSHIM_LVGL
         help
             RAM outside the runtime slot for the inflated Noto Sans CJK font
-            (about 840 KiB) and the two background textures. On Qualcomm
+            (about 840 KiB) and, for FLAT only, two background textures. On Qualcomm
             boards the display reservation past the scanout frame is used;
             this window is only for platforms without one, such as the QEMU
             test profile. Without scratch memory the menu falls back to a

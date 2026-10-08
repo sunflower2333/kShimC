@@ -3,6 +3,12 @@ project(kshim_host_tests C ASM)
 enable_testing()
 
 get_filename_component(KSHIM_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(KSHIM_TEST_MENU_STYLE "FLAT" CACHE STRING "Boot menu preset used by host UI tests")
+set(KSHIM_TEST_MENU_STYLES FLAT CLASSIC CARDS TERMINAL MINIMAL HIGH_CONTRAST)
+set_property(CACHE KSHIM_TEST_MENU_STYLE PROPERTY STRINGS ${KSHIM_TEST_MENU_STYLES})
+if(NOT KSHIM_TEST_MENU_STYLE IN_LIST KSHIM_TEST_MENU_STYLES)
+    message(FATAL_ERROR "Unknown KSHIM_TEST_MENU_STYLE: ${KSHIM_TEST_MENU_STYLE}")
+endif()
 option(KSHIM_TEST_SANITIZERS "Use address and undefined behavior sanitizers" ON)
 add_compile_definitions(KSHIM_HOST_TEST=1 CONFIG_QCOM_SPMI=1 KSHIM_STANDALONE=1
     CONFIG_KSHIM_LVGL_BUFFER_BYTES=262144)
@@ -66,6 +72,16 @@ target_include_directories(ui_preview_test PRIVATE "${KSHIM_ROOT}/src/include")
 target_compile_definitions(ui_preview_test PRIVATE CONFIG_KSHIM_UEFI_TEST_MENU=1
     "CONFIG_KSHIM_MENU_ENTRY1=\"UEFI A\"" "CONFIG_KSHIM_MENU_ENTRY2=\"UEFI B\"")
 target_link_libraries(ui_preview_test PRIVATE lvgl kshim_backdrop m)
+
+# 同一预设运行原有交互回归和样式专项，避免测试与预览风格不一致。
+kshim_test(menu_style_render_test menu_style_render_test.c
+    "${KSHIM_ROOT}/src/ui/lvgl_port.c" "${KSHIM_ROOT}/src/ui/framebuffer.c"
+    "${KSHIM_ROOT}/src/drivers/keys.c")
+target_link_libraries(menu_style_render_test PRIVATE lvgl kshim_backdrop m)
+foreach(target lvgl_test lvgl_hdk_test ui_preview_test menu_style_render_test)
+    target_compile_definitions(${target} PRIVATE
+        CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1)
+endforeach()
 
 kshim_test(qcom_bus_test qcom_bus_test.c)
 kshim_test(qcom_touch_platform_test qcom_touch_platform_test.c

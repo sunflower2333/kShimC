@@ -8,6 +8,8 @@
 #include <lvgl.h>
 #include <ui_font.h>
 
+#include "menu_style.h"
+
 #ifndef CONFIG_KSHIM_MENU_ENTRY1
 #define CONFIG_KSHIM_MENU_ENTRY1 "Boot"
 #endif
@@ -22,18 +24,6 @@
 #endif
 
 #define KSHIM_BACKDROP_REFRESH_MS 120U
-
-/* Flat dark scheme: a borderless indigo acrylic panel over the animated
- * background, white text, one accent blue for the selection. */
-#define KSHIM_UI_PANEL_TINT 0x161c3eU
-#define KSHIM_UI_PANEL_OPA 128          /* 50% over the background */
-#define KSHIM_UI_TEXT 0xffffffU
-#define KSHIM_UI_TEXT_DIM 0xc9d1eeU     /* subtitle, status, rows at rest */
-#define KSHIM_UI_ITEM_OPA 20            /* white plate behind rows at rest */
-#define KSHIM_UI_ACCENT 0x2f6bf0U       /* white text on it: ~5:1 */
-#define KSHIM_UI_ACCENT_LIGHT 0x7aa2ff
-#define KSHIM_UI_FOCUS_OPA 214          /* 84% */
-#define KSHIM_UI_SCREEN 0x13235aU       /* under the background image */
 
 static uint8_t mLvglRenderBuffers[2][CONFIG_KSHIM_LVGL_BUFFER_BYTES]
     __attribute__((aligned(8)));
@@ -85,17 +75,17 @@ static uint32_t clamp_u32(uint32_t value, uint32_t minimum, uint32_t maximum)
 
 static lv_color_t KshimTextColor(void)
 {
-  return lv_color_hex(KSHIM_UI_TEXT);
+  return lv_color_hex(mMenuStyle.Text);
 }
 
 static lv_color_t KshimMutedColor(void)
 {
-  return lv_color_hex(KSHIM_UI_TEXT_DIM);
+  return lv_color_hex(mMenuStyle.Muted);
 }
 
 static lv_color_t KshimAccentColor(void)
 {
-  return lv_color_hex(KSHIM_UI_ACCENT);
+  return lv_color_hex(mMenuStyle.Focus);
 }
 
 static void KshimLvglFlush(lv_display_t *Display, const lv_area_t *Area,
@@ -316,31 +306,45 @@ static void KshimBootEvent(lv_event_t *Event)
     KshimConfirmIndex((size_t)Index);
 }
 
-/* Flat rows: a faint white plate at rest, the accent when focused; no
- * border, gradient or shadow. */
+/* 应用当前预设；边框宽度不随焦点改变，避免切换选中项时跳动。 */
 static void KshimStyleEntry(lv_obj_t *Button)
 {
-  uint32_t Radius = clamp_u32(mRowHeight / 5U, 8U, 16U);
+  uint32_t Radius = kshim_menu_style_radius(mRowHeight);
+  uint32_t PaddingY = max_u32(4U, mRowHeight / 6U);
+
+  /* 保持原有内容高度，避免新边框挤压小屏幕行内文字。 */
+  if (mMenuStyle.LeftBorderOnly == 0U)
+    PaddingY -= min_u32(PaddingY, mMenuStyle.RowBorderWidth);
 
   lv_obj_set_width(Button, LV_PCT(100));
   lv_obj_set_height(Button, mRowHeight);
   lv_obj_set_style_radius(Button, (int32_t)Radius, 0);
-  lv_obj_set_style_bg_color(Button, lv_color_white(), 0);
-  lv_obj_set_style_bg_opa(Button, KSHIM_UI_ITEM_OPA, 0);
+  lv_obj_set_style_bg_color(Button, lv_color_hex(mMenuStyle.Item), 0);
+  lv_obj_set_style_bg_opa(Button, mMenuStyle.ItemOpacity, 0);
   lv_obj_set_style_bg_color(Button, KshimAccentColor(), LV_STATE_FOCUSED);
-  lv_obj_set_style_bg_opa(Button, KSHIM_UI_FOCUS_OPA, LV_STATE_FOCUSED);
+  lv_obj_set_style_bg_opa(Button, mMenuStyle.FocusOpacity, LV_STATE_FOCUSED);
   lv_obj_set_style_bg_color(Button, KshimAccentColor(), LV_STATE_PRESSED);
   lv_obj_set_style_bg_opa(Button, LV_OPA_COVER, LV_STATE_PRESSED);
-  lv_obj_set_style_border_width(Button, 0, 0);
-  lv_obj_set_style_border_width(Button, 0, LV_STATE_FOCUSED);
+  lv_obj_set_style_border_width(Button, mMenuStyle.RowBorderWidth, 0);
+  lv_obj_set_style_border_side(Button, mMenuStyle.LeftBorderOnly != 0U
+      ? LV_BORDER_SIDE_LEFT : LV_BORDER_SIDE_FULL, 0);
+  lv_obj_set_style_border_color(Button, lv_color_hex(mMenuStyle.Border), 0);
+  lv_obj_set_style_border_opa(Button, mMenuStyle.BorderAtRest != 0U
+      ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_color(Button, lv_color_hex(mMenuStyle.FocusBorder),
+                                LV_STATE_FOCUSED);
+  lv_obj_set_style_border_opa(Button, LV_OPA_COVER, LV_STATE_FOCUSED);
   lv_obj_set_style_shadow_width(Button, 0, 0);
   lv_obj_set_style_outline_width(Button, 0, 0);
   lv_obj_set_style_outline_width(Button, 0, LV_STATE_FOCUS_KEY);
   lv_obj_set_style_text_color(Button, KshimMutedColor(), 0);
-  lv_obj_set_style_text_color(Button, KshimTextColor(), LV_STATE_FOCUSED);
+  lv_obj_set_style_text_color(Button, lv_color_hex(mMenuStyle.FocusText),
+                              LV_STATE_FOCUSED);
+  lv_obj_set_style_text_color(Button, lv_color_hex(mMenuStyle.FocusText),
+                              LV_STATE_PRESSED);
   lv_obj_set_style_text_font(Button, mRowFont, 0);
   lv_obj_set_style_pad_hor(Button, mRowHeight / 4U, 0);
-  lv_obj_set_style_pad_ver(Button, max_u32(4U, mRowHeight / 6U), 0);
+  lv_obj_set_style_pad_ver(Button, PaddingY, 0);
   lv_obj_set_flex_align(Button, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
 }
@@ -392,7 +396,8 @@ static int KshimRelayoutChrome(void)
   lv_obj_set_pos(mPanel, mBackdropLayout.panel_x, mBackdropLayout.panel_y);
   lv_obj_set_size(mPanel, mBackdropLayout.panel_width,
                   mBackdropLayout.panel_height);
-  lv_obj_set_style_radius(mPanel, (int32_t)mBackdropLayout.panel_radius, 0);
+  lv_obj_set_style_radius(mPanel, mMenuStyle.RadiusMax != 0U
+      ? (int32_t)mBackdropLayout.panel_radius : 0, 0);
   if (mStatus != NULL) {
     lv_obj_set_width(mStatus, (int32_t)mBackdropLayout.panel_width -
                               (int32_t)Padding * 2);
@@ -478,7 +483,8 @@ static void KshimPlaceScratch(void)
   mFontData = NULL;
   if (Cursor == NULL || ((uintptr_t)Cursor & 63U) != 0U)
     return;
-  if (Left >= 2U * Texture) {
+  /* 静态风格不占用背景纹理空间，全部 scratch 可用于字体。 */
+  if (mMenuStyle.AnimatedBackdrop != 0U && Left >= 2U * Texture) {
     mBackdropTextures[0] = (uint32_t *)(void *)Cursor;
     mBackdropTextures[1] = (uint32_t *)(void *)(Cursor + Texture);
     Cursor += 2U * Texture;
@@ -544,7 +550,7 @@ static int KshimBuildChrome(void)
   const lv_font_t *StatusFont = mStatusFont;
   mRowHeight = ShortEdge >= 720U ? 72U : ShortEdge >= 320U ? 52U : 24U;
 
-  lv_obj_set_style_bg_color(Screen, lv_color_hex(KSHIM_UI_SCREEN), 0);
+  lv_obj_set_style_bg_color(Screen, lv_color_hex(mMenuStyle.Screen), 0);
   lv_obj_set_style_bg_opa(Screen, LV_OPA_COVER, 0);
   lv_obj_set_style_text_color(Screen, KshimTextColor(), 0);
   lv_obj_set_scrollbar_mode(Screen, LV_SCROLLBAR_MODE_OFF);
@@ -566,12 +572,17 @@ static int KshimBuildChrome(void)
   lv_obj_set_pos(mPanel, mBackdropLayout.panel_x, mBackdropLayout.panel_y);
   lv_obj_set_size(mPanel, mBackdropLayout.panel_width,
                   mBackdropLayout.panel_height);
-  lv_obj_set_style_radius(mPanel, (int32_t)mBackdropLayout.panel_radius, 0);
-  /* Flat acrylic: the (already soft) background under a translucent
-   * indigo tint, with no border, rim or shadow. */
-  lv_obj_set_style_bg_color(mPanel, lv_color_hex(KSHIM_UI_PANEL_TINT), 0);
-  lv_obj_set_style_bg_opa(mPanel, KSHIM_UI_PANEL_OPA, 0);
+  lv_obj_set_style_radius(mPanel, mMenuStyle.RadiusMax != 0U
+      ? (int32_t)mBackdropLayout.panel_radius : 0, 0);
+  /* FLAT 使用半透明面板，其余预设使用不透明面板。 */
+  lv_obj_set_style_bg_color(mPanel, lv_color_hex(mMenuStyle.Panel), 0);
+  lv_obj_set_style_bg_opa(mPanel, mMenuStyle.PanelOpacity, 0);
   lv_obj_set_style_border_width(mPanel, 0, 0);
+  /* 用外轮廓绘制面板框线，不改变内容区和固定 Boot 按钮的位置。 */
+  lv_obj_set_style_outline_width(mPanel, mMenuStyle.PanelOutlineWidth, 0);
+  lv_obj_set_style_outline_pad(mPanel, 0, 0);
+  lv_obj_set_style_outline_color(mPanel, lv_color_hex(mMenuStyle.Border), 0);
+  lv_obj_set_style_outline_opa(mPanel, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(mPanel, 0, 0);
   lv_obj_set_style_pad_all(mPanel, 0, 0);
   lv_obj_set_scrollbar_mode(mPanel, LV_SCROLLBAR_MODE_OFF);
@@ -624,8 +635,9 @@ static int KshimBuildChrome(void)
   lv_obj_set_style_border_width(mList, 0, 0);
   lv_obj_set_style_radius(mList, 0, 0);
   lv_obj_set_style_pad_all(mList, 0, 0);
-  lv_obj_set_style_pad_row(mList, max_u32(2U, Padding / 4U), 0);
-  lv_obj_set_style_bg_color(mList, lv_color_hex(KSHIM_UI_ACCENT_LIGHT),
+  lv_obj_set_style_pad_row(mList,
+      max_u32(2U, Padding / mMenuStyle.RowGapDivisor), 0);
+  lv_obj_set_style_bg_color(mList, lv_color_hex(mMenuStyle.Scrollbar),
                             LV_PART_SCROLLBAR);
   lv_obj_set_style_bg_opa(mList, LV_OPA_50, LV_PART_SCROLLBAR);
   lv_obj_set_style_width(mList, 3, LV_PART_SCROLLBAR);
@@ -639,12 +651,11 @@ static int KshimBuildChrome(void)
                  (int32_t)BootHeight - (int32_t)Padding);
   lv_obj_set_size(mBootButton, (int32_t)mBackdropLayout.panel_width -
                                (int32_t)Padding * 2, BootHeight);
-  /* The primary action: a solid light plate with dark text, distinct from
-   * the accent-blue selection above it. */
-  lv_obj_set_style_radius(mBootButton, clamp_u32(BootHeight / 5U, 8U, 16U), 0);
-  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(0xf4f7ffU), 0);
+  /* 启动按钮独立配置前景与背景，兼容深色和浅色预设。 */
+  lv_obj_set_style_radius(mBootButton, kshim_menu_style_radius(BootHeight), 0);
+  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(mMenuStyle.Boot), 0);
   lv_obj_set_style_bg_opa(mBootButton, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(0xdfe5fbU),
+  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(mMenuStyle.BootPressed),
                             LV_STATE_PRESSED);
   lv_obj_set_style_border_width(mBootButton, 0, 0);
   lv_obj_set_style_shadow_width(mBootButton, 0, 0);
@@ -656,7 +667,7 @@ static int KshimBuildChrome(void)
     return -1;
   lv_label_set_text_static(BootLabel, "Boot");
   lv_obj_set_style_text_font(BootLabel, mRowFont, 0);
-  lv_obj_set_style_text_color(BootLabel, lv_color_hex(KSHIM_UI_PANEL_TINT),
+  lv_obj_set_style_text_color(BootLabel, lv_color_hex(mMenuStyle.BootText),
                               0);
   lv_obj_center(BootLabel);
 
