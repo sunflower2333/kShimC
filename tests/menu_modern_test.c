@@ -128,7 +128,7 @@ static void CheckClosing(lv_event_t *Event)
     kshim_lvgl_touch(Probe->Ui, &Touch);
     assert(kshim_lvgl_take_index(Probe->Ui) == -1);
     assert(kshim_lvgl_take_selection(Probe->Ui) == KSHIM_MENU_NONE);
-    kshim_lvgl_deinit(Probe->Ui); /* 重入销毁应当直接返回。 */
+    kshim_lvgl_deinit(Probe->Ui);
     Probe->Calls++;
 }
 
@@ -164,11 +164,66 @@ static void TestClosing(void)
     free(Pixels);
 }
 
+/* 只比较 Boot 区域，焦点文字或背景变化不能代替按钮的真实反馈。 */
+static uint64_t BootHash(const kshim_framebuffer_t *Fb, const lv_area_t *Area)
+{
+    assert(Area->x1 >= 0 && Area->y1 >= 0);
+    assert(Area->x2 < (int32_t)Fb->width && Area->y2 < (int32_t)Fb->height);
+    uint64_t Hash = UINT64_C(14695981039346656037);
+    for (int32_t Y = Area->y1; Y <= Area->y2; Y++) {
+        const uint32_t *Row = (const uint32_t *)(const void *)(Fb->render_address + (size_t)Y * Fb->stride);
+        for (int32_t X = Area->x1; X <= Area->x2; X++)
+            Hash = (Hash ^ Row[X]) * UINT64_C(1099511628211);
+    }
+    return Hash;
+}
+
+/* 仅通过普通 frame 循环观察确认动效及恢复，禁止强制刷新掩盖显示问题。 */
+static void TestAutomaticConfirmation(unsigned Width, unsigned Height)
+{
+    size_t Bytes = (size_t)Width * Height * 4U;
+    void *Pixels = calloc(1U, Bytes);
+    assert(Pixels != NULL);
+    kshim_framebuffer_config_t Config = {
+        .render_address = (uintptr_t)Pixels, .width = Width, .height = Height,
+        .stride = Width * 4U, .bpp = 32U, .format = KSHIM_FB_FORMAT_ARGB8888,
+        .buffer_size = Bytes,
+    };
+    kshim_framebuffer_t Fb;
+    assert(kshim_fb_init(&Fb, &Config) == 0);
+    for (unsigned Phase = 0U; Phase <= 32U; Phase += 16U) {
+        kshim_lvgl_t Ui;
+        assert(kshim_lvgl_init(&Ui, &Fb, NULL) == 0);
+        Settle(&Ui);
+        kshim_lvgl_frame(&Ui, Phase);
+        lv_area_t Area;
+        lv_obj_get_coords(Ui.BootButton, &Area);
+        uint64_t Before = BootHash(&Fb, &Area);
+        unsigned Changed = 0U;
+        assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
+        assert(Ui.PendingIndex == 0);
+        for (unsigned Frame = 0U; Frame < 32U; Frame++) {
+            kshim_lvgl_frame(&Ui, 16U);
+            Changed |= BootHash(&Fb, &Area) != Before;
+        }
+        assert(Changed != 0U);
+        assert(BootHash(&Fb, &Area) == Before);
+        assert(lv_obj_get_style_transform_scale_x(Ui.BootButton, LV_PART_MAIN) == 256);
+        assert(lv_obj_get_style_transform_scale_y(Ui.BootButton, LV_PART_MAIN) == 256);
+        assert(kshim_lvgl_take_index(&Ui) == 0);
+        assert(kshim_lvgl_take_index(&Ui) == -1);
+        kshim_lvgl_deinit(&Ui);
+    }
+    free(Pixels);
+}
+
 /* 覆盖会触发两种自适应布局的阈值两侧和常见横竖屏。 */
 int main(void)
 {
     TestClosing();
     if (mMenuStyle.Modern != 0U) {
+        TestAutomaticConfirmation(320U, 240U);
+        TestAutomaticConfirmation(1080U, 2340U);
         TestSize(320U, 240U);
         TestSize(559U, 360U);
         TestSize(640U, 360U);
@@ -176,6 +231,6 @@ int main(void)
         TestSize(1080U, 1920U);
         TestSize(1920U, 1080U);
     }
-    printf("PASS: %s lifecycle, geometry, long labels, 1/2/3/49 entries and touch cancellation\n", mMenuStyle.Name);
+    printf("PASS: %s lifecycle, geometry, automatic confirmation and touch cancellation\n", mMenuStyle.Name);
     return 0;
 }

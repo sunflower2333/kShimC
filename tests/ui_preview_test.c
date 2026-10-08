@@ -27,13 +27,14 @@ static void Advance(kshim_lvgl_t *Ui, uint32_t Milliseconds)
     }
 }
 
-/* 保存真实像素，检查非空且非纯色；黑色主题不要求半屏都亮。 */
+/* 按当前 tick 导出完整关键帧，不将显示刷新定时器的相位当成视觉差异。 */
 static uint64_t WritePpm(
     const char *Directory,
     const char *Stage,
     const kshim_framebuffer_t *Framebuffer
 )
 {
+    lv_refr_now(NULL);
     char Path[1024];
     int Length = snprintf(Path, sizeof(Path), "%s/menu-%ux%u-%s.ppm",
                           Directory, Framebuffer->width,
@@ -75,7 +76,7 @@ static uint64_t WritePpm(
     return Hash;
 }
 
-/* 记录确认入口和动画状态，保留原始像素断言。 */
+/* 记录确认入口和动画状态，保留像素变化断言。 */
 static void TraceConfirmation(const char *Stage, const kshim_lvgl_t *Ui)
 {
     printf("CONFIRM %s: index=%d ready=%u elapsed=%u\n", Stage,
@@ -147,13 +148,8 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
     TraceConfirmation("requested", &Ui);
     Advance(&Ui, KSHIM_UI_CONFIRM_DURATION_MS / 2U);
-    TraceConfirmation("sampled", &Ui);
     uint64_t ConfirmHash = WritePpm(Directory, "confirm-90ms", &Framebuffer);
-    if (ConfirmHash == FocusHash) {
-        /* 强制刷新只用于诊断，不替代对自动刷新帧的断言。 */
-        lv_refr_now(Ui.Display);
-        (void)WritePpm(Directory, "confirm-diagnostic-refresh", &Framebuffer);
-    }
+    TraceConfirmation("sampled", &Ui);
     assert(ConfirmHash != FocusHash);
     assert(kshim_lvgl_take_index(&Ui) == 2);
 
