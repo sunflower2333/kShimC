@@ -110,9 +110,64 @@ static void TestSize(unsigned Width, unsigned Height)
     free(Memory);
 }
 
+typedef struct {
+    kshim_lvgl_t *Ui;
+    unsigned Calls;
+} closing_probe_t;
+
+/* 销毁回调中公共交互入口必须失效，不能访问尚在删除的对象或重新确认。 */
+static void CheckClosing(lv_event_t *Event)
+{
+    closing_probe_t *Probe = lv_event_get_user_data(Event);
+    assert(Probe != NULL && !kshim_lvgl_ready(Probe->Ui));
+    assert(Probe->Ui->Ready == 0U);
+    kshim_lvgl_set_status(Probe->Ui, "must not touch a closing label");
+    kshim_lvgl_set_countdown(Probe->Ui, 1000U);
+    kshim_lvgl_frame(Probe->Ui, 16U);
+    kshim_touch_event_t Touch = {.type = KSHIM_TOUCH_EVENT_PRESS, .x = 1U, .y = 1U};
+    kshim_lvgl_touch(Probe->Ui, &Touch);
+    assert(kshim_lvgl_take_index(Probe->Ui) == -1);
+    assert(kshim_lvgl_take_selection(Probe->Ui) == KSHIM_MENU_NONE);
+    kshim_lvgl_deinit(Probe->Ui); /* 重入销毁应当直接返回。 */
+    Probe->Calls++;
+}
+
+/* 每款新旧主题都检查活动焦点/动画下的销毁、重入和重新初始化。 */
+static void TestClosing(void)
+{
+    const size_t Bytes = 320U * 240U * 4U;
+    void *Pixels = calloc(1U, Bytes);
+    assert(Pixels != NULL);
+    kshim_framebuffer_config_t Config = {
+        .render_address = (uintptr_t)Pixels, .width = 320U, .height = 240U,
+        .stride = 1280U, .bpp = 32U, .format = KSHIM_FB_FORMAT_ARGB8888,
+        .buffer_size = Bytes,
+    };
+    kshim_framebuffer_t Fb;
+    assert(kshim_fb_init(&Fb, &Config) == 0);
+    for (unsigned Pass = 0U; Pass < 8U; Pass++) {
+        kshim_lvgl_t Ui;
+        closing_probe_t Probe = {.Ui = &Ui};
+        assert(kshim_lvgl_init(&Ui, &Fb, NULL) == 0);
+        lv_obj_t *Panel = lv_obj_get_parent(Ui.List);
+        lv_obj_t *Status = lv_obj_get_child(Panel, 1U);
+        assert(Status != NULL);
+        lv_obj_add_event_cb(Panel, CheckClosing, LV_EVENT_DELETE, &Probe);
+        lv_obj_add_event_cb(Status, CheckClosing, LV_EVENT_DELETE, &Probe);
+        lv_obj_t *Row = lv_group_get_obj_by_index(Ui.Group, Pass % Ui.EntryCount);
+        lv_group_focus_obj(Row);
+        lv_obj_send_event(Row, LV_EVENT_PRESSED, NULL);
+        kshim_lvgl_deinit(&Ui);
+        assert(Probe.Calls == 2U && !kshim_lvgl_ready(&Ui));
+        kshim_lvgl_deinit(&Ui);
+    }
+    free(Pixels);
+}
+
 /* 覆盖会触发两种自适应布局的阈值两侧和常见横竖屏。 */
 int main(void)
 {
+    TestClosing();
     if (mMenuStyle.Modern != 0U) {
         TestSize(320U, 240U);
         TestSize(559U, 360U);
@@ -121,6 +176,6 @@ int main(void)
         TestSize(1080U, 1920U);
         TestSize(1920U, 1080U);
     }
-    printf("PASS: %s geometry, long labels, 1/2/3/49 entries and touch cancellation\n", mMenuStyle.Name);
+    printf("PASS: %s lifecycle, geometry, long labels, 1/2/3/49 entries and touch cancellation\n", mMenuStyle.Name);
     return 0;
 }

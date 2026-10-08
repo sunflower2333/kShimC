@@ -330,8 +330,8 @@ static int KshimStyleEntry(lv_obj_t *Button, size_t Index)
   lv_obj_set_style_border_color(Button, lv_color_hex(mMenuStyle.FocusBorder), LV_STATE_FOCUSED);
   lv_obj_set_style_border_opa(Button, LV_OPA_COVER, LV_STATE_FOCUSED);
   lv_obj_set_style_shadow_width(Button, 0, 0);
-  lv_obj_set_style_outline_width(Button, 0, 0);
   lv_obj_set_style_outline_width(Button, 0, LV_STATE_FOCUS_KEY);
+  lv_obj_set_style_outline_width(Button, 0, 0);
   lv_obj_set_style_text_color(Button, KshimMutedColor(), 0);
   lv_obj_set_style_text_color(Button, lv_color_hex(mMenuStyle.FocusText), LV_STATE_FOCUSED);
   lv_obj_set_style_text_color(Button, lv_color_hex(mMenuStyle.FocusText), LV_STATE_PRESSED);
@@ -856,15 +856,17 @@ int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context)
   return kshim_lvgl_ready(Context) && mFonts[1] != NULL;
 }
 
+/* 在 LVGL 删除对象前关闭外部入口和焦点回调，避免访问已删除的兄弟控件。 */
 void kshim_lvgl_deinit(kshim_lvgl_t *Context)
 {
   if (Context == NULL || Context != mContext) return;
+  Context->Ready = 0U;
+  mContext = NULL;
   lv_deinit();
   KshimForgetFonts();
   mBackdropTextures[0] = mBackdropTextures[1] = NULL;
   mFontData = NULL;
   *Context = (kshim_lvgl_t){0};
-  mContext = NULL;
   mKeys = NULL;
   mFramebuffer = NULL;
   mDisplay = NULL;
