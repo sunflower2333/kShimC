@@ -1,4 +1,4 @@
-/* Render reviewable full-resolution liquid-glass keyframes as binary PPM. */
+/* Render reviewable full-resolution menu keyframes as binary PPM. */
 #include <assert.h>
 #include <inttypes.h>
 #include <stdint.h>
@@ -8,10 +8,6 @@
 
 #include <lvgl.h>
 #include <lvgl_port.h>
-
-#ifndef CONFIG_KSHIM_UI_DARK
-#define CONFIG_KSHIM_UI_DARK 1
-#endif
 
 static uint32_t Inputs[3];
 
@@ -35,9 +31,8 @@ static uint64_t WritePpm(const char *Directory, const char *Stage,
                          const kshim_framebuffer_t *Framebuffer)
 {
     char Path[1024];
-    const char *Theme = CONFIG_KSHIM_UI_DARK ? "dark" : "light";
-    int Length = snprintf(Path, sizeof(Path), "%s/glass-%s-%ux%u-%s.ppm",
-                          Directory, Theme, Framebuffer->width,
+    int Length = snprintf(Path, sizeof(Path), "%s/menu-%ux%u-%s.ppm",
+                          Directory, Framebuffer->width,
                           Framebuffer->height, Stage);
     assert(Length > 0 && (size_t)Length < sizeof(Path));
     FILE *File = fopen(Path, "wb");
@@ -138,6 +133,6 @@ int main(int ArgumentCount, char **Arguments)
     assert(ArgumentCount == 2);
     RenderSize(Arguments[1], 1080U, 2340U);
     RenderSize(Arguments[1], 1920U, 1080U);
-    puts("full-resolution glass keyframes rendered");
+    puts("full-resolution menu keyframes rendered");
     return 0;
 }

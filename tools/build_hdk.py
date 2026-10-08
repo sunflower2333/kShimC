@@ -236,7 +236,6 @@ def main(default_board="hdk8450"):
     parser.add_argument("--jobs", type=int, default=12)
     parser.add_argument("--dtb-bundle", type=Path,
                         help="Andromeda bundle from build_andromeda_dt, with sibling manifest and build artifacts")
-    parser.add_argument("--theme", choices=("dark", "light"), default="dark")
     args = parser.parse_args()
     if args.require_debug_uart and not args.uefi_build_dir:
         parser.error("--require-debug-uart needs --uefi-build-dir")
@@ -293,7 +292,6 @@ def main(default_board="hdk8450"):
     fd_path.write_bytes(fd)
 
     config = (root / "configs" / f"{board}_defconfig").read_text()
-    config += "\nCONFIG_KSHIM_UI_DARK=" + ("y" if args.theme == "dark" else "n") + "\n"
     values = {"KSHIM_UEFI_LOAD_ADDRESS": hex(uefi_base), "KSHIM_UEFI_MAX_SIZE": hex(uefi_size)}
     for key, value in values.items():
         config = re.sub(r"^CONFIG_" + key + r"=.*$", f"CONFIG_{key}={value}", config, flags=re.M)
@@ -353,7 +351,7 @@ def main(default_board="hdk8450"):
         raise ValueError("Boot image round-trip failed")
     manifest = {
         "board": device_name(board), "menu": ["UEFI A", "UEFI B"],
-        "theme": args.theme, "libc": "picolibc", "runtime_mode": "standalone",
+        "ui": "flat", "libc": "picolibc", "runtime_mode": "standalone",
         "same_uefi_payload_for_both": True,
         "source_uefi_boot": str(source), "source_uefi_boot_sha256": hashlib.sha256(data).hexdigest(),
         "source_snapshot": "source-uefi-boot.img",

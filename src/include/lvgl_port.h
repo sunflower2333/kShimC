@@ -22,7 +22,7 @@ typedef enum {
   KSHIM_MENU_POWER_OFF,
 } kshim_menu_action_t;
 
-/* Initialize the LVGL glass menu and Qualcomm keypad. */
+/* Initialize the LVGL menu and Qualcomm keypad. */
 int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
                     QcomKeys *Keys);
 

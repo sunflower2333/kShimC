@@ -4,10 +4,8 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include <glass_renderer.h>
+#include <backdrop.h>
 #include <lvgl.h>
-
-#include "ui_glass_motion.h"
 
 #ifndef CONFIG_KSHIM_MENU_ENTRY1
 #define CONFIG_KSHIM_MENU_ENTRY1 "Boot"
@@ -18,18 +16,30 @@
 #ifndef CONFIG_KSHIM_LVGL_BUFFER_BYTES
 #define CONFIG_KSHIM_LVGL_BUFFER_BYTES (16U * 1024U)
 #endif
-#ifndef CONFIG_KSHIM_GLASS_TEXTURE_PIXELS
-#define CONFIG_KSHIM_GLASS_TEXTURE_PIXELS (256U * 256U)
+#ifndef CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS
+#define CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS (256U * 256U)
 #endif
 
-#define KSHIM_GLASS_REFRESH_MS 120U
+#define KSHIM_BACKDROP_REFRESH_MS 120U
+
+/* Flat dark scheme: a borderless indigo acrylic panel over the animated
+ * background, white text, one accent blue for the selection. */
+#define KSHIM_UI_PANEL_TINT 0x161c3eU
+#define KSHIM_UI_PANEL_OPA 128          /* 50% over the background */
+#define KSHIM_UI_TEXT 0xffffffU
+#define KSHIM_UI_TEXT_DIM 0xc9d1eeU     /* subtitle, status, rows at rest */
+#define KSHIM_UI_ITEM_OPA 20            /* white plate behind rows at rest */
+#define KSHIM_UI_ACCENT 0x2f6bf0U       /* white text on it: ~5:1 */
+#define KSHIM_UI_ACCENT_LIGHT 0x7aa2ff
+#define KSHIM_UI_FOCUS_OPA 214          /* 84% */
+#define KSHIM_UI_SCREEN 0x13235aU       /* under the background image */
 
 static uint8_t mLvglRenderBuffers[2][CONFIG_KSHIM_LVGL_BUFFER_BYTES]
     __attribute__((aligned(8)));
-static uint32_t mGlassTextures[2][CONFIG_KSHIM_GLASS_TEXTURE_PIXELS]
+static uint32_t mBackdropTextures[2][CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS]
     __attribute__((aligned(8)));
-static lv_image_dsc_t mGlassImages[2];
-static kshim_glass_layout_t mGlassLayout;
+static lv_image_dsc_t mBackdropImages[2];
+static kshim_backdrop_layout_t mBackdropLayout;
 
 static QcomKeys *mKeys;
 static kshim_framebuffer_t *mFramebuffer;
@@ -65,24 +75,19 @@ static uint32_t clamp_u32(uint32_t value, uint32_t minimum, uint32_t maximum)
   return min_u32(max_u32(value, minimum), maximum);
 }
 
-static bool KshimDarkTheme(void)
-{
-  return true;
-}
-
 static lv_color_t KshimTextColor(void)
 {
-  return lv_color_hex(0xf2f7faU);
+  return lv_color_hex(KSHIM_UI_TEXT);
 }
 
 static lv_color_t KshimMutedColor(void)
 {
-  return lv_color_hex(0xa7bac7U);
+  return lv_color_hex(KSHIM_UI_TEXT_DIM);
 }
 
 static lv_color_t KshimAccentColor(void)
 {
-  return lv_color_hex(0x76dcf2U);
+  return lv_color_hex(KSHIM_UI_ACCENT);
 }
 
 static void KshimLvglFlush(lv_display_t *Display, const lv_area_t *Area,
@@ -163,20 +168,6 @@ static void KshimLvglReadPointer(lv_indev_t *Input, lv_indev_data_t *Data)
                     ? LV_INDEV_STATE_PRESSED
                     : LV_INDEV_STATE_RELEASED;
   Data->continue_reading = false;
-}
-
-static int32_t KshimSpringPath(const lv_anim_t *Animation)
-{
-  if (Animation == NULL || Animation->duration <= 0)
-    return Animation != NULL ? Animation->end_value : 0;
-  int32_t progress = Animation->act_time <= 0 ? 0 :
-      Animation->act_time >= Animation->duration
-          ? UI_GLASS_MOTION_PROGRESS_MAX
-          : (int32_t)(((int64_t)Animation->act_time *
-                       UI_GLASS_MOTION_PROGRESS_MAX) /
-                      Animation->duration);
-  return ui_glass_interpolate(Animation->start_value, Animation->end_value,
-                              ui_glass_spring(progress));
 }
 
 static void KshimSetTranslateX(void *Object, int32_t Value)
@@ -268,7 +259,7 @@ static void KshimMenuEvent(lv_event_t *Event)
       int32_t Offset = lv_obj_get_style_translate_x(Label, LV_PART_MAIN);
       KshimAnimate(Label, KshimSetTranslateX, Offset,
                    Code == LV_EVENT_FOCUSED ? 12 : 0,
-                   KSHIM_UI_FOCUS_DURATION_MS, KshimSpringPath);
+                   KSHIM_UI_FOCUS_DURATION_MS, lv_anim_path_overshoot);
     }
     if (Code == LV_EVENT_FOCUSED) {
       lv_obj_scroll_to_view(Button, LV_ANIM_ON);
@@ -317,6 +308,8 @@ static void KshimBootEvent(lv_event_t *Event)
     KshimConfirmIndex((size_t)Index);
 }
 
+/* Flat rows: a faint white plate at rest, the accent when focused; no
+ * border, gradient or shadow. */
 static void KshimStyleEntry(lv_obj_t *Button)
 {
   uint32_t Radius = clamp_u32(mRowHeight / 5U, 8U, 16U);
@@ -324,27 +317,24 @@ static void KshimStyleEntry(lv_obj_t *Button)
   lv_obj_set_width(Button, LV_PCT(100));
   lv_obj_set_height(Button, mRowHeight);
   lv_obj_set_style_radius(Button, (int32_t)Radius, 0);
-  lv_obj_set_style_bg_color(
-      Button, lv_color_hex(KshimDarkTheme() ? 0xd4edf4U : 0xffffffU), 0);
-  lv_obj_set_style_bg_opa(Button, KshimDarkTheme() ? LV_OPA_20 : LV_OPA_20,
-                          0);
-  lv_obj_set_style_bg_opa(Button, KshimDarkTheme() ? LV_OPA_50 : LV_OPA_40,
-                          LV_STATE_FOCUSED);
-  lv_obj_set_style_bg_opa(Button, KshimDarkTheme() ? LV_OPA_50 : LV_OPA_30,
-                          LV_STATE_PRESSED);
-  lv_obj_set_style_border_width(Button, 1, 0);
-  lv_obj_set_style_border_color(Button, lv_color_white(), 0);
-  lv_obj_set_style_border_opa(Button,
-                              KshimDarkTheme() ? LV_OPA_20 : LV_OPA_30, 0);
-  lv_obj_set_style_border_width(Button, 1, LV_STATE_FOCUSED);
-  lv_obj_set_style_border_color(Button, KshimAccentColor(),
-                                LV_STATE_FOCUSED);
-  lv_obj_set_style_border_opa(Button, LV_OPA_70, LV_STATE_FOCUSED);
+  lv_obj_set_style_bg_color(Button, lv_color_white(), 0);
+  lv_obj_set_style_bg_opa(Button, KSHIM_UI_ITEM_OPA, 0);
+  lv_obj_set_style_bg_color(Button, KshimAccentColor(), LV_STATE_FOCUSED);
+  lv_obj_set_style_bg_opa(Button, KSHIM_UI_FOCUS_OPA, LV_STATE_FOCUSED);
+  lv_obj_set_style_bg_color(Button, KshimAccentColor(), LV_STATE_PRESSED);
+  lv_obj_set_style_bg_opa(Button, LV_OPA_COVER, LV_STATE_PRESSED);
+  lv_obj_set_style_border_width(Button, 0, 0);
+  lv_obj_set_style_border_width(Button, 0, LV_STATE_FOCUSED);
+  lv_obj_set_style_shadow_width(Button, 0, 0);
   lv_obj_set_style_outline_width(Button, 0, 0);
-  lv_obj_set_style_text_color(Button, KshimTextColor(), 0);
+  lv_obj_set_style_outline_width(Button, 0, LV_STATE_FOCUS_KEY);
+  lv_obj_set_style_text_color(Button, KshimMutedColor(), 0);
+  lv_obj_set_style_text_color(Button, KshimTextColor(), LV_STATE_FOCUSED);
   lv_obj_set_style_text_font(Button, mRowFont, 0);
   lv_obj_set_style_pad_hor(Button, mRowHeight / 4U, 0);
   lv_obj_set_style_pad_ver(Button, max_u32(4U, mRowHeight / 6U), 0);
+  lv_obj_set_flex_align(Button, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
 }
 
 static uint32_t KshimPadding(void)
@@ -362,16 +352,16 @@ static int KshimRelayoutChrome(void)
   uint32_t BootHeight;
   int32_t ListY;
   int32_t ListHeight;
-  kshim_glass_layout_t NextLayout;
+  kshim_backdrop_layout_t NextLayout;
 
   if (mContext == NULL || mFramebuffer == NULL || mContext->EntryCount == 0U)
     return -1;
-  if (kshim_glass_layout_for_entries(
+  if (kshim_backdrop_layout(
           mFramebuffer->width, mFramebuffer->height,
-          CONFIG_KSHIM_GLASS_TEXTURE_PIXELS, mContext->EntryCount,
+          CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS, mContext->EntryCount,
           &NextLayout) != 0)
     return -2;
-  mGlassLayout = NextLayout;
+  mBackdropLayout = NextLayout;
   if (mPanel == NULL)
     return 0;
 
@@ -387,31 +377,31 @@ static int KshimRelayoutChrome(void)
   ListY = (int32_t)Padding + TitleHeight +
           (StatusHeight > 0 ? StatusHeight + (int32_t)Padding / 3 : 0) +
           (int32_t)Padding;
-  ListHeight = (int32_t)mGlassLayout.panel_height - ListY -
+  ListHeight = (int32_t)mBackdropLayout.panel_height - ListY -
                (int32_t)BootHeight - (int32_t)Padding * 2;
   if (ListHeight < 8)
     ListHeight = 8;
 
-  lv_obj_set_pos(mPanel, mGlassLayout.panel_x, mGlassLayout.panel_y);
-  lv_obj_set_size(mPanel, mGlassLayout.panel_width,
-                  mGlassLayout.panel_height);
-  lv_obj_set_style_radius(mPanel, (int32_t)mGlassLayout.panel_radius, 0);
+  lv_obj_set_pos(mPanel, mBackdropLayout.panel_x, mBackdropLayout.panel_y);
+  lv_obj_set_size(mPanel, mBackdropLayout.panel_width,
+                  mBackdropLayout.panel_height);
+  lv_obj_set_style_radius(mPanel, (int32_t)mBackdropLayout.panel_radius, 0);
   if (mStatus != NULL) {
-    lv_obj_set_width(mStatus, (int32_t)mGlassLayout.panel_width -
+    lv_obj_set_width(mStatus, (int32_t)mBackdropLayout.panel_width -
                               (int32_t)Padding * 2);
     lv_obj_set_pos(mStatus, (int32_t)Padding,
                    (int32_t)Padding + TitleHeight);
   }
   if (mList != NULL) {
     lv_obj_set_pos(mList, (int32_t)Padding, ListY);
-    lv_obj_set_size(mList, (int32_t)mGlassLayout.panel_width -
+    lv_obj_set_size(mList, (int32_t)mBackdropLayout.panel_width -
                             (int32_t)Padding * 2, ListHeight);
   }
   if (mBootButton != NULL) {
     lv_obj_set_pos(mBootButton, (int32_t)Padding,
-                   (int32_t)mGlassLayout.panel_height -
+                   (int32_t)mBackdropLayout.panel_height -
                    (int32_t)BootHeight - (int32_t)Padding);
-    lv_obj_set_size(mBootButton, (int32_t)mGlassLayout.panel_width -
+    lv_obj_set_size(mBootButton, (int32_t)mBackdropLayout.panel_width -
                                  (int32_t)Padding * 2, BootHeight);
   }
   lv_obj_update_layout(lv_screen_active());
@@ -458,24 +448,24 @@ static void KshimPrepareImage(lv_image_dsc_t *Image, uint32_t *Pixels)
           .magic = LV_IMAGE_HEADER_MAGIC,
           .cf = LV_COLOR_FORMAT_ARGB8888,
           .flags = 0,
-          .w = mGlassLayout.texture_width,
-          .h = mGlassLayout.texture_height,
-          .stride = (uint16_t)(mGlassLayout.texture_width * sizeof(uint32_t)),
+          .w = mBackdropLayout.texture_width,
+          .h = mBackdropLayout.texture_height,
+          .stride = (uint16_t)(mBackdropLayout.texture_width * sizeof(uint32_t)),
       },
-      .data_size = (uint32_t)((size_t)mGlassLayout.texture_width *
-                              mGlassLayout.texture_height * sizeof(uint32_t)),
+      .data_size = (uint32_t)((size_t)mBackdropLayout.texture_width *
+                              mBackdropLayout.texture_height * sizeof(uint32_t)),
       .data = (const uint8_t *)(const void *)Pixels,
   };
 }
 
 static int KshimRenderInitialBackground(void)
 {
-  if (kshim_glass_render(mGlassTextures[0],
-                         CONFIG_KSHIM_GLASS_TEXTURE_PIXELS, &mGlassLayout,
-                         0U, true, true) != 0)
+  if (kshim_backdrop_render(mBackdropTextures[0],
+                            CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS,
+                            &mBackdropLayout, 0U, true) != 0)
     return -1;
-  KshimPrepareImage(&mGlassImages[0], mGlassTextures[0]);
-  KshimPrepareImage(&mGlassImages[1], mGlassTextures[1]);
+  KshimPrepareImage(&mBackdropImages[0], mBackdropTextures[0]);
+  KshimPrepareImage(&mBackdropImages[1], mBackdropTextures[1]);
   mActiveTexture = 0U;
   mLastTextureUpdate = 0U;
   return 0;
@@ -505,8 +495,7 @@ static int KshimBuildChrome(void)
     mRowHeight = 24U;
   }
 
-  lv_obj_set_style_bg_color(Screen,
-      lv_color_hex(KshimDarkTheme() ? 0x07111fU : 0xeaf8fcU), 0);
+  lv_obj_set_style_bg_color(Screen, lv_color_hex(KSHIM_UI_SCREEN), 0);
   lv_obj_set_style_bg_opa(Screen, LV_OPA_COVER, 0);
   lv_obj_set_style_text_color(Screen, KshimTextColor(), 0);
   lv_obj_set_scrollbar_mode(Screen, LV_SCROLLBAR_MODE_OFF);
@@ -516,7 +505,7 @@ static int KshimBuildChrome(void)
     return -1;
   lv_obj_set_size(mBackground, LV_PCT(100), LV_PCT(100));
   lv_obj_align(mBackground, LV_ALIGN_CENTER, 0, 0);
-  lv_image_set_src(mBackground, &mGlassImages[0]);
+  lv_image_set_src(mBackground, &mBackdropImages[0]);
   lv_image_set_inner_align(mBackground, LV_IMAGE_ALIGN_STRETCH);
   lv_image_set_antialias(mBackground, true);
   lv_obj_remove_flag(mBackground, LV_OBJ_FLAG_CLICKABLE);
@@ -524,14 +513,16 @@ static int KshimBuildChrome(void)
   mPanel = lv_obj_create(Screen);
   if (mPanel == NULL)
     return -1;
-  lv_obj_set_pos(mPanel, mGlassLayout.panel_x, mGlassLayout.panel_y);
-  lv_obj_set_size(mPanel, mGlassLayout.panel_width,
-                  mGlassLayout.panel_height);
-  lv_obj_set_style_radius(mPanel, (int32_t)mGlassLayout.panel_radius, 0);
-  lv_obj_set_style_bg_opa(mPanel, LV_OPA_TRANSP, 0);
-  /* The panel rim is rasterized by the glass texture.  A second LVGL border
-   * produces a hard white staircase when the bounded texture is upscaled. */
+  lv_obj_set_pos(mPanel, mBackdropLayout.panel_x, mBackdropLayout.panel_y);
+  lv_obj_set_size(mPanel, mBackdropLayout.panel_width,
+                  mBackdropLayout.panel_height);
+  lv_obj_set_style_radius(mPanel, (int32_t)mBackdropLayout.panel_radius, 0);
+  /* Flat acrylic: the (already soft) background under a translucent
+   * indigo tint, with no border, rim or shadow. */
+  lv_obj_set_style_bg_color(mPanel, lv_color_hex(KSHIM_UI_PANEL_TINT), 0);
+  lv_obj_set_style_bg_opa(mPanel, KSHIM_UI_PANEL_OPA, 0);
   lv_obj_set_style_border_width(mPanel, 0, 0);
+  lv_obj_set_style_shadow_width(mPanel, 0, 0);
   lv_obj_set_style_pad_all(mPanel, 0, 0);
   lv_obj_set_scrollbar_mode(mPanel, LV_SCROLLBAR_MODE_OFF);
   lv_obj_remove_flag(mPanel, LV_OBJ_FLAG_SCROLLABLE);
@@ -543,7 +534,7 @@ static int KshimBuildChrome(void)
   int32_t ListY = (int32_t)Padding + TitleHeight +
                   (StatusHeight > 0 ? StatusHeight + (int32_t)Padding / 3 : 0) +
                   (int32_t)Padding;
-  int32_t ListHeight = (int32_t)mGlassLayout.panel_height - ListY -
+  int32_t ListHeight = (int32_t)mBackdropLayout.panel_height - ListY -
                        (int32_t)BootHeight - (int32_t)Padding * 2;
   if (ListHeight < 8)
     ListHeight = 8;
@@ -564,7 +555,7 @@ static int KshimBuildChrome(void)
   lv_label_set_text(mStatus, "选择要启动的系统");
   lv_obj_set_style_text_font(mStatus, StatusFont, 0);
   lv_obj_set_style_text_color(mStatus, KshimMutedColor(), 0);
-  lv_obj_set_width(mStatus, (int32_t)mGlassLayout.panel_width -
+  lv_obj_set_width(mStatus, (int32_t)mBackdropLayout.panel_width -
                             (int32_t)Padding * 2);
   lv_label_set_long_mode(mStatus, LV_LABEL_LONG_DOT);
   lv_obj_align(mStatus, LV_ALIGN_TOP_LEFT, (int32_t)Padding,
@@ -577,14 +568,14 @@ static int KshimBuildChrome(void)
   if (mList == NULL)
     return -1;
   lv_obj_set_pos(mList, (int32_t)Padding, ListY);
-  lv_obj_set_size(mList, (int32_t)mGlassLayout.panel_width -
+  lv_obj_set_size(mList, (int32_t)mBackdropLayout.panel_width -
                          (int32_t)Padding * 2, ListHeight);
   lv_obj_set_style_bg_opa(mList, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(mList, 0, 0);
   lv_obj_set_style_radius(mList, 0, 0);
   lv_obj_set_style_pad_all(mList, 0, 0);
   lv_obj_set_style_pad_row(mList, max_u32(2U, Padding / 4U), 0);
-  lv_obj_set_style_bg_color(mList, KshimAccentColor(),
+  lv_obj_set_style_bg_color(mList, lv_color_hex(KSHIM_UI_ACCENT_LIGHT),
                             LV_PART_SCROLLBAR);
   lv_obj_set_style_bg_opa(mList, LV_OPA_50, LV_PART_SCROLLBAR);
   lv_obj_set_style_width(mList, 3, LV_PART_SCROLLBAR);
@@ -594,20 +585,20 @@ static int KshimBuildChrome(void)
   if (mBootButton == NULL)
     return -1;
   lv_obj_set_pos(mBootButton, (int32_t)Padding,
-                 (int32_t)mGlassLayout.panel_height -
+                 (int32_t)mBackdropLayout.panel_height -
                  (int32_t)BootHeight - (int32_t)Padding);
-  lv_obj_set_size(mBootButton, (int32_t)mGlassLayout.panel_width -
+  lv_obj_set_size(mBootButton, (int32_t)mBackdropLayout.panel_width -
                                (int32_t)Padding * 2, BootHeight);
-  lv_obj_set_style_radius(mBootButton, 8, 0);
-  lv_obj_set_style_bg_color(mBootButton, KshimAccentColor(), 0);
-  lv_obj_set_style_bg_opa(mBootButton,
-                          KshimDarkTheme() ? LV_OPA_60 : LV_OPA_80, 0);
-  lv_obj_set_style_border_width(mBootButton, 1, 0);
-  lv_obj_set_style_border_color(mBootButton, lv_color_white(), 0);
-  lv_obj_set_style_border_opa(mBootButton, LV_OPA_50, 0);
-  lv_obj_set_style_shadow_width(mBootButton, ShortEdge >= 320U ? 18 : 0, 0);
-  lv_obj_set_style_shadow_color(mBootButton, KshimAccentColor(), 0);
-  lv_obj_set_style_shadow_opa(mBootButton, LV_OPA_20, 0);
+  /* The primary action: a solid light plate with dark text, distinct from
+   * the accent-blue selection above it. */
+  lv_obj_set_style_radius(mBootButton, clamp_u32(BootHeight / 5U, 8U, 16U), 0);
+  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(0xf4f7ffU), 0);
+  lv_obj_set_style_bg_opa(mBootButton, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(0xdfe5fbU),
+                            LV_STATE_PRESSED);
+  lv_obj_set_style_border_width(mBootButton, 0, 0);
+  lv_obj_set_style_shadow_width(mBootButton, 0, 0);
+  lv_obj_set_style_outline_width(mBootButton, 0, LV_STATE_FOCUS_KEY);
   lv_obj_add_event_cb(mBootButton, KshimBootEvent, LV_EVENT_CLICKED, NULL);
 
   lv_obj_t *BootLabel = lv_label_create(mBootButton);
@@ -615,9 +606,8 @@ static int KshimBuildChrome(void)
     return -1;
   lv_label_set_text_static(BootLabel, "Boot");
   lv_obj_set_style_text_font(BootLabel, mRowFont, 0);
-  lv_obj_set_style_text_color(BootLabel,
-                              KshimDarkTheme() ? lv_color_black() :
-                              lv_color_white(), 0);
+  lv_obj_set_style_text_color(BootLabel, lv_color_hex(KSHIM_UI_PANEL_TINT),
+                              0);
   lv_obj_center(BootLabel);
 
   lv_obj_update_layout(Screen);
@@ -657,11 +647,11 @@ int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
   uint32_t RenderStride = Framebuffer->width * sizeof(uint32_t);
   if (sizeof(mLvglRenderBuffers[0]) < RenderStride)
     return -3;
-  if (kshim_glass_layout_for_entries(
+  if (kshim_backdrop_layout(
           Framebuffer->width, Framebuffer->height,
-          CONFIG_KSHIM_GLASS_TEXTURE_PIXELS,
+          CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS,
           sizeof(DefaultEntries) / sizeof(DefaultEntries[0]),
-          &mGlassLayout) != 0)
+          &mBackdropLayout) != 0)
     return -4;
 
   *Context = (kshim_lvgl_t){
@@ -736,8 +726,8 @@ int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
   Context->List = mList;
   Context->BootButton = mBootButton;
   Context->Background = mBackground;
-  Context->TextureWidth = mGlassLayout.texture_width;
-  Context->TextureHeight = mGlassLayout.texture_height;
+  Context->TextureWidth = mBackdropLayout.texture_width;
+  Context->TextureHeight = mBackdropLayout.texture_height;
   Context->Ready = 1U;
   return 0;
 
@@ -772,16 +762,15 @@ void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs)
     }
   }
 
-  if (Context->ElapsedMs - mLastTextureUpdate >= KSHIM_GLASS_REFRESH_MS &&
+  if (Context->ElapsedMs - mLastTextureUpdate >= KSHIM_BACKDROP_REFRESH_MS &&
       mBackground != NULL) {
     uint8_t Next = (uint8_t)(mActiveTexture ^ 1U);
-    lv_image_cache_drop(&mGlassImages[Next]);
-    if (kshim_glass_render(mGlassTextures[Next],
-                           CONFIG_KSHIM_GLASS_TEXTURE_PIXELS,
-                           &mGlassLayout, Context->ElapsedMs,
-                           KshimDarkTheme(),
-                           Context->ReducedQuality != 0U) == 0) {
-      lv_image_set_src(mBackground, &mGlassImages[Next]);
+    lv_image_cache_drop(&mBackdropImages[Next]);
+    if (kshim_backdrop_render(mBackdropTextures[Next],
+                              CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS,
+                              &mBackdropLayout, Context->ElapsedMs,
+                              Context->ReducedQuality != 0U) == 0) {
+      lv_image_set_src(mBackground, &mBackdropImages[Next]);
       mActiveTexture = Next;
       mLastTextureUpdate = Context->ElapsedMs;
     }

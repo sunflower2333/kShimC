@@ -102,16 +102,13 @@ menu "Framebuffer and UI"
             LVGL renders color pixels and converts them to this target format.
 
     config KSHIM_LVGL
-        bool "Enable LVGL liquid glass menu"
+        bool "Enable LVGL boot menu"
         default y
         help
-            Build the pinned LVGL menu. The Qualcomm Volume Up, Volume Down,
-            and Power actions are mapped to up, down, and confirm respectively.
-
-    config KSHIM_UI_DARK
-        bool "Dark menu theme"
-        default y
-        depends on KSHIM_LVGL
+            Build the pinned LVGL menu: a flat, borderless acrylic panel
+            over an animated gradient, in one dark theme. The Qualcomm Volume
+            Up, Volume Down, and Power actions are mapped to up, down, and
+            confirm respectively.
 
     config KSHIM_LVGL_BUFFER_BYTES
         int "LVGL partial render buffer size"

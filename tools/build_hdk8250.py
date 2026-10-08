@@ -9,8 +9,7 @@ import subprocess
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("build/hdk8250-dark"))
-    parser.add_argument("--theme", choices=("dark", "light"), default="dark")
+    parser.add_argument("--out", type=Path, default=Path("build/hdk8250"))
     parser.add_argument("--jobs", type=int, default=8)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -18,7 +17,6 @@ def main():
     firmware = out / "firmware"
     firmware.mkdir(parents=True, exist_ok=True)
     config = (root / "configs/hdk8250_defconfig").read_text()
-    config += "\nCONFIG_KSHIM_UI_DARK=" + ("y" if args.theme == "dark" else "n") + "\n"
     (firmware / ".config").write_text(config)
     (out / "hdk8250_defconfig").write_text(config)
     for name, command in (
@@ -36,7 +34,7 @@ def main():
         raise ValueError("Runtime has unresolved symbols: " + undefined)
     report = {
         "board": "qcom-hdk8250", "runtime_mode": "manifest", "libc": "picolibc",
-        "theme": args.theme, "bytes": binary.stat().st_size,
+        "ui": "flat", "bytes": binary.stat().st_size,
         "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "framebuffer": {"source": "DT reservation and validated live SDE scanout"},
         "touch": "DT-selected ST FTM4 or FTM5 with chip-ID verification",

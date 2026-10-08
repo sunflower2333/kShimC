@@ -125,7 +125,15 @@ and format. Supported layouts are linear RGB565, 32-bit RGB/BGR and verified
 shared-framebuffer split scans. An absent or ambiguous splash falls back to
 serial selection. kShimC does not initialize DSI hardware. Volume Up moves up,
 Volume Down moves down, and Power confirms. Touch selects a card; the separate
-Boot button confirms. Light and dark are separate builds.
+Boot button confirms.
+
+The menu has one flat, dark style (`src/ui/lvgl_port.c`, `src/ui/backdrop.c`):
+a borderless indigo acrylic panel (0x161c3e at 50%) centred over an animated
+background - a diagonal indigo gradient with an azure-to-lilac wash and four
+slowly drifting soft colour blobs, rendered at a bounded texture size and
+stretched. Rows are flat plates without borders or shadows; the focused row is
+the accent blue 0x2f6bf0 with white text, its label sliding in with an
+overshoot. The Boot button is a solid light plate with dark text.
 
 The MIX 3 5G profile is `andromeda`: ST FTM5 (not FocalTech), GENI I2C at
 0x49, 1080 x 2340. Its bus, clocks, GPIOs, CmdDB and RPMh setup are independent
@@ -155,9 +163,9 @@ Unavailable PSCI falls back to rendering on the boot CPU.
 ## Validation
 
 ```sh
-cmake -S tests -B build/host-dark -G Ninja -DCMAKE_C_COMPILER=clang -DKSHIM_TEST_DARK=ON
-cmake --build build/host-dark -j8
-ctest --test-dir build/host-dark --output-on-failure
+cmake -S tests -B build/host -G Ninja -DCMAKE_C_COMPILER=clang
+cmake --build build/host -j8
+ctest --test-dir build/host --output-on-failure
 python3 tools/test_qemu_smp.py
 python3 tools/test_crdk_upstream.py --edk2 /path/to/edk2
 python3 tests/manifest_qemu.py --runtime build/manifest/kShimC.bin
@@ -181,19 +189,19 @@ permissions.
 
 The standalone tests reserve 40 MiB in the board's Kernel region and embed
 one board-matched UEFI FD. Both `UEFI A` and `UEFI B` boot that same FD.
-`--theme dark` and `--theme light` produce separate images. Each build checks
+Each build checks
 the embedded FD against its saved build report, target device, DEBUG setting,
 GENI serial library and nonzero debug PCDs.
 
 ```sh
-python3 tools/build_hdk8150.py --aloha /path/to/mu_aloha_platforms --out build/hdk8150-dark --theme dark \
+python3 tools/build_hdk8150.py --aloha /path/to/mu_aloha_platforms --out build/hdk8150 \
   --uefi-boot build/uefi-hdk8150/source-uefi-boot.img \
   --uefi-build-dir build/uefi-hdk8150 --require-debug-uart
-python3 tools/build_hdk8450.py --aloha /path/to/mu_aloha_platforms --out build/hdk8450-dark --theme dark \
+python3 tools/build_hdk8450.py --aloha /path/to/mu_aloha_platforms --out build/hdk8450 \
   --uefi-boot build/uefi-hdk8450/source-uefi-boot.img \
   --uefi-build-dir build/uefi-hdk8450 --require-debug-uart
 python3 tools/build_andromeda_dt.py
-python3 tools/build_andromeda.py --aloha /path/to/mu_aloha_platforms --out build/andromeda-dark --theme dark \
+python3 tools/build_andromeda.py --aloha /path/to/mu_aloha_platforms --out build/andromeda \
   --uefi-boot build/uefi-andromeda/corrected/source-uefi-boot.img \
   --uefi-build-dir build/uefi-andromeda --require-debug-uart \
   --dtb-bundle build/andromeda-dt/android-andromeda-dtbs.bin
@@ -215,7 +223,7 @@ resources, chip-ID validation and the DT X/Y flips. FTM5 is selected by its
 property family and independently verified chip ID.
 
 ```sh
-python3 tools/build_hdk8250.py --out build/hdk8250-dark --theme dark
+python3 tools/build_hdk8250.py --out build/hdk8250
 ```
 
 This produces a 4 MiB Manifest runtime without bundling UEFI. Display layout

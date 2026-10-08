@@ -7,7 +7,7 @@
 #endif
 #endif
 
-/* The glass compositor and antialiased fonts render into ARGB8888. */
+/* The animated background and antialiased fonts render into ARGB8888. */
 #define LV_COLOR_DEPTH 32
 #if defined(CONFIG_KSHIM_SMP) && CONFIG_KSHIM_SMP && defined(__aarch64__)
 #define LV_USE_OS LV_OS_CUSTOM

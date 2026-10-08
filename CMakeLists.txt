@@ -150,7 +150,7 @@ if(CONFIG_KSHIM_TOUCH OR CONFIG_KSHIM_LVGL)
     list(APPEND SRC_FILES src/drivers/touch.c)
 endif()
 if(CONFIG_KSHIM_LVGL)
-    list(APPEND SRC_FILES src/ui/glass_renderer.c src/ui/lvgl_port.c src/ui/lvgl_os.c)
+    list(APPEND SRC_FILES src/ui/backdrop.c src/ui/lvgl_port.c src/ui/lvgl_os.c)
 endif()
 set(CRDK_SPMI ${CONFIG_QCOM_SPMI} CACHE BOOL "" FORCE)
 set(CRDK_GPIO ${CONFIG_QCOM_KEYS} CACHE BOOL "" FORCE)
@@ -169,14 +169,7 @@ include(${CMAKE_SOURCE_DIR}/ports/lvgl/CMakeLists.txt)
 kshim_enable_lvgl_smp_adapter(lvgl "${CMAKE_SOURCE_DIR}/third_party/lvgl")
 target_link_libraries(lvgl PRIVATE c)
 
-add_library(kshim_glass STATIC
-    third_party/liquid-glass/ui_glass_optics.c
-    third_party/liquid-glass/ui_glass_motion.c
-    third_party/liquid-glass/liquid_glass_motion.c
-    third_party/liquid-glass/liquid_glass_compositor_core.c)
-target_include_directories(kshim_glass PUBLIC third_party/liquid-glass)
-target_link_libraries(kshim_glass PRIVATE c)
-set(KSHIM_UI_LIBRARIES lvgl kshim_glass)
+set(KSHIM_UI_LIBRARIES lvgl)
 endif()
 add_subdirectory(ports/crdk)
 target_link_libraries(crdk PRIVATE c)
