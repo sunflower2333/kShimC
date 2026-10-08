@@ -7,6 +7,7 @@
 
 #include <lvgl.h>
 #include <lvgl_port.h>
+#include <ui_font.h>
 
 #ifdef CONFIG_KSHIM_UEFI_TEST_MENU
 #define DEFAULT_ENTRY_COUNT 2U
@@ -292,12 +293,55 @@ static void TestBatchedTouchAndCancel(void)
     DestroyUi(&Test);
 }
 
+/* With scratch memory the menu inflates Noto Sans CJK and draws CJK labels
+ * with real glyphs; without it (every other test) it falls back to Latin. */
+static void TestCjkFont(void)
+{
+    const size_t Bytes = 4U << 20;
+    void *Scratch = aligned_alloc(64, Bytes);
+    const void *Font;
+    test_ui_t Test;
+    static const char *const Names[] = {"Android 启动", "恢复模式", "ひらがな"};
+    static const uint32_t Glyphs[] = {0x542f, 0x6062, 0x3072, 0x0041};
+
+    assert(Scratch != NULL);
+    assert(kshim_ui_font_size() > 800000U);
+    assert(kshim_ui_font_inflate(Scratch, 1024U, &Font) == -2 && Font == NULL);
+    assert(kshim_ui_font_inflate(Scratch, Bytes, &Font) == 0 && Font == Scratch);
+    assert(memcmp(Scratch, "OTTO", 4) == 0);   /* CFF OpenType */
+
+    kshim_lvgl_set_scratch(Scratch, Bytes);
+    InitStableUi(&Test, 1920U, 1080U, KSHIM_FB_FORMAT_ARGB8888);
+    assert(kshim_lvgl_has_cjk_font(&Test.ui));
+    assert(kshim_lvgl_set_entries(&Test.ui, Names, 3U, 0U) == 0);
+    Advance(&Test.ui, KSHIM_UI_ENTRY_DURATION_MS + 64U);
+    lv_obj_t *Label = lv_obj_get_child(lv_obj_get_child(Test.ui.List, 0), 0);
+    assert(Label != NULL);
+    const lv_font_t *RowFont = lv_obj_get_style_text_font(Label, LV_PART_MAIN);
+    assert(RowFont != &lv_font_montserrat_20);
+    for (size_t Index = 0; Index < sizeof(Glyphs) / sizeof(Glyphs[0]); Index++) {
+        lv_font_glyph_dsc_t Glyph;
+        assert(lv_font_get_glyph_dsc(RowFont, &Glyph, Glyphs[Index], 0));
+        assert(Glyph.box_w > 4U && Glyph.box_h > 4U);
+    }
+    DestroyUi(&Test);
+
+    /* Too little scratch for the font: Latin fallback, still a menu. */
+    kshim_lvgl_set_scratch(Scratch, 64U * 1024U);
+    InitStableUi(&Test, 320U, 240U, KSHIM_FB_FORMAT_ARGB8888);
+    assert(!kshim_lvgl_has_cjk_font(&Test.ui));
+    DestroyUi(&Test);
+    kshim_lvgl_set_scratch(NULL, 0U);
+    free(Scratch);
+}
+
 int main(void)
 {
     TestFormats();
     TestDefaultKeys();
     TestDynamicAndTouch();
     TestBatchedTouchAndCancel();
+    TestCjkFont();
     puts("LVGL color formats, 49-entry menu, key mapping, touch confirmation and motion tests passed");
     return 0;
 }

@@ -19,8 +19,15 @@ set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
 add_subdirectory("${KSHIM_ROOT}/third_party/lvgl" lvgl)
 add_subdirectory("${KSHIM_ROOT}/ports/crdk" crdk)
-add_library(kshim_backdrop STATIC "${KSHIM_ROOT}/src/ui/backdrop.c")
+set(KSHIM_UI_FONT_BLOB "${KSHIM_ROOT}/src/ui/fonts/noto_sans_cjk_sc.ksf")
+configure_file("${KSHIM_ROOT}/src/ui/fonts/ui_font_blob.S.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/ui_font_blob.S" @ONLY)
+set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/ui_font_blob.S"
+    PROPERTIES OBJECT_DEPENDS "${KSHIM_UI_FONT_BLOB}")
+add_library(kshim_backdrop STATIC "${KSHIM_ROOT}/src/ui/backdrop.c"
+    "${KSHIM_ROOT}/src/ui/font.c" "${CMAKE_CURRENT_BINARY_DIR}/ui_font_blob.S")
 target_include_directories(kshim_backdrop PUBLIC "${KSHIM_ROOT}/src/include")
+target_link_libraries(kshim_backdrop PUBLIC lvgl)
 
 function(kshim_test Target)
     add_executable(${Target} ${ARGN})

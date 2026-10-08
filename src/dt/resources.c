@@ -73,6 +73,33 @@ static int touch_maps(struct kshim_resources *r, const struct CrIo *io)
     return kshim_resource_map(r, q->cmd_db_base, q->cmd_db_size, KSHIM_MMU_NORMAL_NC, KSHIM_MMU_READ);
 }
 #endif
+#if CONFIG_KSHIM_FRAMEBUFFER
+/* The display reservation past the scanout frame is owned by the display and
+ * unused while kShimC runs; the UI keeps its inflated font and background
+ * textures there instead of in the runtime slot. */
+static void ui_scratch_from_splash(const void *f, struct kshim_resources *r)
+{
+    struct dt_range reservation;
+    uint64_t start = r->framebuffer.render_address + r->framebuffer.buffer_size;
+    if (kshim_dt_splash_reservation(f, &reservation, NULL) ||
+        start < r->framebuffer.render_address || start > UINT64_MAX - 4095) return;
+    start = (start + 4095) & ~UINT64_C(4095);
+    uint64_t end = reservation.base + reservation.size;
+    if (start >= reservation.base && start < end)
+        r->ui_scratch = (struct dt_range){start, end - start};
+}
+/* Write-back unless a no-map reservation covers it: those may only be
+ * mapped non-cacheable. */
+static kshim_mmu_memory_type_t ui_scratch_type(const void *f, struct dt_range scratch)
+{
+    struct dt_range ranges[128]; bool no_map[128]; size_t count;
+    if (dt_reservations(f, ranges, no_map, 128, &count)) return KSHIM_MMU_NORMAL_NC;
+    for (size_t i = 0; i < count; ++i)
+        if (no_map[i] && scratch.base < ranges[i].base + ranges[i].size &&
+            ranges[i].base < scratch.base + scratch.size) return KSHIM_MMU_NORMAL_NC;
+    return KSHIM_MMU_NORMAL_WB;
+}
+#endif
 int kshim_resources_init(const void *f, size_t available)
 {
     if (dt_validate(f, available)) return -1;
@@ -124,6 +151,16 @@ int kshim_resources_init(const void *f, size_t available)
     resources.splash_status = kshim_dt_splash(f, CrIoDefault(), &resources.framebuffer, &display);
     if (!resources.splash_status && kshim_resource_map(&resources, display.base, display.size,
             display.type, display.permissions)) return -1;
+    if (!resources.splash_status) ui_scratch_from_splash(f, &resources);
+#if CONFIG_KSHIM_UI_SCRATCH_SIZE
+    if (!resources.ui_scratch.size)
+        resources.ui_scratch = (struct dt_range){CONFIG_KSHIM_UI_SCRATCH_BASE,
+                                                 CONFIG_KSHIM_UI_SCRATCH_SIZE};
+#endif
+    if (resources.ui_scratch.size && kshim_resource_map(&resources,
+            resources.ui_scratch.base, resources.ui_scratch.size,
+            ui_scratch_type(f, resources.ui_scratch), KSHIM_MMU_READ | KSHIM_MMU_WRITE))
+        resources.ui_scratch = (struct dt_range){0};
 #endif
     initialized = true;
     return 0;

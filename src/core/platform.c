@@ -113,7 +113,12 @@ static int start_menu(const void *fdt)
     if (!kshim_mmu_is_enabled() &&
         (kshim_mmu_root_table() || kshim_mmu_configure_default(fdt) == 0))
         (void)kshim_mmu_enable_current_cpu();
+    kshim_lvgl_set_scratch((void *)(uintptr_t)r->ui_scratch.base,
+                           (size_t)r->ui_scratch.size);
     if (kshim_lvgl_init(&Lvgl, &Framebuffer, &Keys)) return -2;
+    printf("UI: %s font, scratch %#llx+%#llx\n",
+           kshim_lvgl_has_cjk_font(&Lvgl) ? "Noto Sans CJK" : "fallback Latin",
+           (unsigned long long)r->ui_scratch.base, (unsigned long long)r->ui_scratch.size);
     if (keys) kshim_lvgl_set_status(&Lvgl, "Volume keys unavailable");
 #if CONFIG_KSHIM_TOUCH
     start_touch(r);

@@ -137,9 +137,13 @@ int kshim_backdrop_layout(uint32_t screen_width, uint32_t screen_height,
     /* Keep the frame compact for the common two-entry UEFI menu while still
      * capping long manifests to a scrollable panel.  These line metrics match
      * the LVGL chrome in lvgl_port.c and are deliberately integer-only. */
-    uint32_t title_height = short_edge >= 720U ? 58U :
-                            short_edge >= 320U ? 34U : 24U;
-    uint32_t status_height = short_edge >= 160U ? 17U : 0U;
+    /* Noto Sans CJK lines are 1.448 em: titles of 48/28/20 px and status
+     * text of 22/16/12 px (lvgl_port.c). */
+    uint32_t title_height = short_edge >= 720U ? 70U :
+                            short_edge >= 320U ? 41U : 29U;
+    uint32_t status_height = short_edge < 160U ? 0U :
+                             short_edge >= 720U ? 32U :
+                             short_edge >= 320U ? 23U : 17U;
     uint32_t row_height = short_edge >= 720U ? 72U :
                           short_edge >= 320U ? 52U : 24U;
     uint32_t row_gap = max_u32(2U, padding / 4U);

@@ -135,6 +135,22 @@ stretched. Rows are flat plates without borders or shadows; the focused row is
 the accent blue 0x2f6bf0 with white text, its label sliding in with an
 overshoot. The Boot button is a solid light plate with dark text.
 
+Text uses Noto Sans CJK SC, drawn at any size by LVGL's TinyTTF: titles,
+rows and status text at 48/28/22 px on 720p+ panels (28/20/16 and 20/14/12
+on smaller ones). `src/ui/fonts/noto_sans_cjk_sc.ksf` holds an LZ4-compressed
+subset (4,479 glyphs: ASCII, Latin-1, Latin Extended-A, general and CJK
+punctuation, kana, full-width forms and the 3,755 GB2312 level-1 hanzi; 790
+KiB packed, 840 KiB inflated). It stays in the 4 MiB runtime slot compressed
+and is inflated at boot, with CRC check, into scratch RAM outside the slot:
+on Qualcomm boards the display reservation (`cont_splash_region`) past the
+scanout frame, which also holds the two background textures; on QEMU the
+`KSHIM_UI_SCRATCH_BASE/SIZE` window. Without scratch memory the menu falls
+back to Montserrat 20 (Latin only) on a plain background. The font is under
+the SIL Open Font License (`src/ui/fonts/OFL.txt`); `provenance.json` records
+the source and hashes. Regenerate it with
+`python3 tools/gen_ui_font.py [--source NotoSansCJKsc-Regular.otf]`
+(needs `pip install fonttools lz4`).
+
 The MIX 3 5G profile is `andromeda`: ST FTM5 (not FocalTech), GENI I2C at
 0x49, 1080 x 2340. Its bus, clocks, GPIOs, CmdDB and RPMh setup are independent
 of HDK8150. The protocol also has an SPI transport, but no SPI touch variant

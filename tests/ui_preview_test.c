@@ -95,11 +95,15 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     memset(Inputs, 0, sizeof(Inputs));
     assert(QcomKeysInit(&Keys, Descriptors, 3U, ReadInput, NULL) == 0);
 
+    /* The display reservation's tail on a device: font and textures. */
+    static uint8_t Scratch[4U << 20] __attribute__((aligned(64)));
+    kshim_lvgl_set_scratch(Scratch, sizeof(Scratch));
     kshim_lvgl_t Ui;
     assert(kshim_lvgl_init(&Ui, &Framebuffer, &Keys) == 0);
+    assert(kshim_lvgl_has_cjk_font(&Ui));
     static const char *const Entries[] = {
-        "Android", "UEFI diagnostics", "Recovery", "Factory image",
-        "Copied test payload", "Network rescue", "Power off",
+        "Android", "UEFI 诊断", "Recovery 恢复模式", "Factory image",
+        "Copied test payload", "Network rescue", "关机",
     };
     assert(kshim_lvgl_set_entries(&Ui, Entries,
                                   sizeof(Entries) / sizeof(Entries[0]), 0U) == 0);

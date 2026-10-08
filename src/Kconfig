@@ -110,6 +110,23 @@ menu "Framebuffer and UI"
             Up, Volume Down, and Power actions are mapped to up, down, and
             confirm respectively.
 
+    config KSHIM_UI_SCRATCH_BASE
+        hex "UI scratch memory base (fallback)"
+        default 0x0
+        depends on KSHIM_LVGL
+
+    config KSHIM_UI_SCRATCH_SIZE
+        hex "UI scratch memory size (fallback)"
+        default 0x0
+        depends on KSHIM_LVGL
+        help
+            RAM outside the runtime slot for the inflated Noto Sans CJK font
+            (about 840 KiB) and the two background textures. On Qualcomm
+            boards the display reservation past the scanout frame is used;
+            this window is only for platforms without one, such as the QEMU
+            test profile. Without scratch memory the menu falls back to a
+            Latin-only font on a plain background.
+
     config KSHIM_LVGL_BUFFER_BYTES
         int "LVGL partial render buffer size"
         range 128 1048576

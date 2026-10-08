@@ -22,6 +22,14 @@ typedef enum {
   KSHIM_MENU_POWER_OFF,
 } kshim_menu_action_t;
 
+/* RAM outside the runtime slot for the inflated Noto Sans CJK font and the
+ * background textures; call before kshim_lvgl_init. Without it (or if it is
+ * too small) the menu uses a Latin-only font on a plain background. */
+void kshim_lvgl_set_scratch(void *Base, size_t Size);
+
+/* Non-zero when the menu draws with Noto Sans CJK. */
+int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context);
+
 /* Initialize the LVGL menu and Qualcomm keypad. */
 int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
                     QcomKeys *Keys);

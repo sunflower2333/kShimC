@@ -23,6 +23,9 @@ struct kshim_resources {
     unsigned spmi_count;
     struct kshim_touch_resource touch;
     kshim_framebuffer_config_t framebuffer;
+    /* Free display-reservation memory past the scanout frame (or the
+     * Kconfig test window) for the UI's font and background textures. */
+    struct dt_range ui_scratch;
     kshim_mmu_region_t mappings[KSHIM_RESOURCE_MAX];
     size_t mapping_count;
     int spmi_status, touch_status, splash_status;
@@ -35,6 +38,7 @@ int kshim_dt_spmi_identity(const void *fdt, int node, uint8_t *controller,
 int kshim_dt_touch(const void *fdt, struct kshim_touch_resource *touch);
 int kshim_dt_gpio(const void *fdt, int provider, uint32_t pin,
                   uintptr_t *address, const char *function, uint32_t *mux);
+int kshim_dt_splash_reservation(const void *fdt, struct dt_range *memory, bool *no_map);
 int kshim_dt_splash(const void *fdt, const struct CrIo *io,
                     kshim_framebuffer_config_t *framebuffer,
                     kshim_mmu_region_t *mmio);

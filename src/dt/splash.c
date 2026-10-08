@@ -10,25 +10,32 @@ static int offsets(const void *f, int n, const char *name, uint32_t *out, unsign
     for (int i = 0; i < len / 4; ++i) out[i] = fdt32_to_cpu(p[i]);
     return len / 4;
 }
-int kshim_dt_splash(const void *f, const struct CrIo *io,
-                    kshim_framebuffer_config_t *fb, kshim_mmu_region_t *mmio)
+/* The single available cont_splash_region reservation, or -1. */
+int kshim_dt_splash_reservation(const void *f, struct dt_range *memory, bool *no_map)
 {
-    if (!fb || !mmio) return -1;
-    memset(fb, 0, sizeof(*fb)); memset(mmio, 0, sizeof(*mmio));
     int reserved = fdt_path_offset(f, "/reserved-memory"), node, found = -1;
-    struct dt_range memory = {0};
-    if (reserved < 0 || !dt_available(f, reserved)) return -1;
+    if (!memory || reserved < 0 || !dt_available(f, reserved)) return -1;
     fdt_for_each_subnode(node, f, reserved) {
         const char *label = dt_string(f, node, "label");
         const char *name = fdt_get_name(f, node, NULL);
         if (!dt_available(f, node) ||
             !((label && !strcmp(label, "cont_splash_region")) ||
               (name && !strncmp(name, "cont_splash_region@", 19)))) continue;
-        if (found >= 0 || dt_reg(f, node, 0, &memory)) return -1;
+        if (found >= 0 || dt_reg(f, node, 0, memory)) return -1;
         found = node;
     }
     if (found < 0) return -1;
-    int sde = -1;
+    if (no_map) *no_map = fdt_getprop(f, found, "no-map", NULL) != NULL;
+    return 0;
+}
+int kshim_dt_splash(const void *f, const struct CrIo *io,
+                    kshim_framebuffer_config_t *fb, kshim_mmu_region_t *mmio)
+{
+    if (!fb || !mmio) return -1;
+    memset(fb, 0, sizeof(*fb)); memset(mmio, 0, sizeof(*mmio));
+    struct dt_range memory = {0};
+    if (kshim_dt_splash_reservation(f, &memory, NULL)) return -1;
+    int node, sde = -1;
     for (node = fdt_node_offset_by_compatible(f, -1, "qcom,sde-kms"); node >= 0;
          node = fdt_node_offset_by_compatible(f, node, "qcom,sde-kms")) {
         if (!dt_available(f, node)) continue;

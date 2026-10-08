@@ -6,6 +6,7 @@
 
 #include <backdrop.h>
 #include <lvgl.h>
+#include <ui_font.h>
 
 #ifndef CONFIG_KSHIM_MENU_ENTRY1
 #define CONFIG_KSHIM_MENU_ENTRY1 "Boot"
@@ -36,8 +37,15 @@
 
 static uint8_t mLvglRenderBuffers[2][CONFIG_KSHIM_LVGL_BUFFER_BYTES]
     __attribute__((aligned(8)));
-static uint32_t mBackdropTextures[2][CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS]
-    __attribute__((aligned(8)));
+/* The background textures and the inflated font live in scratch RAM
+ * outside the runtime slot (kshim_lvgl_set_scratch). */
+static void *mScratch;
+static size_t mScratchSize;
+static uint32_t *mBackdropTextures[2];
+static const void *mFontData;
+static lv_font_t *mFonts[3];
+static const lv_font_t *mTitleFont;
+static const lv_font_t *mStatusFont;
 static lv_image_dsc_t mBackdropImages[2];
 static kshim_backdrop_layout_t mBackdropLayout;
 
@@ -369,10 +377,9 @@ static int KshimRelayoutChrome(void)
   Padding = KshimPadding();
   TitleHeight = (int32_t)lv_obj_get_height(lv_obj_get_child(mPanel, 0));
   if (TitleHeight <= 0)
-    TitleHeight = ShortEdge >= 720U ? 58 :
-                  ShortEdge >= 320U ? 34 : 24;
-  StatusHeight = ShortEdge >= 160U ? lv_font_get_line_height(
-      &lv_font_simsun_14_cjk) : 0;
+    TitleHeight = ShortEdge >= 720U ? 70 :
+                  ShortEdge >= 320U ? 41 : 29;
+  StatusHeight = ShortEdge >= 160U ? lv_font_get_line_height(mStatusFont) : 0;
   BootHeight = clamp_u32(ShortEdge / 11U, 16U, 88U);
   ListY = (int32_t)Padding + TitleHeight +
           (StatusHeight > 0 ? StatusHeight + (int32_t)Padding / 3 : 0) +
@@ -458,17 +465,70 @@ static void KshimPrepareImage(lv_image_dsc_t *Image, uint32_t *Pixels)
   };
 }
 
+/* Carve the two textures and the inflated font out of the scratch memory.
+ * Either may be missing: the menu then has a plain background or the
+ * Latin-only fallback font. */
+static void KshimPlaceScratch(void)
+{
+  size_t Texture = (size_t)CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS * sizeof(uint32_t);
+  uint8_t *Cursor = mScratch;
+  size_t Left = mScratchSize;
+
+  mBackdropTextures[0] = mBackdropTextures[1] = NULL;
+  mFontData = NULL;
+  if (Cursor == NULL || ((uintptr_t)Cursor & 63U) != 0U)
+    return;
+  if (Left >= 2U * Texture) {
+    mBackdropTextures[0] = (uint32_t *)(void *)Cursor;
+    mBackdropTextures[1] = (uint32_t *)(void *)(Cursor + Texture);
+    Cursor += 2U * Texture;
+    Left -= 2U * Texture;
+  }
+  (void)kshim_ui_font_inflate(Cursor, Left, &mFontData);
+}
+
 static int KshimRenderInitialBackground(void)
 {
+  mActiveTexture = 0U;
+  mLastTextureUpdate = 0U;
+  if (mBackdropTextures[0] == NULL)
+    return 0;
   if (kshim_backdrop_render(mBackdropTextures[0],
                             CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS,
                             &mBackdropLayout, 0U, true) != 0)
     return -1;
   KshimPrepareImage(&mBackdropImages[0], mBackdropTextures[0]);
   KshimPrepareImage(&mBackdropImages[1], mBackdropTextures[1]);
-  mActiveTexture = 0U;
-  mLastTextureUpdate = 0U;
   return 0;
+}
+
+/* Noto Sans CJK SC at the three sizes the chrome uses (title, rows,
+ * status); Montserrat 20 when the font could not be inflated. */
+static void KshimCreateFonts(uint32_t ShortEdge)
+{
+  static const int32_t Sizes[3][3] = {
+      {48, 28, 22}, {28, 20, 16}, {20, 14, 12},
+  };
+  const int32_t *Size = Sizes[ShortEdge >= 720U ? 0 : ShortEdge >= 320U ? 1 : 2];
+
+  for (unsigned Index = 0; Index < 3U; Index++) {
+    mFonts[Index] = mFontData == NULL ? NULL :
+        lv_tiny_ttf_create_data_ex(mFontData, kshim_ui_font_size(), Size[Index],
+                                   LV_FONT_KERNING_NONE,
+                                   Index == 0U ? 32U : LV_TINY_TTF_CACHE_GLYPH_CNT);
+  }
+  mTitleFont = mFonts[0] != NULL ? mFonts[0] : &lv_font_montserrat_20;
+  mRowFont = mFonts[1] != NULL ? mFonts[1] : &lv_font_montserrat_20;
+  mStatusFont = mFonts[2] != NULL ? mFonts[2] : &lv_font_montserrat_20;
+}
+
+/* The fonts live on LVGL's heap, which lv_deinit() releases as a whole;
+ * destroying them earlier would leave the labels it deletes dangling. */
+static void KshimForgetFonts(void)
+{
+  for (unsigned Index = 0; Index < 3U; Index++)
+    mFonts[Index] = NULL;
+  mTitleFont = mRowFont = mStatusFont = NULL;
 }
 
 static int KshimBuildChrome(void)
@@ -479,21 +539,10 @@ static int KshimBuildChrome(void)
 
   uint32_t ShortEdge = min_u32(mFramebuffer->width, mFramebuffer->height);
   uint32_t Padding = clamp_u32(ShortEdge / 28U, 2U, 36U);
-  const lv_font_t *TitleFont;
-  const lv_font_t *StatusFont = &lv_font_simsun_14_cjk;
-  if (ShortEdge >= 720U) {
-    TitleFont = &lv_font_montserrat_48;
-    mRowFont = &lv_font_montserrat_28;
-    mRowHeight = 72U;
-  } else if (ShortEdge >= 320U) {
-    TitleFont = &lv_font_montserrat_28;
-    mRowFont = &lv_font_montserrat_20;
-    mRowHeight = 52U;
-  } else {
-    TitleFont = &lv_font_montserrat_20;
-    mRowFont = &lv_font_montserrat_14;
-    mRowHeight = 24U;
-  }
+  KshimCreateFonts(ShortEdge);
+  const lv_font_t *TitleFont = mTitleFont;
+  const lv_font_t *StatusFont = mStatusFont;
+  mRowHeight = ShortEdge >= 720U ? 72U : ShortEdge >= 320U ? 52U : 24U;
 
   lv_obj_set_style_bg_color(Screen, lv_color_hex(KSHIM_UI_SCREEN), 0);
   lv_obj_set_style_bg_opa(Screen, LV_OPA_COVER, 0);
@@ -505,7 +554,8 @@ static int KshimBuildChrome(void)
     return -1;
   lv_obj_set_size(mBackground, LV_PCT(100), LV_PCT(100));
   lv_obj_align(mBackground, LV_ALIGN_CENTER, 0, 0);
-  lv_image_set_src(mBackground, &mBackdropImages[0]);
+  if (mBackdropTextures[0] != NULL)
+    lv_image_set_src(mBackground, &mBackdropImages[0]);
   lv_image_set_inner_align(mBackground, LV_IMAGE_ALIGN_STRETCH);
   lv_image_set_antialias(mBackground, true);
   lv_obj_remove_flag(mBackground, LV_OBJ_FLAG_CLICKABLE);
@@ -680,6 +730,7 @@ int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
   mTitle = NULL;
   mKey = LV_KEY_ENTER;
   mKeyReleasePending = 0U;
+  KshimPlaceScratch();
   if (KshimRenderInitialBackground() != 0)
     goto Failed;
 
@@ -763,7 +814,7 @@ void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs)
   }
 
   if (Context->ElapsedMs - mLastTextureUpdate >= KSHIM_BACKDROP_REFRESH_MS &&
-      mBackground != NULL) {
+      mBackground != NULL && mBackdropTextures[0] != NULL) {
     uint8_t Next = (uint8_t)(mActiveTexture ^ 1U);
     lv_image_cache_drop(&mBackdropImages[Next]);
     if (kshim_backdrop_render(mBackdropTextures[Next],
@@ -865,11 +916,27 @@ void kshim_lvgl_touch(void *Context, const kshim_touch_event_t *Event)
   lv_indev_read(mPointerInput);
 }
 
+void kshim_lvgl_set_scratch(void *Base, size_t Size)
+{
+  if (mContext != NULL)
+    return;
+  mScratch = Base;
+  mScratchSize = Base != NULL ? Size : 0U;
+}
+
+int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context)
+{
+  return kshim_lvgl_ready(Context) && mFonts[1] != NULL;
+}
+
 void kshim_lvgl_deinit(kshim_lvgl_t *Context)
 {
   if (Context == NULL || Context != mContext)
     return;
   lv_deinit();
+  KshimForgetFonts();
+  mBackdropTextures[0] = mBackdropTextures[1] = NULL;
+  mFontData = NULL;
   *Context = (kshim_lvgl_t){0};
   mContext = NULL;
   mKeys = NULL;

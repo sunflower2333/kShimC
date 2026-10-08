@@ -25,6 +25,10 @@ static void test_real(const char *name, bool touch)
     struct kshim_resources *r = calloc(1, sizeof(*r)); assert(r);
     struct kshim_console_resource c;
     assert(!kshim_console_probe(f, &c)); assert(c.base == 0xa90000 && c.geni);
+    /* The UI scratch comes from this reservation's tail past the frame. */
+    struct dt_range splash; bool no_map = true;
+    assert(!kshim_dt_splash_reservation(f, &splash, &no_map));
+    assert(splash.base == 0x9c000000 && splash.size == 0x2400000 && !no_map);
     assert(!kshim_dt_spmi(f, r)); assert(r->spmi_count == 1);
     assert(r->spmi[0].controller.Regions[0].BaseAddress == 0xc440000);
     QcomKeyDescriptor keys[QCOM_KEYS_MAX]; size_t count;
@@ -91,6 +95,7 @@ static void test_common(void)
     n=fdt_path_offset(f,"/bus/uart@1000"); assert(dt_reg(f,n,0,&r));
     kshim_framebuffer_config_t fb; kshim_mmu_region_t mmio;
     assert(kshim_dt_splash(f,NULL,&fb,&mmio)); assert(!fb.render_address);
+    struct dt_range none; assert(kshim_dt_splash_reservation(f,&none,NULL));
 }
 static void test_kona(void)
 {
