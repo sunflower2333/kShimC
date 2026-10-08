@@ -27,8 +27,12 @@ static void Advance(kshim_lvgl_t *Ui, uint32_t Milliseconds)
     }
 }
 
-static uint64_t WritePpm(const char *Directory, const char *Stage,
-                         const kshim_framebuffer_t *Framebuffer)
+/* 保存真实像素，检查非空且非纯色；黑色主题不要求半屏都亮。 */
+static uint64_t WritePpm(
+    const char *Directory,
+    const char *Stage,
+    const kshim_framebuffer_t *Framebuffer
+)
 {
     char Path[1024];
     int Length = snprintf(Path, sizeof(Path), "%s/menu-%ux%u-%s.ppm",
@@ -42,6 +46,8 @@ static uint64_t WritePpm(const char *Directory, const char *Stage,
 
     uint64_t Hash = UINT64_C(14695981039346656037);
     unsigned NonBlack = 0U;
+    unsigned Different = 0U;
+    uint32_t FirstPixel = 0U;
     for (uint32_t Y = 0; Y < Framebuffer->height; Y++) {
         const uint32_t *Row = (const uint32_t *)(const void *)(
             Framebuffer->render_address + (size_t)Y * Framebuffer->stride);
@@ -53,12 +59,16 @@ static uint64_t WritePpm(const char *Directory, const char *Stage,
                 (uint8_t)Pixel,
             };
             assert(fwrite(Rgb, sizeof(Rgb), 1U, File) == 1U);
+            if (Y == 0U && X == 0U)
+                FirstPixel = Pixel & 0xffffffU;
             NonBlack += (Pixel & 0xffffffU) != 0U;
+            Different += (Pixel & 0xffffffU) != FirstPixel;
             for (size_t Byte = 0; Byte < sizeof(Rgb); Byte++)
                 Hash = (Hash ^ Rgb[Byte]) * UINT64_C(1099511628211);
         }
     }
-    assert(NonBlack > Framebuffer->width * Framebuffer->height / 2U);
+    assert(NonBlack > Framebuffer->height);
+    assert(Different > Framebuffer->height);
     assert(fclose(File) == 0);
     printf("%s  %016" PRIx64 "\n", Path, Hash);
     return Hash;
