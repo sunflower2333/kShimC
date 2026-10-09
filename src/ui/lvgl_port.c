@@ -60,6 +60,9 @@ static uint16_t mRowHeight;
 static const lv_font_t *mRowFont;
 static uint8_t mColumns;
 static uint8_t mSplit;
+static uint8_t mRibbon;
+static uint16_t mTileHeight;
+static uint16_t mTileWidth;
 
 static uint32_t min_u32(uint32_t first, uint32_t second)
 {
@@ -298,7 +301,7 @@ static void KshimBootEvent(lv_event_t *Event)
 /* 应用当前行外观；Bento 保留第一个子对象为标题，兼容焦点动画与测试。 */
 static int KshimStyleEntry(lv_obj_t *Button, size_t Index)
 {
-  uint32_t Height = mColumns > 1U ? mRowHeight * 2U : mRowHeight;
+  uint32_t Height = mRibbon != 0U ? mTileHeight : mColumns > 1U ? mRowHeight * 2U : mRowHeight;
   uint32_t Radius = kshim_menu_style_radius(Height);
   uint32_t PaddingY = max_u32(4U, mRowHeight / 6U);
   if (mMenuStyle.LeftBorderOnly == 0U)
@@ -309,8 +312,12 @@ static int KshimStyleEntry(lv_obj_t *Button, size_t Index)
         mMenuStyle.RowBorderWidth * (mMenuStyle.Divider != 0U ? 1U : 2U);
     PaddingY = min_u32(PaddingY, Height > Line + Borders ? (Height - Line - Borders) / 2U : 0U);
   }
-  if (mColumns > 1U) {
-    int32_t Width = (lv_obj_get_content_width(mList) - mMenuStyle.RowGap) / 2;
+  int32_t Width = lv_obj_get_content_width(mList);
+  if (mRibbon != 0U) {
+    Width = mTileWidth;
+    lv_obj_set_width(Button, Width);
+  } else if (mColumns > 1U) {
+    Width = (Width - mMenuStyle.RowGap * (mColumns - 1U)) / mColumns;
     lv_obj_set_width(Button, Width > 1 ? Width : 1);
   } else {
     lv_obj_set_width(Button, LV_PCT(100));
@@ -345,6 +352,10 @@ static int KshimStyleEntry(lv_obj_t *Button, size_t Index)
     lv_label_set_long_mode(Label, LV_LABEL_LONG_DOT);
     /* 焦点位移预留空间，长标签不进入滚动条和边框。 */
     lv_obj_set_width(Label, LV_PCT(95));
+  }
+  if (Label != NULL && ((mMenuStyle.Layout == 3U && Height >= 40U) || mRibbon != 0U)) {
+    return KshimEntryBadge(Button, Label, mStatusFont, Index, Width, (int32_t)Height,
+        mColumns > 1U || mRibbon != 0U);
   }
   if (mColumns > 1U && Label != NULL) {
     lv_obj_add_flag(Label, LV_OBJ_FLAG_IGNORE_LAYOUT);
@@ -390,18 +401,28 @@ static int KshimRelayoutChrome(void)
   uint32_t BootHeight = clamp_u32(ShortEdge / 11U, 16U, 88U);
   mColumns = 1U;
   mSplit = 0U;
+  mRibbon = 0U;
+  mTileHeight = 0U;
+  mTileWidth = 0U;
   if (mMenuStyle.Modern != 0U) {
     uint32_t Width = mFramebuffer->width;
     uint32_t Height = mFramebuffer->height;
-    mBackdropLayout.panel_width = Width >= 320U ? min_u32(Width - Padding * 2U, 1200U) : NextLayout.panel_width;
+    mBackdropLayout.panel_width = Width >= 320U ? min_u32(Width - Padding * 2U, mMenuStyle.Layout == 4U ? 1600U : mMenuStyle.Layout == 5U ? 780U : 1200U) : NextLayout.panel_width;
     mSplit = mMenuStyle.Layout == 1U && Width >= 720U && Width > Height;
     mColumns = mMenuStyle.Layout == 2U && mBackdropLayout.panel_width >= 560U && Height >= 320U ? 2U : 1U;
+    if (mMenuStyle.Layout == 3U && Height >= 320U && mBackdropLayout.panel_width >= 560U)
+      mColumns = mBackdropLayout.panel_width >= 960U ? 3U : 2U;
+    mRibbon = mMenuStyle.Layout == 4U && Width >= 320U && Height >= 240U;
+    if (mRibbon != 0U) {
+      mTileWidth = (uint16_t)clamp_u32(ShortEdge / 4U, 144U, 240U);
+      mTileHeight = (uint16_t)clamp_u32(ShortEdge / 4U, 96U, 240U);
+    }
     if (ShortEdge < 160U) {
       TitleHeight = 0;
       lv_obj_add_flag(mTitle, LV_OBJ_FLAG_HIDDEN);
     }
-    uint32_t Rows = ((uint32_t)mContext->EntryCount + mColumns - 1U) / mColumns;
-    uint32_t RowHeight = mRowHeight * (mColumns > 1U ? 2U : 1U);
+    uint32_t Rows = mRibbon != 0U ? 1U : ((uint32_t)mContext->EntryCount + mColumns - 1U) / mColumns;
+    uint32_t RowHeight = mRibbon != 0U ? mTileHeight : mRowHeight * (mColumns > 1U ? 2U : 1U);
     uint32_t Fixed = Padding * 4U + (uint32_t)TitleHeight + (uint32_t)StatusHeight + BootHeight;
     uint32_t Natural = Fixed + Rows * (RowHeight + mMenuStyle.RowGap) + 16U;
     uint32_t Cap = Height - Padding * 2U;
@@ -465,6 +486,34 @@ static int KshimRelayoutChrome(void)
   } else if (mMenuStyle.Modern != 0U) {
     lv_obj_set_style_bg_opa(mList, LV_OPA_TRANSP, 0);
   }
+  if (mRibbon != 0U) {
+    /* 单条横向启动带：条目数增加只增加横向滚动，不撑高面板。 */
+    uint32_t Gutter = mMenuStyle.FocusOutline + 4U;
+    ListY = (int32_t)Padding * 2 + TitleHeight;
+    ListHeight = (int32_t)mBackdropLayout.panel_height - ListY -
+        (int32_t)BootHeight - StatusHeight - (int32_t)Padding * 3;
+    if (ListHeight < 40) ListHeight = 40;
+    if (mTileHeight > (uint32_t)ListHeight - Gutter * 2U - 4U)
+      mTileHeight = (uint16_t)((uint32_t)ListHeight - Gutter * 2U - 4U);
+    lv_obj_set_pos(mList, (int32_t)Padding, ListY);
+    lv_obj_set_size(mList, ContentWidth, ListHeight);
+    lv_obj_set_style_pad_all(mList, Gutter, 0);
+    lv_obj_set_flex_flow(mList, LV_FLEX_FLOW_ROW);
+    lv_obj_set_scroll_dir(mList, LV_DIR_HOR);
+    uint32_t Extent = (uint32_t)mContext->EntryCount * (mTileWidth + mMenuStyle.RowGap) - mMenuStyle.RowGap;
+    lv_obj_set_flex_align(mList,
+        Extent + Gutter * 2U <= (uint32_t)ContentWidth ? LV_FLEX_ALIGN_CENTER : LV_FLEX_ALIGN_START,
+        LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_text_align(mTitle, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(mStatus, (int32_t)Padding, ListY + ListHeight + (int32_t)Padding);
+    lv_obj_set_style_text_align(mStatus, LV_TEXT_ALIGN_CENTER, 0);
+    int32_t BootWidth = ContentWidth < 320 ? ContentWidth : 320;
+    lv_obj_set_width(mBootButton, BootWidth);
+    lv_obj_set_x(mBootButton, ((int32_t)mBackdropLayout.panel_width - BootWidth) / 2);
+  }
+  if (mMenuStyle.Layout == 5U)
+    KshimIOSChrome(mTitle, mList, mBootButton, ContentWidth,
+        (int32_t)mBackdropLayout.panel_width);
   lv_obj_update_layout(lv_screen_active());
   return 0;
 }
@@ -564,6 +613,8 @@ static int KshimBuildChrome(void)
   uint32_t ShortEdge = min_u32(mFramebuffer->width, mFramebuffer->height);
   KshimCreateFonts(ShortEdge);
   mRowHeight = ShortEdge >= 720U ? 72U : ShortEdge >= 320U ? 52U : 24U;
+  if (mMenuStyle.Layout == 5U && ShortEdge >= 160U && mRowHeight < 44U)
+    mRowHeight = 44U;
   lv_obj_set_style_bg_color(Screen, lv_color_hex(mMenuStyle.Screen), 0);
   lv_obj_set_style_bg_opa(Screen, LV_OPA_COVER, 0);
   lv_obj_set_style_text_color(Screen, KshimTextColor(), 0);
@@ -595,7 +646,10 @@ static int KshimBuildChrome(void)
 
   mTitle = lv_label_create(mPanel);
   if (mTitle == NULL) return -1;
-  lv_label_set_text(mTitle, mMenuStyle.Layout == 1U ? "kShimC Boot Manager" : "Select OS to Boot");
+  lv_label_set_text(mTitle, mMenuStyle.Layout == 1U ? "kShimC Boot Manager" :
+      mMenuStyle.Layout == 3U ? "Boot library" :
+      mMenuStyle.Layout == 4U ? "kShimC Boot Picker" :
+      mMenuStyle.Layout == 5U ? "Start up" : "Select OS to Boot");
   lv_obj_set_style_text_font(mTitle, mTitleFont, 0);
   lv_obj_set_style_text_color(mTitle, KshimTextColor(), 0);
   if (mMenuStyle.Modern != 0U) lv_label_set_long_mode(mTitle, LV_LABEL_LONG_DOT);
@@ -628,6 +682,7 @@ static int KshimBuildChrome(void)
   lv_obj_set_style_border_width(mBootButton, 0, 0);
   lv_obj_set_style_shadow_width(mBootButton, 0, 0);
   lv_obj_set_style_outline_width(mBootButton, 0, LV_STATE_FOCUS_KEY);
+  KshimModernBoot(mBootButton);
   lv_obj_add_event_cb(mBootButton, KshimBootEvent, LV_EVENT_CLICKED, NULL);
   lv_obj_t *BootLabel = lv_label_create(mBootButton);
   if (BootLabel == NULL) return -1;
@@ -694,6 +749,9 @@ int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer, Qco
   mDetail = NULL;
   mColumns = 1U;
   mSplit = 0U;
+  mRibbon = 0U;
+  mTileHeight = 0U;
+  mTileWidth = 0U;
   mKey = LV_KEY_ENTER;
   mKeyReleasePending = 0U;
   KshimPlaceScratch();
@@ -881,4 +939,7 @@ void kshim_lvgl_deinit(kshim_lvgl_t *Context)
   mDetail = NULL;
   mColumns = 1U;
   mSplit = 0U;
+  mRibbon = 0U;
+  mTileHeight = 0U;
+  mTileWidth = 0U;
 }

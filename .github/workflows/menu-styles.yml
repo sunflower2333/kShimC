@@ -35,7 +35,7 @@ jobs:
         run: |
           python3 -m venv /tmp/kshim-style-venv
           /tmp/kshim-style-venv/bin/pip install kconfiglib==14.1.0
-      - name: GCC, Clang and all 16 real Kconfig choices
+      - name: GCC, Clang and all 25 real Kconfig choices
         run: |
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc gcc --kconfig
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc clang
@@ -46,7 +46,7 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
-        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD]
+        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,7 +94,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        style: [FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD]
+        style: [FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG]
     steps:
       - uses: actions/checkout@v4
         with:

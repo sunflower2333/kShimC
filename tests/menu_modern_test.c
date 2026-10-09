@@ -54,9 +54,20 @@ static void CheckLayout(kshim_lvgl_t *Ui, unsigned Width, unsigned Height)
     if (B == NULL) return;
     lv_obj_get_coords(A, &First);
     lv_obj_get_coords(B, &Second);
-    if (mMenuStyle.Layout == 2U && lv_obj_get_width(lv_obj_get_parent(Ui->List)) >= 560 && Height >= 320U) {
+    int32_t PanelWidth = lv_obj_get_width(lv_obj_get_parent(Ui->List));
+    if (mMenuStyle.Layout == 4U && Width >= 320U && Height >= 240U) {
+        assert(First.y1 == Second.y1 && First.x2 < Second.x1);
+        assert(lv_obj_get_scroll_dir(Ui->List) == LV_DIR_HOR);
+        assert(First.y1 >= List.y1 && First.y2 <= List.y2);
+        assert(lv_obj_get_child_count(A) == 2U);
+    } else if ((mMenuStyle.Layout == 2U || mMenuStyle.Layout == 3U) && PanelWidth >= 560 && Height >= 320U) {
         assert(First.y1 == Second.y1 && First.x2 < Second.x1);
         assert(lv_obj_get_child_count(A) == 2U);
+        if (mMenuStyle.Layout == 3U && PanelWidth >= 960 && Ui->EntryCount >= 3U) {
+            lv_area_t Third;
+            lv_obj_get_coords(lv_group_get_obj_by_index(Ui->Group, 2U), &Third);
+            assert(Third.y1 == First.y1 && Third.x1 > Second.x2);
+        }
     } else {
         assert(First.y2 < Second.y1);
     }
@@ -93,7 +104,23 @@ static void TestSize(unsigned Width, unsigned Height)
         assert(lv_group_get_focused(Ui.Group) == lv_group_get_obj_by_index(Ui.Group, Count - 1U));
         CheckLayout(&Ui, Width, Height);
         lv_obj_t *Focused = lv_group_get_focused(Ui.Group);
+        lv_area_t Selected, View;
+        lv_obj_get_coords(Focused, &Selected);
+        lv_obj_get_coords(Ui.List, &View);
+        assert((Selected.x1 + Selected.x2) / 2 >= View.x1);
+        assert((Selected.x1 + Selected.x2) / 2 <= View.x2);
         Tap(&Ui, Focused, 0);
+        if ((mMenuStyle.Layout == 3U || mMenuStyle.Layout == 4U) &&
+            lv_obj_get_child_count(Focused) > 1U) {
+            lv_area_t Label, Badge;
+            lv_obj_get_coords(lv_obj_get_child(Focused, 0U), &Label);
+            lv_obj_get_coords(lv_obj_get_child(Focused, 1U), &Badge);
+            assert(Label.x1 >= Selected.x1 && Label.x2 <= Selected.x2);
+            assert(Label.y1 >= Selected.y1 && Label.y2 <= Selected.y2);
+            assert(Badge.y2 < Label.y1 || Badge.x2 < Label.x1);
+            Tap(&Ui, lv_obj_get_child(Focused, 1U), 0);
+            assert(lv_group_get_focused(Ui.Group) == Focused);
+        }
         assert(kshim_lvgl_take_index(&Ui) == -1);
         Tap(&Ui, Ui.BootButton, 1);
         assert(kshim_lvgl_take_index(&Ui) == -1);
@@ -228,6 +255,8 @@ int main(void)
         TestSize(559U, 360U);
         TestSize(640U, 360U);
         TestSize(720U, 480U);
+        TestSize(575U, 360U);
+        TestSize(1000U, 720U);
         TestSize(1080U, 1920U);
         TestSize(1920U, 1080U);
     }

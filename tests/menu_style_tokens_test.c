@@ -38,9 +38,11 @@ int main(void)
         assert(mMenuStyle.FocusOpacity == 255U);
     }
     if (mMenuStyle.Modern != 0U) {
-        assert(mMenuStyle.Layout <= 2U);
+        assert(mMenuStyle.Layout <= 5U);
         assert(mMenuStyle.PressScale >= 248U && mMenuStyle.PressScale <= 256U);
         assert(mMenuStyle.RowGap <= 12U);
+        assert(mMenuStyle.FocusPill <= 1U);
+        assert(mMenuStyle.BootShadow <= 16U);
         assert(mMenuStyle.AnimatedBackdrop == 0U);
     }
     printf("%s %06x %06x %06x %06x %06x %06x %06x %06x %06x %06x %06x\n",

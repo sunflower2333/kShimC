@@ -25,6 +25,25 @@ static void Advance(kshim_lvgl_t *Ui)
         kshim_lvgl_frame(Ui, 16U);
 }
 
+/* 统计右侧预留区的实际强调色像素，不以控件状态代替勾号绘制验证。 */
+static unsigned IOSMarkPixels(kshim_lvgl_t *Ui, lv_obj_t *Row)
+{
+    lv_area_t Area;
+    lv_obj_get_coords(Row, &Area);
+    int32_t CenterY = (Area.y1 + Area.y2) / 2;
+    unsigned Count = 0U;
+    for (int32_t Y = CenterY - 15; Y <= CenterY + 15; Y++) {
+        if (Y < 0 || Y >= (int32_t)Ui->Framebuffer->height) continue;
+        const uint32_t *Pixels = (const uint32_t *)(const void *)(
+            Ui->Framebuffer->render_address + (size_t)Y * Ui->Framebuffer->stride);
+        for (int32_t X = Area.x2 - 42; X <= Area.x2 - 5; X++) {
+            if (X >= 0 && X < (int32_t)Ui->Framebuffer->width)
+                Count += (Pixels[X] & 0xffffffU) == mMenuStyle.FocusBorder;
+        }
+    }
+    return Count;
+}
+
 /* 检查实际 LVGL 对象上的行、面板、Boot 按钮和焦点状态。 */
 static void CheckChrome(kshim_lvgl_t *Ui)
 {
@@ -37,6 +56,10 @@ static void CheckChrome(kshim_lvgl_t *Ui)
     assert(lv_obj_get_style_bg_opa(Panel, LV_PART_MAIN) == mMenuStyle.PanelOpacity);
     assert(lv_obj_get_style_outline_width(Panel, LV_PART_MAIN) == mMenuStyle.PanelOutlineWidth);
     assert(lv_obj_get_style_border_width(Panel, LV_PART_MAIN) == 0);
+    if (mMenuStyle.Modern != 0U) {
+        assert(lv_obj_get_style_radius(Panel, LV_PART_MAIN) == mMenuStyle.PanelRadius);
+        assert(lv_obj_get_style_shadow_width(Panel, LV_PART_MAIN) == mMenuStyle.PanelShadow);
+    }
     if (mMenuStyle.Modern == 0U && mMenuStyle.RadiusMax == 0U)
         assert(lv_obj_get_style_radius(Panel, LV_PART_MAIN) == 0);
 
@@ -58,13 +81,34 @@ static void CheckChrome(kshim_lvgl_t *Ui)
 
     CheckColor(lv_obj_get_style_bg_color(Ui->BootButton, LV_PART_MAIN), mMenuStyle.Boot);
     CheckColor(lv_obj_get_style_text_color(BootLabel, LV_PART_MAIN), mMenuStyle.BootText);
+    assert(lv_obj_get_style_shadow_width(Ui->BootButton, LV_PART_MAIN) == mMenuStyle.BootShadow);
+    if (mMenuStyle.FocusPill != 0U)
+        assert(lv_obj_get_style_pad_left(First, LV_PART_MAIN) == 20);
     lv_obj_add_state(Ui->BootButton, LV_STATE_PRESSED);
+    if (mMenuStyle.BootShadow != 0U)
+        assert(lv_obj_get_style_shadow_width(Ui->BootButton, LV_PART_MAIN) == 2);
     CheckColor(lv_obj_get_style_bg_color(Ui->BootButton, LV_PART_MAIN), mMenuStyle.BootPressed);
     lv_obj_remove_state(Ui->BootButton, LV_STATE_PRESSED);
     lv_obj_add_state(First, LV_STATE_PRESSED);
     CheckColor(lv_obj_get_style_text_color(First, LV_PART_MAIN),
                mMenuStyle.Modern != 0U ? mMenuStyle.PressText : mMenuStyle.FocusText);
     lv_obj_remove_state(First, LV_STATE_PRESSED);
+    if (mMenuStyle.Layout == 5U) {
+        assert(lv_obj_get_style_radius(Ui->List, LV_PART_MAIN) == 16);
+        assert(lv_obj_get_style_clip_corner(Ui->List, LV_PART_MAIN));
+        assert(lv_obj_get_style_pad_right(First, LV_PART_MAIN) == 40);
+        if (Ui->Framebuffer->width >= 320U && Ui->Framebuffer->height >= 160U) {
+            Advance(Ui);
+            assert(IOSMarkPixels(Ui, First) > 5U);
+            lv_group_focus_obj(Second);
+            Advance(Ui);
+            assert(IOSMarkPixels(Ui, First) == 0U);
+            assert(IOSMarkPixels(Ui, Second) > 5U);
+            lv_group_focus_obj(First);
+            Advance(Ui);
+            assert(IOSMarkPixels(Ui, First) > 5U);
+        }
+    }
     assert(kshim_lvgl_take_index(Ui) == -1);
 }
 

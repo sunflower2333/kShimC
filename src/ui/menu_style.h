@@ -33,7 +33,7 @@ typedef struct {
     uint8_t AnimatedBackdrop;
     /* 现代风格的可选几何与效果；旧预设零初始化，不改变原有行为。 */
     uint8_t Modern;
-    uint8_t Layout;       /* 0=列表，1=Surface 双栏，2=Bento 自适应卡片 */
+    uint8_t Layout;       /* 0=列表，1=Surface，2=Bento，3=HarmonyOS，4=Clover，5=iOS HIG */
     uint8_t Divider;
     uint8_t PanelRadius;
     uint8_t BootRadius;   /* 255=胶囊按钮 */
@@ -51,6 +51,8 @@ typedef struct {
     uint32_t PressText;
     uint32_t Shadow;
     uint32_t Navigation;
+    uint8_t FocusPill;    /* Fluent 2：短圆角焦点标记 */
+    uint8_t BootShadow;   /* 主按钮的有限阴影半径 */
 } kshim_menu_style_t;
 
 /* 拒绝手工构造的多选配置，避免静默采用第一个分支。 */
@@ -69,7 +71,16 @@ typedef struct {
     (defined(CONFIG_KSHIM_MENU_STYLE_SOFT_UI) && CONFIG_KSHIM_MENU_STYLE_SOFT_UI) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_BENTO) && CONFIG_KSHIM_MENU_STYLE_BENTO) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_NEON) && CONFIG_KSHIM_MENU_STYLE_NEON) + \
-    (defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD) > 1
+    (defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL2) && CONFIG_KSHIM_MENU_STYLE_MATERIAL2) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL2_DARK) && CONFIG_KSHIM_MENU_STYLE_MATERIAL2_DARK) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT2) && CONFIG_KSHIM_MENU_STYLE_FLUENT2) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT2_DARK) && CONFIG_KSHIM_MENU_STYLE_FLUENT2_DARK) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT_DARK) && CONFIG_KSHIM_MENU_STYLE_FLUENT_DARK) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) && CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_HARMONYOS) && CONFIG_KSHIM_MENU_STYLE_HARMONYOS) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_CLOVER) && CONFIG_KSHIM_MENU_STYLE_CLOVER) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_IOS_HIG) && CONFIG_KSHIM_MENU_STYLE_IOS_HIG) > 1
 #error "Select exactly one KSHIM_MENU_STYLE preset"
 #endif
 
@@ -82,7 +93,16 @@ typedef struct {
     (defined(CONFIG_KSHIM_MENU_STYLE_SOFT_UI) && CONFIG_KSHIM_MENU_STYLE_SOFT_UI) || \
     (defined(CONFIG_KSHIM_MENU_STYLE_BENTO) && CONFIG_KSHIM_MENU_STYLE_BENTO) || \
     (defined(CONFIG_KSHIM_MENU_STYLE_NEON) && CONFIG_KSHIM_MENU_STYLE_NEON) || \
-    (defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD)
+    (defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL2) && CONFIG_KSHIM_MENU_STYLE_MATERIAL2) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL2_DARK) && CONFIG_KSHIM_MENU_STYLE_MATERIAL2_DARK) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT2) && CONFIG_KSHIM_MENU_STYLE_FLUENT2) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT2_DARK) && CONFIG_KSHIM_MENU_STYLE_FLUENT2_DARK) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT_DARK) && CONFIG_KSHIM_MENU_STYLE_FLUENT_DARK) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) && CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_HARMONYOS) && CONFIG_KSHIM_MENU_STYLE_HARMONYOS) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_CLOVER) && CONFIG_KSHIM_MENU_STYLE_CLOVER) || \
+    (defined(CONFIG_KSHIM_MENU_STYLE_IOS_HIG) && CONFIG_KSHIM_MENU_STYLE_IOS_HIG)
 #include "styles/modern.h"
 #else
 static const kshim_menu_style_t mMenuStyle = {
