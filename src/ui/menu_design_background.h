@@ -16,16 +16,22 @@ static uint32_t KshimDesignMix(uint32_t a,uint32_t b,unsigned t) {
     return 0xff000000U|r;
 }
 #if defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS
-/* A translucent panel exposes the scaled cached backdrop around transformed
- * children. Keep its sampling/clip origin stable across partial invalidations.
- * This rounds normal damage; it does not force a refresh or allocate a full
- * framebuffer. Reduced-effects builds do not install this callback. */
-static void KshimDesignGlassDamage(lv_event_t *event) {
-    lv_area_t *area=lv_event_get_param(event);
+static bool mDesignGlassDamagePending;
+/* Keep cached-underlay sampling stable around transformed translucent content.
+ * Expand actual pending damage before rendering, NOT INVALIDATE_AREA: LVGL
+ * also uses that event to calculate partial-buffer strip heights. Never change
+ * styles during drawing, force a refresh, or redraw an idle screen repeatedly. */
+static void KshimDesignGlassRefresh(lv_event_t *event) {
+    if(lv_event_get_code(event)==LV_EVENT_REFR_REQUEST) {
+        mDesignGlassDamagePending=true;
+        return;
+    }
+    if(!mDesignGlassDamagePending) return;
     lv_display_t *display=lv_event_get_target(event);
-    if(!area || !display) return;
-    *area=(lv_area_t){0,0,lv_display_get_horizontal_resolution(display)-1,
-                        lv_display_get_vertical_resolution(display)-1};
+    lv_obj_t *screen=display?lv_display_get_screen_active(display):NULL;
+    if(screen) lv_obj_invalidate(screen);
+    /* The expansion itself also sends REFR_REQUEST; consume that request. */
+    mDesignGlassDamagePending=false;
 }
 #endif
 static bool KshimDesignBackground(lv_obj_t *image) {
@@ -63,8 +69,10 @@ static bool KshimDesignBackground(lv_obj_t *image) {
     lv_image_cache_drop(&mDesignBackgroundImage);
     lv_image_set_src(image,&mDesignBackgroundImage);
 #if defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS
-    lv_display_add_event_cb(lv_obj_get_display(image),KshimDesignGlassDamage,
-                            LV_EVENT_INVALIDATE_AREA,NULL);
+    mDesignGlassDamagePending=true;
+    lv_display_t *display=lv_obj_get_display(image);
+    lv_display_add_event_cb(display,KshimDesignGlassRefresh,LV_EVENT_REFR_REQUEST,NULL);
+    lv_display_add_event_cb(display,KshimDesignGlassRefresh,LV_EVENT_REFR_START,NULL);
 #endif
     return true;
 }
