@@ -20,6 +20,8 @@ jobs:
           git rev-parse HEAD > /tmp/theme-source/commit.txt
           git submodule status --recursive > /tmp/theme-source/submodules.txt
           tar --exclude=.git --exclude=lib/picolibc --exclude=third_party/lvgl/demos --exclude=third_party/lvgl/examples --exclude=third_party/lvgl/tests --exclude=third_party/lvgl/docs --exclude=third_party/lvgl/scripts -czf /tmp/theme-source/source.tar.gz .
+          git -C lib/CrDK fetch --unshallow origin
+          git -C lib/CrDK bundle create /tmp/theme-source/crdk.bundle HEAD
           python3 -m pip download --no-deps --dest /tmp/theme-source kconfiglib==14.1.0
           sudo apt-get update
           sudo apt-get install -y flex bison
