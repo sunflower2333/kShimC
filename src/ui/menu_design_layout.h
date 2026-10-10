@@ -209,6 +209,7 @@ static inline void kshim_design_item_layout(const kshim_menu_design_t *d,
             int32_t pad=kshim_design_min(p/2,(w-is)/2);
             o->mark=(kshim_design_rect_t){ix-pad,iy-pad,is+2*pad,is+2*pad};
         } else if(w-p-ms>ix+is+p) o->mark=(kshim_design_rect_t){w-p-ms,p,ms,ms};
+        else if(!centered && is>0) o->mark=(kshim_design_rect_t){w-p-ms,p,ms,ms};
     }
 }
 #endif
