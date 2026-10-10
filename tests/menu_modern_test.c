@@ -7,6 +7,7 @@
 #include <lvgl.h>
 #include <lvgl_port.h>
 #include "../src/ui/menu_style.h"
+#include "menu_design_lvgl_checks.h"
 
 /* 等待入场、焦点及滚动动画稳定。 */
 static void Settle(kshim_lvgl_t *Ui)
@@ -35,6 +36,7 @@ static void Tap(kshim_lvgl_t *Ui, lv_obj_t *Object, int Cancel)
 /* 检查几何边界以及卡片行优先顺序，不能让 Boot 按钮覆盖菜单。 */
 static void CheckLayout(kshim_lvgl_t *Ui, unsigned Width, unsigned Height)
 {
+    if (mMenuDesign.enabled) { KshimTestDesignLayout(Ui); return; }
     lv_area_t Panel, List, Boot, First, Second;
     lv_obj_get_coords(lv_obj_get_parent(Ui->List), &Panel);
     lv_obj_get_coords(Ui->List, &List);
@@ -248,7 +250,7 @@ static void TestAutomaticConfirmation(unsigned Width, unsigned Height)
 int main(void)
 {
     TestClosing();
-    if (mMenuStyle.Modern != 0U) {
+    if (mMenuDesign.enabled) {
         TestAutomaticConfirmation(320U, 240U);
         TestAutomaticConfirmation(1080U, 2340U);
         TestSize(320U, 240U);

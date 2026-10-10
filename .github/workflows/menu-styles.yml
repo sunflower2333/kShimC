@@ -2,13 +2,15 @@ name: Boot menu styles
 
 on:
   push:
-    branches: ["feature/2610"]
+    branches: ["feature/2610", "feature/2610-design-language"]
     paths:
       - "src/ui/**"
       - "src/include/**"
       - "src/Kconfig"
+      - "Kconfig"
       - "tests/**"
       - "tools/test_menu_styles.py"
+      - "tools/test_theme_design.py"
       - "tools/preview_manifest.py"
       - ".github/workflows/menu-styles.yml"
   pull_request:
@@ -16,8 +18,10 @@ on:
       - "src/ui/**"
       - "src/include/**"
       - "src/Kconfig"
+      - "Kconfig"
       - "tests/**"
       - "tools/test_menu_styles.py"
+      - "tools/test_theme_design.py"
       - "tools/preview_manifest.py"
       - ".github/workflows/menu-styles.yml"
   workflow_dispatch:
@@ -39,6 +43,8 @@ jobs:
         run: |
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc gcc --kconfig
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc clang
+          python3 tools/test_theme_design.py --cc gcc --sanitize
+          python3 tools/test_theme_design.py --cc clang
   lvgl-regression:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -55,14 +61,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y device-tree-compiler ninja-build
       - name: Configure selected menu style with sanitizers
         run: cmake -S tests -B build-menu -G Ninja -DKSHIM_TEST_MENU_STYLE=${{ matrix.style }}
-      - name: Build real LVGL regression and preview programs
-        run: cmake --build build-menu --parallel 2 --target lvgl_test lvgl_hdk_test menu_style_render_test menu_modern_test ui_preview_test
-      - name: Test geometry, input safety, CJK and framebuffer formats
-        run: ctest --test-dir build-menu --output-on-failure -R '^(lvgl_test|lvgl_hdk_test|menu_style_render_test|menu_modern_test)$'
+      - name: Build the complete host test suite and real LVGL preview
+        run: cmake --build build-menu --parallel 2
+      - name: Run all host tests, including geometry, input safety and CJK
+        run: ctest --test-dir build-menu --output-on-failure
       - name: Render actual portrait and landscape LVGL keyframes
         run: |
           mkdir -p previews
-          ./build-menu/ui_preview_test previews
+          git rev-parse HEAD > previews/source-commit.txt
+          ./build-menu/ui_preview_test previews | tee previews/render.log
           python3 tools/preview_manifest.py previews
       - name: Verify FLAT against the previous renderer pixel for pixel
         if: matrix.style == 'FLAT'
@@ -84,6 +91,8 @@ jobs:
             previews/*.png
             previews/index.html
             previews/manifest.json
+            previews/source-commit.txt
+            previews/render.log
             build-menu/Testing/Temporary/LastTest.log
           if-no-files-found: error
           retention-days: 14
@@ -94,7 +103,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        style: [FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG]
+        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG]
     steps:
       - uses: actions/checkout@v4
         with:

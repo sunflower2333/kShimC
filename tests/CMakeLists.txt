@@ -107,3 +107,15 @@ target_compile_definitions(dt_test PRIVATE "GENERATED_FIXTURES=\"${CMAKE_CURRENT
 kshim_test(mmu_test mmu_test.c "${KSHIM_ROOT}/src/arch/arm64/mmu.c")
 target_include_directories(mmu_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(mmu_test PRIVATE kshim_dt)
+
+set(KSHIM_TEST_MENU_SCALE_Q8 "0" CACHE STRING "Theme design scale; 0=automatic")
+option(KSHIM_TEST_MENU_REDUCED_EFFECTS "Reduce theme drawing effects" OFF)
+foreach(target lvgl_test lvgl_hdk_test menu_style_render_test menu_modern_test ui_preview_test)
+    target_compile_definitions(${target} PRIVATE
+        CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
+        CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
+endforeach()
+kshim_test(menu_design_contract_test menu_design_contract_test.c)
+target_compile_definitions(menu_design_contract_test PRIVATE
+    CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1
+    "EXPECTED_STYLE=\"${KSHIM_TEST_MENU_STYLE}\"")
