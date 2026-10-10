@@ -1,0 +1,31 @@
+name: Theme validation source
+on:
+  push:
+    branches: [feature/2610-design-language]
+    paths: [.github/workflows/theme-validation-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Package pinned source and host prerequisites
+        run: |
+          mkdir -p /tmp/theme-source
+          git rev-parse HEAD > /tmp/theme-source/commit.txt
+          git submodule status --recursive > /tmp/theme-source/submodules.txt
+          tar --exclude=.git --exclude=lib/picolibc --exclude=third_party/lvgl/demos --exclude=third_party/lvgl/examples --exclude=third_party/lvgl/tests --exclude=third_party/lvgl/docs --exclude=third_party/lvgl/scripts -czf /tmp/theme-source/source.tar.gz .
+          python3 -m pip download --no-deps --dest /tmp/theme-source kconfiglib==14.1.0
+          git clone --depth=1 --branch v1.7.0 https://github.com/dgibson/dtc.git /tmp/dtc
+          tar --exclude=.git -C /tmp -czf /tmp/theme-source/dtc.tar.gz dtc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: theme-validation-source
+          path: /tmp/theme-source/
+          if-no-files-found: error
+          retention-days: 2
