@@ -18,12 +18,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify exact source bytes and create an unreferenced candidate
+      - name: Verify exact bytes and store ordinary source blobs only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
-          import hashlib, json, os, subprocess, urllib.request
+          import base64, hashlib, json, os, subprocess, urllib.request, urllib.error
           from pathlib import Path, PurePosixPath
           hashes = [
               'a76c8231d213f8b0a071b64d8118e75c650e5d6644d4d6b81904e04926f3226d',
@@ -70,43 +70,36 @@ jobs:
               file.write_bytes(raw)
               subprocess.run(['git', 'add', '--', name], check=True)
           subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
-          actual = set(git('diff', '--cached', '--name-only').splitlines())
-          if actual != set(changes):
+          if set(git('diff', '--cached', '--name-only').splitlines()) != set(changes):
               raise SystemExit('Unexpected staged change')
-          # These transport/export helpers never enter the final source tree.
           temporary = [f'.github/native-revision-{i}.json' for i in range(4)] + [
               '.github/workflows/assemble-native-revision.yml',
               '.github/workflows/theme-validation-source.yml',
           ]
           subprocess.run(['git', 'rm', '--', *temporary], check=True)
-          elements = []
-          for name in git('diff', '--cached', '--name-only').splitlines():
-              element = {'path': name, 'mode': '100644', 'type': 'blob'}
-              if Path(name).exists():
-                  element['content'] = Path(name).read_text(encoding='utf-8')
-              else:
-                  element['sha'] = None
-              elements.append(element)
-          head = git('rev-parse', 'HEAD')
-          expected_tree = git('write-tree')
-          url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/'
-          def post(endpoint, payload):
-              request = urllib.request.Request(url + endpoint,
-                  data=json.dumps(payload, ensure_ascii=False).encode(), method='POST',
+          url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/blobs'
+          stored = {}
+          for name, change in changes.items():
+              # Workflow edits require the user's connector, not this job token.
+              if name.startswith('.github/'):
+                  continue
+              payload = {'content': base64.b64encode(Path(name).read_bytes()).decode(), 'encoding': 'base64'}
+              request = urllib.request.Request(url, data=json.dumps(payload).encode(), method='POST',
                   headers={'Authorization': 'Bearer '+os.environ['GH_TOKEN'],
                            'Accept': 'application/vnd.github+json',
                            'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
-              with urllib.request.urlopen(request, timeout=60) as response:
-                  return json.load(response)
-          tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': elements})
-          if tree['sha'] != expected_tree:
-              raise SystemExit('GitHub tree differs from verified local index')
-          commit = post('commits', {
-              'message': 'feat(ui): replace One UI in place and add genuine LVGL default theme\n\nKeep the ONE_UI symbol while replacing its inset group with viewing/interaction\nregions and a landscape navigation/detail split. Add a separate native LVGL\ntheme/widget path with default Latin metrics and CJK glyph fallback. Preserve\nshared input, boot confirmation and lifecycle ownership. No ONE_UI_V2 preset.\n\nLocal native/One UI suites, reduced-effects variants, GCC/Clang/Kconfig contracts\nand gallery tests passed. Native style equivalence, visible focus, short-landscape\ninput and native preview samples have dedicated regressions. Full matrix CI is\nrequired before advancing feature/2610. Remove temporary source/transport helpers.',
-              'tree': tree['sha'], 'parents': [head]})
-          result = {'commit': commit['sha'], 'tree': tree['sha'], 'parent': head,
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      value = json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(str(error.code)+': '+error.read().decode())
+              if value['sha'] != change['new']:
+                  raise SystemExit(f'Unexpected stored blob: {name}')
+              stored[name] = value['sha']
+          result = {'expected_tree': git('write-tree'), 'parent': git('rev-parse', 'HEAD'),
                     'files': {name: value['new'] for name, value in changes.items()},
-                    'removed_helpers': temporary, 'branch_updated': False}
+                    'stored_blobs': stored, 'removed_helpers': temporary,
+                    'workflow_write_pending': True, 'branch_updated': False}
           Path('/tmp/native-candidate').mkdir(exist_ok=True)
           Path('/tmp/native-candidate/candidate.json').write_text(json.dumps(result, indent=2)+'\n')
           print(json.dumps(result, indent=2))
