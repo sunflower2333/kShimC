@@ -103,3 +103,5 @@ config KSHIM_MENU_STYLE_IOS_HIG
         Large title, inset rounded group, trailing checkmark and a separate
         primary Boot action. Uses the existing CJK font, not UIKit, SF Symbols,
         Liquid Glass or Apple branding. Selection alone does not boot.
+
+source "$srctree/ui/styles/new_themes.Kconfig"

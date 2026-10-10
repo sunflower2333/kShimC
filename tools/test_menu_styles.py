@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""编译二十五种菜单预设，检查兼容默认值、颜色对比度与非法多选配置。"""
+"""编译菜单预设，检查兼容默认值、颜色对比度与非法多选配置。"""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +10,7 @@ import shlex
 import subprocess
 import tempfile
 
-STYLES = ('FLAT', 'CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD', 'MATERIAL2', 'MATERIAL2_DARK', 'FLUENT2', 'FLUENT2_DARK', 'FLUENT_DARK', 'SURFACE_DARK', 'HARMONYOS', 'CLOVER', 'IOS_HIG')
+STYLES = ('FLAT', 'CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD', 'MATERIAL2', 'MATERIAL2_DARK', 'FLUENT2', 'FLUENT2_DARK', 'FLUENT_DARK', 'SURFACE_DARK', 'HARMONYOS', 'CLOVER', 'IOS_HIG', 'METRO', 'ONE_UI', 'ADWAITA', 'HOLO')
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tests/menu_style_tokens_test.c"
 FIELDS = ("screen", "panel", "text", "muted", "item", "focus", "focus_text",
@@ -130,7 +130,7 @@ def check_kconfig(compiler: list[str], temporary: Path) -> None:
     if choice.selection is not None or any(config.syms[f"KSHIM_MENU_STYLE_{n}"].tri_value
                                           for n in STYLES):
         raise RuntimeError("Style choice remains enabled without LVGL")
-    print("PASS: Kconfig default, 25 generated headers, one-hot selection and LVGL-off")
+    print(f"PASS: Kconfig default, {len(STYLES)} generated headers, one-hot selection and LVGL-off")
 
 
 # 运行完整的轻量预设矩阵；实际 LVGL 渲染测试由 tests/CMakeLists.txt 提供。
@@ -180,7 +180,7 @@ def main() -> int:
                                         f"-DCONFIG_KSHIM_MENU_STYLE_{second}=1"])
                 if result.returncode == 0 or "Select exactly one KSHIM_MENU_STYLE preset" not in result.stderr:
                     raise RuntimeError(f"Invalid multi-selection not diagnosed: {first}, {second}")
-            print("PASS: zero-valued symbols, explicit 0/1 symbols and all 300 invalid pairs")
+            print(f"PASS: zero-valued symbols, explicit 0/1 symbols and all {len(STYLES)*(len(STYLES)-1)//2} invalid pairs")
             for name in STYLES:
                 check_effects(compiler, temporary, name)
             if args.kconfig:

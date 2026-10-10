@@ -30,7 +30,7 @@ static inline bool KshimDesignReduced(void) {
 }
 static inline bool KshimDesignBarePanel(void) {
     unsigned k=mMenuDesign.kind;
-    return k==KSHIM_DESIGN_MINIMAL || k==KSHIM_DESIGN_CARDS || k==KSHIM_DESIGN_CUPERTINO ||
+    return k==KSHIM_DESIGN_METRO || k==KSHIM_DESIGN_ONE_UI || k==KSHIM_DESIGN_MINIMAL || k==KSHIM_DESIGN_CARDS || k==KSHIM_DESIGN_CUPERTINO ||
         k==KSHIM_DESIGN_IOS_HIG || k==KSHIM_DESIGN_HARMONYOS || k==KSHIM_DESIGN_CLOVER || k==KSHIM_DESIGN_BENTO;
 }
 static inline uint32_t KshimDesignPressColor(void) {
@@ -50,12 +50,14 @@ static inline void KshimDesignSolid(lv_obj_t *object,uint32_t color,lv_opa_t opa
     lv_obj_set_style_bg_grad_dir(object,LV_GRAD_DIR_NONE,state);
     lv_obj_set_style_bg_opa(object,opacity,state);
 }
+#include "menu_new_themes_render.h"
 static void KshimDesignPanelDraw(lv_event_t *event) {
     if(!mMenuDesign.enabled || mDesignGeometry.compact) return;
     lv_obj_t *panel=lv_event_get_target_obj(event);
     lv_area_t a; lv_obj_get_coords(panel,&a);
     lv_opa_t opa=lv_obj_get_style_opa_recursive(panel,LV_PART_MAIN);
     int32_t p=KshimDesignPx(mMenuDesign.padding), width=lv_obj_get_width(panel);
+    KshimNewThemePanelDraw(event);
     if(mMenuDesign.header==1 || mMenuDesign.header==2) {
         uint32_t fill=mMenuDesign.header==1?mMenuStyle.Focus:mMenuStyle.Boot;
         if(mMenuDesign.header==2 && mMenuStyle.Screen==0x121212U) fill=mMenuStyle.Item;
@@ -112,6 +114,7 @@ static void KshimDesignRowDraw(lv_event_t *event) {
         opa,a.x1,a.y1,lv_obj_get_width(button),lv_obj_get_height(button),mDesignGeometry.compact?0:KshimDesignPx(mMenuDesign.row_radius),bw);
     if(mMenuDesign.kind==KSHIM_DESIGN_IOS_HIG && index+1U<mDesignGeometry.count)
         KshimSymbolLine(event,mMenuStyle.Border,opa,a.x1+KshimDesignPx(12),a.y2,a.x2,a.y2,KshimDesignStroke(1),false);
+    KshimNewThemeRowDraw(event,index);
     if(mDesignGeometry.compact) return;
     kshim_design_rect_t r=metrics.mark;
     if(!r.w || !r.h) return;
@@ -248,6 +251,7 @@ static int KshimDesignRelayout(void) {
     radius=kshim_design_min(radius,mDesignGeometry.boot.h/2);
     lv_obj_set_style_radius(mBootButton,mDesignGeometry.compact?0:radius,0);
     if(mDetail) KshimDesignPlace(mDetail,mDesignGeometry.split?mDesignGeometry.detail:(kshim_design_rect_t){0});
+    KshimNewThemeRelayout();
     lv_obj_update_layout(lv_screen_active());
     return 0;
 }

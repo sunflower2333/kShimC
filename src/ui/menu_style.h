@@ -1,10 +1,7 @@
 #ifndef KSHIM_UI_MENU_STYLE_H
 #define KSHIM_UI_MENU_STYLE_H
-
 #include <stdint.h>
-
-/* 编译期样式数据：无 LVGL 依赖；只编入选中的预设，旧配置默认 FLAT。
- * 生产代码应在 lvgl.h（会加载生成的 config.h）之后包含本文件。 */
+/* Compile-time palette. Only the selected preset is emitted. */
 typedef struct {
     const char *Name;
     uint32_t Screen;
@@ -31,12 +28,11 @@ typedef struct {
     uint8_t RadiusMax;
     uint8_t RowGapDivisor;
     uint8_t AnimatedBackdrop;
-    /* 现代风格的可选几何与效果；旧预设零初始化，不改变原有行为。 */
     uint8_t Modern;
-    uint8_t Layout;       /* 0=列表，1=Surface，2=Bento，3=HarmonyOS，4=Clover，5=iOS HIG */
+    uint8_t Layout;
     uint8_t Divider;
     uint8_t PanelRadius;
-    uint8_t BootRadius;   /* 255=胶囊按钮 */
+    uint8_t BootRadius;
     uint8_t RowGap;
     uint8_t FocusSlide;
     uint16_t PressScale;
@@ -51,11 +47,10 @@ typedef struct {
     uint32_t PressText;
     uint32_t Shadow;
     uint32_t Navigation;
-    uint8_t FocusPill;    /* Fluent 2：短圆角焦点标记 */
-    uint8_t BootShadow;   /* 主按钮的有限阴影半径 */
+    uint8_t FocusPill;
+    uint8_t BootShadow;
 } kshim_menu_style_t;
 
-/* 拒绝手工构造的多选配置，避免静默采用第一个分支。 */
 #if (defined(CONFIG_KSHIM_MENU_STYLE_FLAT) && CONFIG_KSHIM_MENU_STYLE_FLAT) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_CLASSIC) && CONFIG_KSHIM_MENU_STYLE_CLASSIC) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_CARDS) && CONFIG_KSHIM_MENU_STYLE_CARDS) + \
@@ -80,11 +75,23 @@ typedef struct {
     (defined(CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) && CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_HARMONYOS) && CONFIG_KSHIM_MENU_STYLE_HARMONYOS) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_CLOVER) && CONFIG_KSHIM_MENU_STYLE_CLOVER) + \
-    (defined(CONFIG_KSHIM_MENU_STYLE_IOS_HIG) && CONFIG_KSHIM_MENU_STYLE_IOS_HIG) > 1
+    (defined(CONFIG_KSHIM_MENU_STYLE_IOS_HIG) && CONFIG_KSHIM_MENU_STYLE_IOS_HIG) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_METRO) && CONFIG_KSHIM_MENU_STYLE_METRO) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_ONE_UI) && CONFIG_KSHIM_MENU_STYLE_ONE_UI) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_ADWAITA) && CONFIG_KSHIM_MENU_STYLE_ADWAITA) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_HOLO) && CONFIG_KSHIM_MENU_STYLE_HOLO) > 1
 #error "Select exactly one KSHIM_MENU_STYLE preset"
 #endif
 
-#if (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT) || \
+#if defined(CONFIG_KSHIM_MENU_STYLE_METRO) && CONFIG_KSHIM_MENU_STYLE_METRO
+#include "styles/metro.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_ONE_UI) && CONFIG_KSHIM_MENU_STYLE_ONE_UI
+#include "styles/one_ui.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_ADWAITA) && CONFIG_KSHIM_MENU_STYLE_ADWAITA
+#include "styles/adwaita.h"
+#elif defined(CONFIG_KSHIM_MENU_STYLE_HOLO) && CONFIG_KSHIM_MENU_STYLE_HOLO
+#include "styles/holo.h"
+#elif (defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT) || \
     (defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL3) && CONFIG_KSHIM_MENU_STYLE_MATERIAL3) || \
     (defined(CONFIG_KSHIM_MENU_STYLE_SURFACE) && CONFIG_KSHIM_MENU_STYLE_SURFACE) || \
     (defined(CONFIG_KSHIM_MENU_STYLE_CUPERTINO) && CONFIG_KSHIM_MENU_STYLE_CUPERTINO) || \
@@ -237,7 +244,6 @@ static const kshim_menu_style_t mMenuStyle = {
     .RowGapDivisor = 4U,
     .AnimatedBackdrop = 0U,
 #else
-    /* 原有 FLAT 色值、透明度、圆角和动态背景保持不变。 */
     .Name = "FLAT",
     .Screen = 0x13235aU,
     .Panel = 0x161c3eU,
@@ -265,18 +271,11 @@ static const kshim_menu_style_t mMenuStyle = {
     .AnimatedBackdrop = 1U,
 #endif
 };
-#endif /* modern / legacy */
-
-/* 计算行和 Boot 按钮的圆角，小尺寸控件不超过半高。 */
-static inline uint32_t kshim_menu_style_radius(uint32_t Height)
-{
+#endif
+static inline uint32_t kshim_menu_style_radius(uint32_t Height) {
     uint32_t Radius = Height / 5U;
-
-    if (Radius < mMenuStyle.RadiusMin)
-        Radius = mMenuStyle.RadiusMin;
-    if (Radius > mMenuStyle.RadiusMax)
-        Radius = mMenuStyle.RadiusMax;
+    if (Radius < mMenuStyle.RadiusMin) Radius = mMenuStyle.RadiusMin;
+    if (Radius > mMenuStyle.RadiusMax) Radius = mMenuStyle.RadiusMax;
     return Radius < Height / 2U ? Radius : Height / 2U;
 }
-
-#endif /* KSHIM_UI_MENU_STYLE_H */
+#endif

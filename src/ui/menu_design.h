@@ -3,7 +3,7 @@
 #define KSHIM_MENU_DESIGN_H
 #include <stdint.h>
 #include <stddef.h>
-enum { KSHIM_DESIGN_CLASSIC=1, KSHIM_DESIGN_CARDS=2, KSHIM_DESIGN_TERMINAL=3, KSHIM_DESIGN_MINIMAL=4, KSHIM_DESIGN_HIGH_CONTRAST=5, KSHIM_DESIGN_FLUENT=6, KSHIM_DESIGN_FLUENT2=7, KSHIM_DESIGN_MATERIAL2=8, KSHIM_DESIGN_MATERIAL3=9, KSHIM_DESIGN_SURFACE=10, KSHIM_DESIGN_CUPERTINO=11, KSHIM_DESIGN_IOS_HIG=12, KSHIM_DESIGN_HARMONYOS=13, KSHIM_DESIGN_CLOVER=14, KSHIM_DESIGN_GLASS=15, KSHIM_DESIGN_AURORA=16, KSHIM_DESIGN_SOFT_UI=17, KSHIM_DESIGN_BENTO=18, KSHIM_DESIGN_NEON=19, KSHIM_DESIGN_NORD=20 };
+enum { KSHIM_DESIGN_CLASSIC=1, KSHIM_DESIGN_CARDS=2, KSHIM_DESIGN_TERMINAL=3, KSHIM_DESIGN_MINIMAL=4, KSHIM_DESIGN_HIGH_CONTRAST=5, KSHIM_DESIGN_FLUENT=6, KSHIM_DESIGN_FLUENT2=7, KSHIM_DESIGN_MATERIAL2=8, KSHIM_DESIGN_MATERIAL3=9, KSHIM_DESIGN_SURFACE=10, KSHIM_DESIGN_CUPERTINO=11, KSHIM_DESIGN_IOS_HIG=12, KSHIM_DESIGN_HARMONYOS=13, KSHIM_DESIGN_CLOVER=14, KSHIM_DESIGN_GLASS=15, KSHIM_DESIGN_AURORA=16, KSHIM_DESIGN_SOFT_UI=17, KSHIM_DESIGN_BENTO=18, KSHIM_DESIGN_NEON=19, KSHIM_DESIGN_NORD=20, KSHIM_DESIGN_METRO=21, KSHIM_DESIGN_ONE_UI=22, KSHIM_DESIGN_ADWAITA=23, KSHIM_DESIGN_HOLO=24 };
 enum { KSHIM_LAYOUT_LIST=1, KSHIM_LAYOUT_GRID=2, KSHIM_LAYOUT_BENTO=3, KSHIM_LAYOUT_SPLIT=4, KSHIM_LAYOUT_RIBBON=5, KSHIM_LAYOUT_INSET=6 };
 enum { KSHIM_MARK_CURSOR=1, KSHIM_MARK_DOT=2, KSHIM_MARK_CHECK=3, KSHIM_MARK_RADIO=4, KSHIM_MARK_BAR=5, KSHIM_MARK_PILL=6, KSHIM_MARK_CORNERS=7 };
 typedef struct {
@@ -39,365 +39,61 @@ typedef struct {
     uint16_t background;
 } kshim_menu_design_t;
 #if defined(CONFIG_KSHIM_MENU_STYLE_CLASSIC) && CONFIG_KSHIM_MENU_STYLE_CLASSIC
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_CLASSIC, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_CURSOR, .max_width = 720U, .padding = 20U,
-    .title_size = 18U, .row_size = 17U, .status_size = 13U,
-    .row_height = 38U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 136U, .boot_height = 38U,
-    .boot_align = 2U, .icon_size = 0U, .header = 1U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Boot Manager",
-    .action = "Boot",
-    .name = "CLASSIC",
-};
+static const kshim_menu_design_t mMenuDesign = {"CLASSIC", "Boot Manager", "Boot", 1U, KSHIM_DESIGN_CLASSIC, KSHIM_LAYOUT_LIST, KSHIM_MARK_CURSOR, 720U, 20U, 18U, 17U, 13U, 38U, 144U, 180U, 0U, 0U, 0U, 0U, 136U, 38U, 2U, 0U, 1U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_CARDS) && CONFIG_KSHIM_MENU_STYLE_CARDS
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_CARDS, .layout = KSHIM_LAYOUT_GRID,
-    .mark = KSHIM_MARK_CHECK, .max_width = 1000U, .padding = 28U,
-    .title_size = 28U, .row_size = 18U, .status_size = 13U,
-    .row_height = 56U, .tile_height = 136U, .tile_width = 180U,
-    .gap = 16U, .panel_radius = 0U, .row_radius = 12U,
-    .boot_radius = 8U, .boot_width = 180U, .boot_height = 44U,
-    .boot_align = 2U, .icon_size = 32U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 6U, .focus_outline = 2U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 520U,
-    .grid_three = 840U, .background = 0U, .title = "Choose a boot image",
-    .action = "Boot",
-    .name = "CARDS",
-};
+static const kshim_menu_design_t mMenuDesign = {"CARDS", "Choose a boot image", "Boot", 1U, KSHIM_DESIGN_CARDS, KSHIM_LAYOUT_GRID, KSHIM_MARK_CHECK, 1000U, 28U, 28U, 18U, 13U, 56U, 136U, 180U, 16U, 0U, 12U, 8U, 180U, 44U, 2U, 32U, 0U, 0U, 6U, 2U, 0U, 254U, 520U, 840U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_TERMINAL) && CONFIG_KSHIM_MENU_STYLE_TERMINAL
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_TERMINAL, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_CURSOR, .max_width = 880U, .padding = 20U,
-    .title_size = 20U, .row_size = 16U, .status_size = 14U,
-    .row_height = 36U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 176U, .boot_height = 36U,
-    .boot_align = 0U, .icon_size = 0U, .header = 3U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "KSHIMC / BOOT SELECTOR",
-    .action = "[ Boot ]",
-    .name = "TERMINAL",
-};
+static const kshim_menu_design_t mMenuDesign = {"TERMINAL", "KSHIMC / BOOT SELECTOR", "[ Boot ]", 1U, KSHIM_DESIGN_TERMINAL, KSHIM_LAYOUT_LIST, KSHIM_MARK_CURSOR, 880U, 20U, 20U, 16U, 14U, 36U, 144U, 180U, 0U, 0U, 0U, 0U, 176U, 36U, 0U, 0U, 3U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_MINIMAL) && CONFIG_KSHIM_MENU_STYLE_MINIMAL
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_MINIMAL, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_DOT, .max_width = 560U, .padding = 20U,
-    .title_size = 34U, .row_size = 20U, .status_size = 13U,
-    .row_height = 56U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 4U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 132U, .boot_height = 40U,
-    .boot_align = 0U, .icon_size = 0U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Start here",
-    .action = "Boot",
-    .name = "MINIMAL",
-};
+static const kshim_menu_design_t mMenuDesign = {"MINIMAL", "Start here", "Boot", 1U, KSHIM_DESIGN_MINIMAL, KSHIM_LAYOUT_LIST, KSHIM_MARK_DOT, 560U, 20U, 34U, 20U, 13U, 56U, 144U, 180U, 4U, 0U, 0U, 0U, 132U, 40U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_HIGH_CONTRAST) && CONFIG_KSHIM_MENU_STYLE_HIGH_CONTRAST
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_HIGH_CONTRAST, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_CHECK, .max_width = 760U, .padding = 24U,
-    .title_size = 26U, .row_size = 20U, .status_size = 16U,
-    .row_height = 60U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 8U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 192U, .boot_height = 48U,
-    .boot_align = 2U, .icon_size = 0U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 2U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Choose a system",
-    .action = "Boot",
-    .name = "HIGH_CONTRAST",
-};
+static const kshim_menu_design_t mMenuDesign = {"HIGH_CONTRAST", "Choose a system", "Boot", 1U, KSHIM_DESIGN_HIGH_CONTRAST, KSHIM_LAYOUT_LIST, KSHIM_MARK_CHECK, 760U, 24U, 26U, 20U, 16U, 60U, 144U, 180U, 8U, 0U, 0U, 0U, 192U, 48U, 2U, 0U, 0U, 0U, 0U, 2U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_FLUENT, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_BAR, .max_width = 760U, .padding = 28U,
-    .title_size = 28U, .row_size = 17U, .status_size = 13U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 152U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 3U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Choose an operating system",
-    .action = "Boot",
-    .name = "FLUENT",
-};
+static const kshim_menu_design_t mMenuDesign = {"FLUENT", "Choose an operating system", "Boot", 1U, KSHIM_DESIGN_FLUENT, KSHIM_LAYOUT_LIST, KSHIM_MARK_BAR, 760U, 28U, 28U, 17U, 13U, 44U, 144U, 180U, 0U, 0U, 0U, 0U, 152U, 40U, 2U, 20U, 3U, 0U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_FLUENT_DARK) && CONFIG_KSHIM_MENU_STYLE_FLUENT_DARK
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_FLUENT, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_BAR, .max_width = 760U, .padding = 28U,
-    .title_size = 28U, .row_size = 17U, .status_size = 13U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 152U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 3U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Choose an operating system",
-    .action = "Boot",
-    .name = "FLUENT_DARK",
-};
+static const kshim_menu_design_t mMenuDesign = {"FLUENT_DARK", "Choose an operating system", "Boot", 1U, KSHIM_DESIGN_FLUENT, KSHIM_LAYOUT_LIST, KSHIM_MARK_BAR, 760U, 28U, 28U, 17U, 13U, 44U, 144U, 180U, 0U, 0U, 0U, 0U, 152U, 40U, 2U, 20U, 3U, 0U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_FLUENT2) && CONFIG_KSHIM_MENU_STYLE_FLUENT2
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_FLUENT2, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_PILL, .max_width = 760U, .padding = 28U,
-    .title_size = 28U, .row_size = 17U, .status_size = 13U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 4U, .panel_radius = 12U, .row_radius = 4U,
-    .boot_radius = 4U, .boot_width = 152U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 0U,
-    .panel_shadow = 12U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Start your device",
-    .action = "Boot",
-    .name = "FLUENT2",
-};
+static const kshim_menu_design_t mMenuDesign = {"FLUENT2", "Start your device", "Boot", 1U, KSHIM_DESIGN_FLUENT2, KSHIM_LAYOUT_LIST, KSHIM_MARK_PILL, 760U, 28U, 28U, 17U, 13U, 44U, 144U, 180U, 4U, 12U, 4U, 4U, 152U, 40U, 2U, 20U, 0U, 12U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_FLUENT2_DARK) && CONFIG_KSHIM_MENU_STYLE_FLUENT2_DARK
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_FLUENT2, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_PILL, .max_width = 760U, .padding = 28U,
-    .title_size = 28U, .row_size = 17U, .status_size = 13U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 4U, .panel_radius = 12U, .row_radius = 4U,
-    .boot_radius = 4U, .boot_width = 152U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 0U,
-    .panel_shadow = 12U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Start your device",
-    .action = "Boot",
-    .name = "FLUENT2_DARK",
-};
+static const kshim_menu_design_t mMenuDesign = {"FLUENT2_DARK", "Start your device", "Boot", 1U, KSHIM_DESIGN_FLUENT2, KSHIM_LAYOUT_LIST, KSHIM_MARK_PILL, 760U, 28U, 28U, 17U, 13U, 44U, 144U, 180U, 4U, 12U, 4U, 4U, 152U, 40U, 2U, 20U, 0U, 12U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL2) && CONFIG_KSHIM_MENU_STYLE_MATERIAL2
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_MATERIAL2, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_RADIO, .max_width = 640U, .padding = 24U,
-    .title_size = 24U, .row_size = 16U, .status_size = 14U,
-    .row_height = 48U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 4U, .row_radius = 0U,
-    .boot_radius = 4U, .boot_width = 112U, .boot_height = 36U,
-    .boot_align = 2U, .icon_size = 20U, .header = 2U,
-    .panel_shadow = 8U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Select system",
-    .action = "Boot",
-    .name = "MATERIAL2",
-};
+static const kshim_menu_design_t mMenuDesign = {"MATERIAL2", "Select system", "Boot", 1U, KSHIM_DESIGN_MATERIAL2, KSHIM_LAYOUT_LIST, KSHIM_MARK_RADIO, 640U, 24U, 24U, 16U, 14U, 48U, 144U, 180U, 0U, 4U, 0U, 4U, 112U, 36U, 2U, 20U, 2U, 8U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL2_DARK) && CONFIG_KSHIM_MENU_STYLE_MATERIAL2_DARK
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_MATERIAL2, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_RADIO, .max_width = 640U, .padding = 24U,
-    .title_size = 24U, .row_size = 16U, .status_size = 14U,
-    .row_height = 48U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 4U, .row_radius = 0U,
-    .boot_radius = 4U, .boot_width = 112U, .boot_height = 36U,
-    .boot_align = 2U, .icon_size = 20U, .header = 2U,
-    .panel_shadow = 8U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Select system",
-    .action = "Boot",
-    .name = "MATERIAL2_DARK",
-};
+static const kshim_menu_design_t mMenuDesign = {"MATERIAL2_DARK", "Select system", "Boot", 1U, KSHIM_DESIGN_MATERIAL2, KSHIM_LAYOUT_LIST, KSHIM_MARK_RADIO, 640U, 24U, 24U, 16U, 14U, 48U, 144U, 180U, 0U, 4U, 0U, 4U, 112U, 36U, 2U, 20U, 2U, 8U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_MATERIAL3) && CONFIG_KSHIM_MENU_STYLE_MATERIAL3
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_MATERIAL3, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_RADIO, .max_width = 640U, .padding = 24U,
-    .title_size = 28U, .row_size = 16U, .status_size = 14U,
-    .row_height = 56U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 4U, .panel_radius = 28U, .row_radius = 16U,
-    .boot_radius = 255U, .boot_width = 160U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 24U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Choose a system",
-    .action = "Boot",
-    .name = "MATERIAL3",
-};
+static const kshim_menu_design_t mMenuDesign = {"MATERIAL3", "Choose a system", "Boot", 1U, KSHIM_DESIGN_MATERIAL3, KSHIM_LAYOUT_LIST, KSHIM_MARK_RADIO, 640U, 24U, 28U, 16U, 14U, 56U, 144U, 180U, 4U, 28U, 16U, 255U, 160U, 40U, 2U, 24U, 0U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_SURFACE) && CONFIG_KSHIM_MENU_STYLE_SURFACE
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_SURFACE, .layout = KSHIM_LAYOUT_SPLIT,
-    .mark = KSHIM_MARK_BAR, .max_width = 1120U, .padding = 32U,
-    .title_size = 30U, .row_size = 17U, .status_size = 14U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 2U, .boot_width = 156U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 3U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "kShimC UEFI",
-    .action = "Boot",
-    .name = "SURFACE",
-};
+static const kshim_menu_design_t mMenuDesign = {"SURFACE", "kShimC UEFI", "Boot", 1U, KSHIM_DESIGN_SURFACE, KSHIM_LAYOUT_SPLIT, KSHIM_MARK_BAR, 1120U, 32U, 30U, 17U, 14U, 44U, 144U, 180U, 0U, 0U, 0U, 2U, 156U, 40U, 2U, 20U, 3U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK) && CONFIG_KSHIM_MENU_STYLE_SURFACE_DARK
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_SURFACE, .layout = KSHIM_LAYOUT_SPLIT,
-    .mark = KSHIM_MARK_BAR, .max_width = 1120U, .padding = 32U,
-    .title_size = 30U, .row_size = 17U, .status_size = 14U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 2U, .boot_width = 156U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 3U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "kShimC UEFI",
-    .action = "Boot",
-    .name = "SURFACE_DARK",
-};
+static const kshim_menu_design_t mMenuDesign = {"SURFACE_DARK", "kShimC UEFI", "Boot", 1U, KSHIM_DESIGN_SURFACE, KSHIM_LAYOUT_SPLIT, KSHIM_MARK_BAR, 1120U, 32U, 30U, 17U, 14U, 44U, 144U, 180U, 0U, 0U, 0U, 2U, 156U, 40U, 2U, 20U, 3U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_CUPERTINO) && CONFIG_KSHIM_MENU_STYLE_CUPERTINO
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_CUPERTINO, .layout = KSHIM_LAYOUT_GRID,
-    .mark = KSHIM_MARK_CHECK, .max_width = 920U, .padding = 40U,
-    .title_size = 24U, .row_size = 16U, .status_size = 13U,
-    .row_height = 56U, .tile_height = 160U, .tile_width = 180U,
-    .gap = 24U, .panel_radius = 0U, .row_radius = 10U,
-    .boot_radius = 8U, .boot_width = 140U, .boot_height = 36U,
-    .boot_align = 1U, .icon_size = 72U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 2U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 460U,
-    .grid_three = 700U, .background = 0U, .title = "Startup Disk",
-    .action = "Boot",
-    .name = "CUPERTINO",
-};
+static const kshim_menu_design_t mMenuDesign = {"CUPERTINO", "Startup Disk", "Boot", 1U, KSHIM_DESIGN_CUPERTINO, KSHIM_LAYOUT_GRID, KSHIM_MARK_CHECK, 920U, 40U, 24U, 16U, 13U, 56U, 160U, 180U, 24U, 0U, 10U, 8U, 140U, 36U, 1U, 72U, 0U, 0U, 0U, 2U, 0U, 254U, 460U, 700U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_IOS_HIG) && CONFIG_KSHIM_MENU_STYLE_IOS_HIG
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_IOS_HIG, .layout = KSHIM_LAYOUT_INSET,
-    .mark = KSHIM_MARK_CHECK, .max_width = 540U, .padding = 20U,
-    .title_size = 34U, .row_size = 17U, .status_size = 13U,
-    .row_height = 48U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 0U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 255U, .boot_width = 240U, .boot_height = 44U,
-    .boot_align = 1U, .icon_size = 0U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 256U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Start up",
-    .action = "Boot",
-    .name = "IOS_HIG",
-};
+static const kshim_menu_design_t mMenuDesign = {"IOS_HIG", "Start up", "Boot", 1U, KSHIM_DESIGN_IOS_HIG, KSHIM_LAYOUT_INSET, KSHIM_MARK_CHECK, 540U, 20U, 34U, 17U, 13U, 48U, 144U, 180U, 0U, 0U, 0U, 255U, 240U, 44U, 1U, 0U, 0U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_HARMONYOS) && CONFIG_KSHIM_MENU_STYLE_HARMONYOS
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_HARMONYOS, .layout = KSHIM_LAYOUT_GRID,
-    .mark = KSHIM_MARK_CHECK, .max_width = 1040U, .padding = 32U,
-    .title_size = 32U, .row_size = 18U, .status_size = 14U,
-    .row_height = 56U, .tile_height = 156U, .tile_width = 180U,
-    .gap = 16U, .panel_radius = 0U, .row_radius = 24U,
-    .boot_radius = 255U, .boot_width = 220U, .boot_height = 44U,
-    .boot_align = 1U, .icon_size = 48U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 2U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Boot library",
-    .action = "Boot",
-    .name = "HARMONYOS",
-};
+static const kshim_menu_design_t mMenuDesign = {"HARMONYOS", "Boot library", "Boot", 1U, KSHIM_DESIGN_HARMONYOS, KSHIM_LAYOUT_GRID, KSHIM_MARK_CHECK, 1040U, 32U, 32U, 18U, 14U, 56U, 156U, 180U, 16U, 0U, 24U, 255U, 220U, 44U, 1U, 48U, 0U, 0U, 0U, 2U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_CLOVER) && CONFIG_KSHIM_MENU_STYLE_CLOVER
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_CLOVER, .layout = KSHIM_LAYOUT_RIBBON,
-    .mark = KSHIM_MARK_CORNERS, .max_width = 1200U, .padding = 24U,
-    .title_size = 24U, .row_size = 16U, .status_size = 13U,
-    .row_height = 56U, .tile_height = 180U, .tile_width = 176U,
-    .gap = 20U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 8U, .boot_width = 180U, .boot_height = 44U,
-    .boot_align = 1U, .icon_size = 96U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "kShimC Boot Picker",
-    .action = "Boot",
-    .name = "CLOVER",
-};
+static const kshim_menu_design_t mMenuDesign = {"CLOVER", "kShimC Boot Picker", "Boot", 1U, KSHIM_DESIGN_CLOVER, KSHIM_LAYOUT_RIBBON, KSHIM_MARK_CORNERS, 1200U, 24U, 24U, 16U, 13U, 56U, 180U, 176U, 20U, 0U, 0U, 8U, 180U, 44U, 1U, 96U, 0U, 0U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_GLASS, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_CHECK, .max_width = 680U, .padding = 28U,
-    .title_size = 30U, .row_size = 18U, .status_size = 14U,
-    .row_height = 56U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 8U, .panel_radius = 24U, .row_radius = 12U,
-    .boot_radius = 12U, .boot_width = 180U, .boot_height = 44U,
-    .boot_align = 2U, .icon_size = 0U, .header = 0U,
-    .panel_shadow = 16U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 1U, .title = "Choose a system",
-    .action = "Boot",
-    .name = "GLASS",
-};
+static const kshim_menu_design_t mMenuDesign = {"GLASS", "Choose a system", "Boot", 1U, KSHIM_DESIGN_GLASS, KSHIM_LAYOUT_LIST, KSHIM_MARK_CHECK, 680U, 28U, 30U, 18U, 14U, 56U, 144U, 180U, 8U, 24U, 12U, 12U, 180U, 44U, 2U, 0U, 0U, 16U, 0U, 0U, 0U, 254U, 560U, 900U, 1U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_AURORA) && CONFIG_KSHIM_MENU_STYLE_AURORA
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_AURORA, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_DOT, .max_width = 720U, .padding = 32U,
-    .title_size = 36U, .row_size = 18U, .status_size = 14U,
-    .row_height = 56U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 12U, .panel_radius = 24U, .row_radius = 8U,
-    .boot_radius = 255U, .boot_width = 180U, .boot_height = 44U,
-    .boot_align = 2U, .icon_size = 0U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 2U, .title = "Choose your next start",
-    .action = "Boot",
-    .name = "AURORA",
-};
+static const kshim_menu_design_t mMenuDesign = {"AURORA", "Choose your next start", "Boot", 1U, KSHIM_DESIGN_AURORA, KSHIM_LAYOUT_LIST, KSHIM_MARK_DOT, 720U, 32U, 36U, 18U, 14U, 56U, 144U, 180U, 12U, 24U, 8U, 255U, 180U, 44U, 2U, 0U, 0U, 0U, 0U, 0U, 0U, 254U, 560U, 900U, 2U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_SOFT_UI) && CONFIG_KSHIM_MENU_STYLE_SOFT_UI
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_SOFT_UI, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_CHECK, .max_width = 720U, .padding = 32U,
-    .title_size = 28U, .row_size = 18U, .status_size = 14U,
-    .row_height = 56U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 16U, .panel_radius = 24U, .row_radius = 16U,
-    .boot_radius = 16U, .boot_width = 184U, .boot_height = 44U,
-    .boot_align = 2U, .icon_size = 0U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 10U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Start your device",
-    .action = "Boot",
-    .name = "SOFT_UI",
-};
+static const kshim_menu_design_t mMenuDesign = {"SOFT_UI", "Start your device", "Boot", 1U, KSHIM_DESIGN_SOFT_UI, KSHIM_LAYOUT_LIST, KSHIM_MARK_CHECK, 720U, 32U, 28U, 18U, 14U, 56U, 144U, 180U, 16U, 24U, 16U, 16U, 184U, 44U, 2U, 0U, 0U, 0U, 10U, 0U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_BENTO) && CONFIG_KSHIM_MENU_STYLE_BENTO
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_BENTO, .layout = KSHIM_LAYOUT_BENTO,
-    .mark = KSHIM_MARK_CHECK, .max_width = 1040U, .padding = 28U,
-    .title_size = 32U, .row_size = 18U, .status_size = 14U,
-    .row_height = 56U, .tile_height = 140U, .tile_width = 180U,
-    .gap = 16U, .panel_radius = 0U, .row_radius = 20U,
-    .boot_radius = 12U, .boot_width = 180U, .boot_height = 44U,
-    .boot_align = 2U, .icon_size = 32U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 2U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Boot library",
-    .action = "Boot",
-    .name = "BENTO",
-};
+static const kshim_menu_design_t mMenuDesign = {"BENTO", "Boot library", "Boot", 1U, KSHIM_DESIGN_BENTO, KSHIM_LAYOUT_BENTO, KSHIM_MARK_CHECK, 1040U, 28U, 32U, 18U, 14U, 56U, 140U, 180U, 16U, 0U, 20U, 12U, 180U, 44U, 2U, 32U, 0U, 0U, 0U, 2U, 0U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_NEON) && CONFIG_KSHIM_MENU_STYLE_NEON
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_NEON, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_CORNERS, .max_width = 840U, .padding = 28U,
-    .title_size = 26U, .row_size = 18U, .status_size = 13U,
-    .row_height = 52U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 12U, .panel_radius = 0U, .row_radius = 0U,
-    .boot_radius = 0U, .boot_width = 176U, .boot_height = 44U,
-    .boot_align = 2U, .icon_size = 20U, .header = 3U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 8U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "BOOT / SELECT",
-    .action = "Boot",
-    .name = "NEON",
-};
+static const kshim_menu_design_t mMenuDesign = {"NEON", "BOOT / SELECT", "Boot", 1U, KSHIM_DESIGN_NEON, KSHIM_LAYOUT_LIST, KSHIM_MARK_CORNERS, 840U, 28U, 26U, 18U, 13U, 52U, 144U, 180U, 12U, 0U, 0U, 0U, 176U, 44U, 2U, 20U, 3U, 0U, 0U, 0U, 8U, 254U, 560U, 900U, 0U};
 #elif defined(CONFIG_KSHIM_MENU_STYLE_NORD) && CONFIG_KSHIM_MENU_STYLE_NORD
-static const kshim_menu_design_t mMenuDesign = {
-    .enabled = 1U, .kind = KSHIM_DESIGN_NORD, .layout = KSHIM_LAYOUT_LIST,
-    .mark = KSHIM_MARK_BAR, .max_width = 760U, .padding = 28U,
-    .title_size = 28U, .row_size = 17U, .status_size = 13U,
-    .row_height = 44U, .tile_height = 144U, .tile_width = 180U,
-    .gap = 4U, .panel_radius = 6U, .row_radius = 2U,
-    .boot_radius = 4U, .boot_width = 160U, .boot_height = 40U,
-    .boot_align = 2U, .icon_size = 20U, .header = 0U,
-    .panel_shadow = 0U, .row_shadow = 0U, .focus_outline = 0U,
-    .focus_glow = 0U, .press_scale = 254U, .grid_two = 560U,
-    .grid_three = 900U, .background = 0U, .title = "Boot manager",
-    .action = "Boot",
-    .name = "NORD",
-};
+static const kshim_menu_design_t mMenuDesign = {"NORD", "Boot manager", "Boot", 1U, KSHIM_DESIGN_NORD, KSHIM_LAYOUT_LIST, KSHIM_MARK_BAR, 760U, 28U, 28U, 17U, 13U, 44U, 144U, 180U, 4U, 6U, 2U, 4U, 160U, 40U, 2U, 20U, 0U, 0U, 0U, 0U, 0U, 254U, 560U, 900U, 0U};
+#elif defined(CONFIG_KSHIM_MENU_STYLE_METRO) && CONFIG_KSHIM_MENU_STYLE_METRO
+static const kshim_menu_design_t mMenuDesign = {"METRO", "operating systems", "start", 1U, KSHIM_DESIGN_METRO, KSHIM_LAYOUT_LIST, KSHIM_MARK_CHECK, 640U, 24U, 44U, 26U, 14U, 64U, 144U, 180U, 4U, 0U, 0U, 0U, 140U, 44U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
+#elif defined(CONFIG_KSHIM_MENU_STYLE_ONE_UI) && CONFIG_KSHIM_MENU_STYLE_ONE_UI
+static const kshim_menu_design_t mMenuDesign = {"ONE_UI", "Start your device", "Boot", 1U, KSHIM_DESIGN_ONE_UI, KSHIM_LAYOUT_INSET, KSHIM_MARK_CHECK, 680U, 24U, 40U, 18U, 14U, 60U, 144U, 180U, 0U, 0U, 0U, 255U, 240U, 48U, 1U, 0U, 0U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
+#elif defined(CONFIG_KSHIM_MENU_STYLE_ADWAITA) && CONFIG_KSHIM_MENU_STYLE_ADWAITA
+static const kshim_menu_design_t mMenuDesign = {"ADWAITA", "Boot Images", "Boot", 1U, KSHIM_DESIGN_ADWAITA, KSHIM_LAYOUT_INSET, KSHIM_MARK_CHECK, 680U, 24U, 20U, 17U, 14U, 52U, 144U, 180U, 0U, 12U, 0U, 8U, 144U, 44U, 2U, 20U, 4U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
+#elif defined(CONFIG_KSHIM_MENU_STYLE_HOLO) && CONFIG_KSHIM_MENU_STYLE_HOLO
+static const kshim_menu_design_t mMenuDesign = {"HOLO", "Choose system", "Boot", 1U, KSHIM_DESIGN_HOLO, KSHIM_LAYOUT_LIST, KSHIM_MARK_RADIO, 640U, 20U, 22U, 18U, 14U, 48U, 144U, 180U, 0U, 0U, 0U, 2U, 140U, 44U, 2U, 0U, 5U, 0U, 0U, 0U, 0U, 256U, 560U, 900U, 0U};
 #else
 static const kshim_menu_design_t mMenuDesign = {.name="FLAT", .enabled=0U};
 #endif

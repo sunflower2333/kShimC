@@ -11,6 +11,7 @@ on:
       - "tests/**"
       - "tools/test_menu_styles.py"
       - "tools/test_theme_design.py"
+      - "tools/generate_design_presets.py"
       - "tools/preview_manifest.py"
       - "tools/build_theme_review.py"
       - "tools/theme_review.html"
@@ -24,6 +25,7 @@ on:
       - "tests/**"
       - "tools/test_menu_styles.py"
       - "tools/test_theme_design.py"
+      - "tools/generate_design_presets.py"
       - "tools/preview_manifest.py"
       - "tools/build_theme_review.py"
       - "tools/theme_review.html"
@@ -43,8 +45,9 @@ jobs:
         run: |
           python3 -m venv /tmp/kshim-style-venv
           /tmp/kshim-style-venv/bin/pip install kconfiglib==14.1.0
-      - name: GCC, Clang and all 25 real Kconfig choices
+      - name: GCC, Clang and all 29 real Kconfig choices
         run: |
+          python3 tools/generate_design_presets.py --check
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc gcc --kconfig
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc clang
           python3 tools/test_theme_design.py --cc gcc --sanitize
@@ -58,7 +61,7 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
-        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG]
+        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,6 +80,19 @@ jobs:
           git rev-parse HEAD > previews/source-commit.txt
           ./build-menu/ui_preview_test previews | tee previews/render.log
           python3 tools/preview_manifest.py previews
+      - name: Preserve every original theme pixel for pixel
+        if: matrix.style != 'METRO' && matrix.style != 'ONE_UI' && matrix.style != 'ADWAITA' && matrix.style != 'HOLO'
+        run: |
+          base=5167858dc99f79571190f8a615d49fc7e29d79e2
+          git fetch --depth=1 origin "$base"
+          files="src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h"
+          for file in $files; do git show "$base:$file" > "$file"; done
+          cmake --build build-menu --parallel 2 --target ui_preview_test
+          mkdir -p compatibility-baseline
+          ./build-menu/ui_preview_test compatibility-baseline
+          for file in compatibility-baseline/*.ppm; do cmp "$file" "previews/$(basename "$file")"; done
+          for file in $files; do git show "HEAD:$file" > "$file"; done
+          printf 'PASS: %s, both resolutions and all four stages match %s\n' '${{ matrix.style }}' "$base" > previews/compatibility.txt
       - name: Verify FLAT against the previous renderer pixel for pixel
         if: matrix.style == 'FLAT'
         run: |
@@ -99,9 +115,29 @@ jobs:
             previews/manifest.json
             previews/source-commit.txt
             previews/render.log
+            previews/compatibility.txt
             build-menu/Testing/Temporary/LastTest.log
           if-no-files-found: error
           retention-days: 14
+  new-theme-variants:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        style: [METRO, ONE_UI, ADWAITA, HOLO]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install host build dependencies
+        run: sudo apt-get update && sudo apt-get install -y device-tree-compiler ninja-build
+      - name: Build and test explicit 1x scale with reduced effects
+        run: |
+          cmake -S tests -B build-variant -G Ninja -DKSHIM_TEST_MENU_STYLE=${{ matrix.style }} -DKSHIM_TEST_MENU_SCALE_Q8=256 -DKSHIM_TEST_MENU_REDUCED_EFFECTS=ON
+          cmake --build build-variant --parallel 2
+          ctest --test-dir build-variant --output-on-failure
   arm64-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -109,7 +145,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG]
+        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,7 +167,7 @@ jobs:
           aarch64-linux-gnu-size build-runtime/kShimC.elf
           test -s build-runtime/kShimC.bin
   package-previews:
-    needs: [preset-contracts, lvgl-regression, arm64-build]
+    needs: [preset-contracts, lvgl-regression, new-theme-variants, arm64-build]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
