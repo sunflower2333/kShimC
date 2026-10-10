@@ -124,3 +124,20 @@ jobs:
           cmake --build build-runtime --parallel 2
           aarch64-linux-gnu-size build-runtime/kShimC.elf
           test -s build-runtime/kShimC.bin
+  package-previews:
+    needs: [preset-contracts, lvgl-regression, arm64-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Collect the successful matrix's authentic preview artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: menu-*
+          path: collected
+      - name: Upload one review bundle without changing frame bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-menu-previews
+          path: collected/
+          if-no-files-found: error
+          retention-days: 14

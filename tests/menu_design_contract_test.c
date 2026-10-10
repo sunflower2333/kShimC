@@ -77,6 +77,20 @@ int main(void) {
         assert(kshim_design_layout(&mMenuDesign,1920,1080,7,0,&g)==0);
         assert(g.split && g.boot.x>g.list.x+g.list.w);
     }
+    if(mMenuDesign.kind==KSHIM_DESIGN_CLOVER) {
+        const unsigned displays[][2]={{1920,1080},{1080,2340}};
+        for(unsigned size=0;size<2;size++) {
+            for(unsigned entries=1;entries<=49;entries+=6) {
+                assert(kshim_design_layout(&mMenuDesign,displays[size][0],displays[size][1],entries,0,&g)==0);
+                assert(g.horizontal && !g.compact);
+                assert(g.status.y>=g.list.y+g.list.h);
+                assert(g.boot.y>=g.status.y+g.status.h);
+                kshim_design_item_geometry_t item;
+                kshim_design_item_layout(&mMenuDesign,&g,0,36,&item);
+                assert(item.icon.w>0 && item.mark.w>0);
+            }
+        }
+    }
     if(mMenuDesign.kind==KSHIM_DESIGN_MATERIAL2) assert(mMenuDesign.row_shadow==0);
     printf("PASS %s: geometry boundaries, 49-item order, deterministic layout, compact fallback\n",EXPECTED_STYLE);
 }

@@ -82,7 +82,13 @@ static inline int kshim_design_layout(const kshim_menu_design_t *d,
         }
         if(col) rows++;
     }
-    if(g->horizontal) rows=1;
+    if(g->horizontal) {
+        rows=1;
+        /* The selected name moves below the strip with a section gap, not
+         * the smaller title/status gap. Reserve that difference before the
+         * viewport-fit check or every large Clover display falls back. */
+        if(sh) fixed+=section_gap-status_gap;
+    }
     int32_t natural=fixed+rows*rh+(rows-1)*g->gap+2*g->gutter;
     g->panel.h=kshim_design_min(natural,cap);
     if(g->split) g->panel.h=kshim_design_min(cap,kshim_design_max(g->panel.h,(int32_t)h*3/4));
