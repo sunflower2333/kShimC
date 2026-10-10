@@ -15,6 +15,19 @@ static uint32_t KshimDesignMix(uint32_t a,uint32_t b,unsigned t) {
         r|=((((a>>shift)&255U)*(255U-t)+((b>>shift)&255U)*t+127U)/255U)<<shift;
     return 0xff000000U|r;
 }
+#if defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS
+/* A translucent panel exposes the scaled cached backdrop around transformed
+ * children. Keep its sampling/clip origin stable across partial invalidations.
+ * This rounds normal damage; it does not force a refresh or allocate a full
+ * framebuffer. Reduced-effects builds do not install this callback. */
+static void KshimDesignGlassDamage(lv_event_t *event) {
+    lv_area_t *area=lv_event_get_param(event);
+    lv_display_t *display=lv_event_get_target(event);
+    if(!area || !display) return;
+    *area=(lv_area_t){0,0,lv_display_get_horizontal_resolution(display)-1,
+                        lv_display_get_vertical_resolution(display)-1};
+}
+#endif
 static bool KshimDesignBackground(lv_obj_t *image) {
     if(!image) return false;
     const int side=(int)KSHIM_DESIGN_BG_SIZE;
@@ -49,6 +62,10 @@ static bool KshimDesignBackground(lv_obj_t *image) {
         .data=(const uint8_t *)(const void *)mDesignBackgroundPixels};
     lv_image_cache_drop(&mDesignBackgroundImage);
     lv_image_set_src(image,&mDesignBackgroundImage);
+#if defined(CONFIG_KSHIM_MENU_STYLE_GLASS) && CONFIG_KSHIM_MENU_STYLE_GLASS
+    lv_display_add_event_cb(lv_obj_get_display(image),KshimDesignGlassDamage,
+                            LV_EVENT_INVALIDATE_AREA,NULL);
+#endif
     return true;
 }
 #else
