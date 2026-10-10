@@ -236,7 +236,7 @@ static void KshimConfirmIndex(size_t Index)
     mContext->PendingAction = (kshim_menu_action_t)(Index + 1U);
   if (mStatus != NULL)
     lv_label_set_text(mStatus, mContext->Entries[Index]);
-  if (mBootButton != NULL)
+  if (mBootButton != NULL && !KSHIM_MENU_IS_NATIVE)
     KshimAnimate(mBootButton, KshimSetConfirmPulse, 0, 1024,
                  KSHIM_UI_CONFIRM_DURATION_MS, lv_anim_path_ease_in_out);
 }
@@ -250,12 +250,16 @@ static void KshimMenuEvent(lv_event_t *Event)
   lv_event_code_t Code = lv_event_get_code(Event);
   int Index = (int)(uintptr_t)lv_event_get_user_data(Event) - 1;
   if (Code == LV_EVENT_FOCUSED || Code == LV_EVENT_DEFOCUSED) {
-    if (Label != NULL) {
+    if (Label != NULL && !KSHIM_MENU_IS_NATIVE) {
       int32_t Offset = lv_obj_get_style_translate_x(Label, LV_PART_MAIN);
       int32_t Slide = mMenuDesign.enabled ? 0 : 12;
       KshimAnimate(Label, KshimSetTranslateX, Offset,
           Code == LV_EVENT_FOCUSED ? Slide : 0, KSHIM_UI_FOCUS_DURATION_MS,
           mMenuDesign.enabled ? lv_anim_path_ease_out : lv_anim_path_overshoot);
+    }
+    if (KSHIM_MENU_IS_NATIVE) {
+      if (Code == LV_EVENT_FOCUSED) lv_obj_add_state(Button, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
+      else lv_obj_remove_state(Button, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
     }
     if (Code == LV_EVENT_FOCUSED) {
       lv_obj_scroll_to_view(Button, LV_ANIM_ON);
@@ -268,6 +272,7 @@ static void KshimMenuEvent(lv_event_t *Event)
     lv_indev_t *Input = lv_event_get_indev(Event);
     if (Input != NULL && lv_indev_get_type(Input) == LV_INDEV_TYPE_POINTER)
       lv_group_focus_obj(Button);
+    if (KSHIM_MENU_IS_NATIVE) return;
     KshimAnimate(Button, KshimSetScale,
         lv_obj_get_style_transform_scale_x(Button, LV_PART_MAIN),
         mMenuDesign.enabled ? mMenuDesign.press_scale : 248,
@@ -275,6 +280,7 @@ static void KshimMenuEvent(lv_event_t *Event)
     return;
   }
   if (Code == LV_EVENT_RELEASED || Code == LV_EVENT_PRESS_LOST) {
+    if (KSHIM_MENU_IS_NATIVE) return;
     KshimAnimate(Button, KshimSetScale,
         lv_obj_get_style_transform_scale_x(Button, LV_PART_MAIN),
         256, KSHIM_UI_PRESS_DURATION_MS, lv_anim_path_ease_out);
@@ -301,6 +307,7 @@ static void KshimBootEvent(lv_event_t *Event)
     KshimConfirmIndex((size_t)Index);
 }
 
+#include "menu_native.h"
 #include "menu_layout_dispatch.h"
 
 static int KshimRebuildEntries(size_t Initial)
@@ -323,6 +330,7 @@ static int KshimRebuildEntries(size_t Initial)
   lv_obj_t *InitialButton = lv_group_get_obj_by_index(Group, (uint32_t)Initial);
   if (InitialButton == NULL) return -4;
   lv_group_focus_obj(InitialButton);
+  if (KSHIM_MENU_IS_NATIVE) lv_obj_add_state(InitialButton, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
   lv_obj_scroll_to_view(InitialButton, LV_ANIM_OFF);
   if (mStatus != NULL) lv_label_set_text(mStatus, mContext->Entries[Initial]);
   return 0;
@@ -371,6 +379,7 @@ static int KshimRenderInitialBackground(void)
 
 static void KshimCreateFonts(uint32_t ShortEdge)
 {
+  if (KSHIM_MENU_IS_NATIVE) { KshimNativeCreateFonts(); return; }
   static const int32_t Sizes[3][3] = {{48, 28, 22}, {28, 20, 16}, {20, 14, 12}};
   const int32_t *Size = Sizes[ShortEdge >= 720U ? 0 : ShortEdge >= 320U ? 1 : 2];
   int32_t DesignSizes[3];
@@ -408,6 +417,7 @@ static int KshimBuildChrome(void)
   if (Screen == NULL || mContext == NULL) return -1;
   uint32_t ShortEdge = min_u32(mFramebuffer->width, mFramebuffer->height);
   KshimCreateFonts(ShortEdge);
+  if (KSHIM_MENU_IS_NATIVE) return KshimNativeBuildChrome();
   mRowHeight = ShortEdge >= 720U ? 72U : ShortEdge >= 320U ? 52U : 24U;
   if (mMenuStyle.Layout == 5U && ShortEdge >= 160U && mRowHeight < 44U)
     mRowHeight = 44U;
@@ -487,7 +497,7 @@ static int KshimBuildChrome(void)
   lv_obj_set_style_text_color(BootLabel, lv_color_hex(mMenuStyle.BootText), 0);
   lv_obj_center(BootLabel);
 
-  if (mMenuStyle.Layout == 1U) {
+  if (mMenuStyle.Layout == 1U || mMenuDesign.kind == KSHIM_DESIGN_ONE_UI) {
     mDetail = lv_label_create(mPanel);
     if (mDetail == NULL) return -1;
     lv_label_set_text(mDetail, "Select an image.\nPress Boot to continue.");

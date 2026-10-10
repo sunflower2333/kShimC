@@ -45,13 +45,20 @@
 /* The menu draws Noto Sans CJK SC (src/ui/font.c) with TinyTTF at any size;
  * Montserrat 20 is only the Latin fallback when the font cannot be
  * inflated (no scratch memory outside the runtime slot). */
+#if defined(CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT) && CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT
+#define LV_FONT_MONTSERRAT_14 1
+#define LV_FONT_DEFAULT &lv_font_montserrat_14
+#define LV_USE_THEME_DEFAULT 1
+#else
 #define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_DEFAULT &lv_font_montserrat_20
+#define LV_USE_THEME_DEFAULT 0
+#endif
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_48 0
 #define LV_FONT_UNSCII_8 0
 #define LV_FONT_UNSCII_16 0
-#define LV_FONT_DEFAULT &lv_font_montserrat_20
 #define LV_FONT_SIMSUN_14_CJK 0
 #define LV_USE_FONT_PLACEHOLDER 1
 #define LV_USE_TINY_TTF 1
@@ -93,7 +100,6 @@
 #define LV_USE_TILEVIEW 0
 #define LV_USE_WIN 0
 
-#define LV_USE_THEME_DEFAULT 0
 #define LV_USE_THEME_SIMPLE 0
 #define LV_USE_THEME_MONO 0
 #define LV_USE_FLEX 1

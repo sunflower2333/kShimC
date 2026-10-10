@@ -50,7 +50,10 @@ int main(void) {
     assert(kshim_design_stroke(2, 96)==1);
     assert(kshim_design_stroke(1, 512)==2);
     assert(strcmp(mMenuDesign.name,EXPECTED_STYLE)==0);
-    if(!mMenuDesign.enabled) { assert(strcmp(EXPECTED_STYLE,"FLAT")==0); puts("FLAT: design bypass"); return 0; }
+    if(!mMenuDesign.enabled) {
+        assert(!strcmp(EXPECTED_STYLE,"FLAT") || !strcmp(EXPECTED_STYLE,"LVGL_DEFAULT"));
+        printf("%s: custom design bypass\n",EXPECTED_STYLE); return 0;
+    }
     assert(mMenuDesign.max_width>=360 && mMenuDesign.max_width<=1200);
     assert(mMenuDesign.row_height>=36 && mMenuDesign.row_height<=64);
     const unsigned sizes[][2]={{64,48},{128,64},{159,96},{160,160},{240,320},{320,240},{559,360},{560,360},{640,360},{720,480},{960,720},{1000,720},{1080,2340},{1920,1080},{4096,2160}};

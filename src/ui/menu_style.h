@@ -1,6 +1,11 @@
 #ifndef KSHIM_UI_MENU_STYLE_H
 #define KSHIM_UI_MENU_STYLE_H
 #include <stdint.h>
+#if defined(CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT) && CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT
+#define KSHIM_MENU_IS_NATIVE 1
+#else
+#define KSHIM_MENU_IS_NATIVE 0
+#endif
 /* Compile-time palette. Only the selected preset is emitted. */
 typedef struct {
     const char *Name;
@@ -79,11 +84,18 @@ typedef struct {
     (defined(CONFIG_KSHIM_MENU_STYLE_METRO) && CONFIG_KSHIM_MENU_STYLE_METRO) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_ONE_UI) && CONFIG_KSHIM_MENU_STYLE_ONE_UI) + \
     (defined(CONFIG_KSHIM_MENU_STYLE_ADWAITA) && CONFIG_KSHIM_MENU_STYLE_ADWAITA) + \
-    (defined(CONFIG_KSHIM_MENU_STYLE_HOLO) && CONFIG_KSHIM_MENU_STYLE_HOLO) > 1
+    (defined(CONFIG_KSHIM_MENU_STYLE_HOLO) && CONFIG_KSHIM_MENU_STYLE_HOLO) + \
+    (defined(CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT) && CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT) > 1
 #error "Select exactly one KSHIM_MENU_STYLE preset"
 #endif
 
-#if defined(CONFIG_KSHIM_MENU_STYLE_METRO) && CONFIG_KSHIM_MENU_STYLE_METRO
+#if KSHIM_MENU_IS_NATIVE
+/* No simulated palette: actual colors and widget styling come from LVGL. */
+static const kshim_menu_style_t mMenuStyle = {
+    .Name="LVGL_DEFAULT", .PanelOpacity=255U, .ItemOpacity=255U,
+    .FocusOpacity=255U, .RowGapDivisor=4U
+};
+#elif defined(CONFIG_KSHIM_MENU_STYLE_METRO) && CONFIG_KSHIM_MENU_STYLE_METRO
 #include "styles/metro.h"
 #elif defined(CONFIG_KSHIM_MENU_STYLE_ONE_UI) && CONFIG_KSHIM_MENU_STYLE_ONE_UI
 #include "styles/one_ui.h"

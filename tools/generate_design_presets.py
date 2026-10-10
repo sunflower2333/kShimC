@@ -5,7 +5,7 @@ import argparse
 import json
 import re
 ROOT = Path(__file__).resolve().parents[1]
-KINDS = ['CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'FLUENT2', 'MATERIAL2', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'IOS_HIG', 'HARMONYOS', 'CLOVER', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD', 'METRO', 'ONE_UI', 'ADWAITA', 'HOLO']
+KINDS = ['CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'FLUENT2', 'MATERIAL2', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'IOS_HIG', 'HARMONYOS', 'CLOVER', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD', 'METRO', 'ONE_UI', 'ADWAITA', 'HOLO', 'LVGL_DEFAULT']
 LAYOUTS = ['LIST', 'GRID', 'BENTO', 'SPLIT', 'RIBBON', 'INSET']
 MARKS = ['CURSOR', 'DOT', 'CHECK', 'RADIO', 'BAR', 'PILL', 'CORNERS']
 BASE = {'enabled': 1, 'kind': 'MINIMAL', 'layout': 'LIST', 'mark': 'CHECK', 'max_width': 640, 'padding': 24, 'title_size': 28, 'row_size': 18, 'status_size': 14, 'row_height': 56, 'tile_height': 144, 'tile_width': 180, 'gap': 0, 'panel_radius': 0, 'row_radius': 0, 'boot_radius': 0, 'boot_width': 160, 'boot_height': 44, 'boot_align': 2, 'icon_size': 0, 'header': 0, 'panel_shadow': 0, 'row_shadow': 0, 'focus_outline': 0, 'focus_glow': 0, 'press_scale': 256, 'grid_two': 560, 'grid_three': 900, 'background': 0}
@@ -40,8 +40,9 @@ PRESETS = [
     preset('NEON', mark='CORNERS', max_width=840, padding=28, title_size=26, status_size=13, row_height=52, gap=12, boot_width=176, icon_size=20, header=3, focus_glow=8, press_scale=254, title='BOOT / SELECT'),
     preset('NORD', mark='BAR', max_width=760, padding=28, row_size=17, status_size=13, row_height=44, gap=4, panel_radius=6, row_radius=2, boot_radius=4, boot_height=40, icon_size=20, press_scale=254, title='Boot manager'),
     preset('METRO', title_size=44, row_size=26, row_height=64, gap=4, boot_width=140, boot_align=0, title='operating systems', action='start'),
-    preset('ONE_UI', layout='INSET', max_width=680, title_size=40, row_height=60, boot_radius=255, boot_width=240, boot_height=48, boot_align=1, title='Start your device'),
+    preset('ONE_UI', layout='SPLIT', mark='PILL', max_width=1200, padding=28, title_size=36, row_size=20, status_size=22, row_height=64, gap=4, row_radius=28, boot_radius=255, boot_width=560, boot_height=52, boot_align=1, icon_size=32, title='Boot manager'),
     preset('ADWAITA', layout='INSET', max_width=680, title_size=20, row_size=17, row_height=52, panel_radius=12, boot_radius=8, boot_width=144, icon_size=20, header=4, title='Boot Images'),
+    preset('LVGL_DEFAULT', enabled=0, title='Select OS to Boot'),
     preset('HOLO', mark='RADIO', padding=20, title_size=22, row_height=48, boot_radius=2, boot_width=140, header=5, title='Choose system'),
 ]
 ORDER = [item['name'] for item in PRESETS]

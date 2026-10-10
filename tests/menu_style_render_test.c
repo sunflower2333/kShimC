@@ -10,6 +10,7 @@
 
 #include "../src/ui/menu_style.h"
 #include "menu_design_lvgl_checks.h"
+#include "menu_native_theme_checks.h"
 
 /* 比较 RGB 分量，不依赖 lv_color_t 的内存排列或填充。 */
 static void CheckColor(lv_color_t Actual, uint32_t Expected)
@@ -48,6 +49,7 @@ static unsigned IOSMarkPixels(kshim_lvgl_t *Ui, lv_obj_t *Row)
 /* 检查实际 LVGL 对象上的行、面板、Boot 按钮和焦点状态。 */
 static void CheckChrome(kshim_lvgl_t *Ui)
 {
+    if (KSHIM_MENU_IS_NATIVE) { KshimTestNativeChrome(Ui); return; }
     if (mMenuDesign.enabled) { KshimTestDesignChrome(Ui); return; }
     lv_obj_t *Panel = lv_obj_get_parent(Ui->List);
     lv_obj_t *First = lv_group_get_obj_by_index(Ui->Group, 0U);

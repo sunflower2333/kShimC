@@ -2,6 +2,7 @@
 /* 应用当前行外观；Bento 保留第一个子对象为标题，兼容焦点动画与测试。 */
 static int KshimStyleEntry(lv_obj_t *Button, size_t Index)
 {
+  if (KSHIM_MENU_IS_NATIVE) return KshimNativeStyleEntry(Button);
   if (mMenuDesign.enabled) return KshimDesignEntry(Button, Index);
   uint32_t Height = mRibbon != 0U ? mTileHeight : mColumns > 1U ? mRowHeight * 2U : mRowHeight;
   uint32_t Radius = kshim_menu_style_radius(Height);
@@ -85,6 +86,7 @@ static uint32_t KshimPadding(void)
 /* 计算布局：旧主题走原有布局，Surface 宽屏双栏，Bento 窄屏自动回落单列。 */
 static int KshimRelayoutChrome(void)
 {
+  if (KSHIM_MENU_IS_NATIVE) return KshimNativeRelayout();
   if (mMenuDesign.enabled) {
     /* Focus may recursively reveal ancestors during the entry animation.
      * Keep the screen fixed; only the entry list owns a scroll viewport. */

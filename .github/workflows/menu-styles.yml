@@ -45,7 +45,7 @@ jobs:
         run: |
           python3 -m venv /tmp/kshim-style-venv
           /tmp/kshim-style-venv/bin/pip install kconfiglib==14.1.0
-      - name: GCC, Clang and all 29 real Kconfig choices
+      - name: GCC, Clang and all 30 real Kconfig choices
         run: |
           python3 tools/generate_design_presets.py --check
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc gcc --kconfig
@@ -61,7 +61,7 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
-        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO]
+        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO, LVGL_DEFAULT]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,11 +81,11 @@ jobs:
           ./build-menu/ui_preview_test previews | tee previews/render.log
           python3 tools/preview_manifest.py previews
       - name: Preserve every original theme pixel for pixel
-        if: matrix.style != 'METRO' && matrix.style != 'ONE_UI' && matrix.style != 'ADWAITA' && matrix.style != 'HOLO'
+        if: matrix.style != 'ONE_UI' && matrix.style != 'LVGL_DEFAULT'
         run: |
-          base=5167858dc99f79571190f8a615d49fc7e29d79e2
+          base=35e9ad38529bcd6ff4222619a344a951d0366120
           git fetch --depth=1 origin "$base"
-          files="src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h"
+          files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
           for file in $files; do git show "$base:$file" > "$file"; done
           cmake --build build-menu --parallel 2 --target ui_preview_test
           mkdir -p compatibility-baseline
@@ -126,7 +126,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        style: [METRO, ONE_UI, ADWAITA, HOLO]
+        style: [METRO, ONE_UI, ADWAITA, HOLO, LVGL_DEFAULT]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,6 +138,14 @@ jobs:
           cmake -S tests -B build-variant -G Ninja -DKSHIM_TEST_MENU_STYLE=${{ matrix.style }} -DKSHIM_TEST_MENU_SCALE_Q8=256 -DKSHIM_TEST_MENU_REDUCED_EFFECTS=ON
           cmake --build build-variant --parallel 2
           ctest --test-dir build-variant --output-on-failure
+      - name: Retain variant regression log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: variant-${{ matrix.style }}
+          path: build-variant/Testing/Temporary/LastTest.log
+          if-no-files-found: error
+          retention-days: 14
   arm64-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -145,7 +153,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO]
+        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO, LVGL_DEFAULT]
     steps:
       - uses: actions/checkout@v4
         with:

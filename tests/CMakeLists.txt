@@ -7,7 +7,7 @@ set(KSHIM_TEST_MENU_STYLE "FLAT" CACHE STRING "Boot menu preset used by host UI 
 set(KSHIM_TEST_MENU_STYLES FLAT CLASSIC CARDS TERMINAL MINIMAL HIGH_CONTRAST
     FLUENT MATERIAL3 SURFACE CUPERTINO GLASS AURORA SOFT_UI BENTO NEON NORD
     MATERIAL2 MATERIAL2_DARK FLUENT2 FLUENT2_DARK FLUENT_DARK SURFACE_DARK HARMONYOS CLOVER IOS_HIG
-    METRO ONE_UI ADWAITA HOLO)
+    METRO ONE_UI ADWAITA HOLO LVGL_DEFAULT)
 set_property(CACHE KSHIM_TEST_MENU_STYLE PROPERTY STRINGS ${KSHIM_TEST_MENU_STYLES})
 if(NOT KSHIM_TEST_MENU_STYLE IN_LIST KSHIM_TEST_MENU_STYLES)
     message(FATAL_ERROR "Unknown KSHIM_TEST_MENU_STYLE: ${KSHIM_TEST_MENU_STYLE}")
@@ -21,6 +21,10 @@ if(KSHIM_TEST_SANITIZERS)
 endif()
 add_compile_options(-g -O1 -ffunction-sections -fdata-sections)
 add_link_options(-Wl,--gc-sections)
+
+if(KSHIM_TEST_MENU_STYLE STREQUAL "LVGL_DEFAULT")
+    add_compile_definitions(CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT=1)
+endif()
 
 set(LV_CONF_PATH "${KSHIM_ROOT}/src/include/lv_conf.h" CACHE FILEPATH "" FORCE)
 set(LV_CONF_BUILD_DISABLE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
@@ -126,6 +130,18 @@ if(KSHIM_TEST_MENU_STYLE MATCHES "^(METRO|ONE_UI|ADWAITA|HOLO)$")
     target_link_libraries(menu_new_themes_lvgl_test PRIVATE lvgl kshim_backdrop m)
     target_compile_definitions(menu_new_themes_lvgl_test PRIVATE
         CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1
+        CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
+        CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
+endif()
+
+if(KSHIM_TEST_MENU_STYLE STREQUAL "ONE_UI")
+    kshim_test(menu_one_ui_identity_test menu_one_ui_identity_test.c)
+    target_compile_definitions(menu_one_ui_identity_test PRIVATE CONFIG_KSHIM_MENU_STYLE_ONE_UI=1)
+endif()
+if(KSHIM_TEST_MENU_STYLE STREQUAL "LVGL_DEFAULT")
+    kshim_test(menu_native_theme_test menu_native_theme_test.c ${KSHIM_TEST_UI_SOURCES})
+    target_link_libraries(menu_native_theme_test PRIVATE lvgl kshim_backdrop m)
+    target_compile_definitions(menu_native_theme_test PRIVATE
         CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
         CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
 endif()

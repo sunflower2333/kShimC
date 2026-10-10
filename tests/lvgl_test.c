@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <lvgl.h>
+#include "../src/ui/menu_style.h"
 #include <lvgl_port.h>
 #include <ui_font.h>
 
@@ -169,7 +170,11 @@ static void TestDefaultKeys(void)
     assert(lv_group_get_focused(Group) == Second);
     lv_obj_t *SecondLabel = lv_obj_get_child(Second, 0U);
     const lv_anim_t *Focus = lv_anim_get(SecondLabel, NULL);
-    assert(Focus != NULL && Focus->duration == KSHIM_UI_FOCUS_DURATION_MS);
+    if (KSHIM_MENU_IS_NATIVE) {
+        assert(Focus == NULL);
+        assert(lv_obj_has_state(Second, LV_STATE_CHECKED));
+        assert(!lv_obj_has_state(First, LV_STATE_CHECKED));
+    } else assert(Focus != NULL && Focus->duration == KSHIM_UI_FOCUS_DURATION_MS);
 
     PressKey(&Test.ui, 2U);
     assert(kshim_lvgl_take_selection(&Test.ui) == DEFAULT_SECOND_ACTION);
@@ -177,7 +182,8 @@ static void TestDefaultKeys(void)
     assert(kshim_lvgl_take_index(&Test.ui) == 1);
     assert(kshim_lvgl_take_index(&Test.ui) == -1);
     const lv_anim_t *Confirm = lv_anim_get(Test.ui.BootButton, NULL);
-    assert(Confirm != NULL &&
+    if (KSHIM_MENU_IS_NATIVE) assert(Confirm == NULL);
+    else assert(Confirm != NULL &&
            Confirm->duration == KSHIM_UI_CONFIRM_DURATION_MS);
 
     PressKey(&Test.ui, 0U);
@@ -247,7 +253,13 @@ static void TestDynamicAndTouch(void)
 
     lv_obj_send_event(Focused, LV_EVENT_PRESSED, NULL);
     const lv_anim_t *Press = lv_anim_get(Focused, NULL);
-    assert(Press != NULL && Press->duration == KSHIM_UI_PRESS_DURATION_MS);
+    if (KSHIM_MENU_IS_NATIVE) {
+        /* The native theme owns pressed feedback; no kShim transform is installed. */
+        assert(Press == NULL);
+        assert(lv_obj_get_style_transform_scale_x(Focused, LV_PART_MAIN) == 256);
+    } else {
+        assert(Press != NULL && Press->duration == KSHIM_UI_PRESS_DURATION_MS);
+    }
     DestroyUi(&Test);
 }
 
@@ -274,6 +286,11 @@ static void TestBatchedTouchAndCancel(void)
      * between ENTER and LEAVE. The old sampled pointer loses this tap. */
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_ENTER, X, Y) == 0);
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_LEAVE, X, Y) == 0);
+    if(lv_group_get_focused(Test.ui.Group) != Second) {
+        lv_area_t l,p,b;lv_obj_get_coords(Test.ui.List,&l);
+        lv_obj_get_coords(lv_obj_get_parent(Test.ui.List),&p);lv_obj_get_coords(Test.ui.BootButton,&b);
+        fprintf(stderr,"TOUCH %s XY=%u,%u row=%ld,%ld..%ld,%ld list=%ld,%ld..%ld,%ld panel=%ld,%ld boot=%ld,%ld scroll=%ld\n",mMenuStyle.Name,X,Y,(long)Area.x1,(long)Area.y1,(long)Area.x2,(long)Area.y2,(long)l.x1,(long)l.y1,(long)l.x2,(long)l.y2,(long)p.x1,(long)p.y1,(long)b.x1,(long)b.y1,(long)lv_obj_get_scroll_y(Test.ui.List));
+    }
     assert(lv_group_get_focused(Test.ui.Group) == Second);
     assert(kshim_lvgl_take_index(&Test.ui) == -1);
 

@@ -12,11 +12,12 @@ def main():
     a=p.parse_args()
     header=(ROOT/'src/ui/menu_design.h').read_text(encoding='utf-8')
     names=['FLAT']+re.findall(r'^#(?:if|elif) defined\(CONFIG_KSHIM_MENU_STYLE_([A-Z0-9_]+)\)',header,re.M)
-    if len(names)!=29 or len(set(names))!=29: raise SystemExit('Expected 29 unique presets')
+    if len(names)!=30 or len(set(names))!=30: raise SystemExit('Expected 30 unique presets')
     with tempfile.TemporaryDirectory(prefix='kshim-design-') as td:
         for name in names:
             tests=['menu_design_contract_test.c']
             if name=='FLAT': tests+=['menu_legacy_marks_test.c']
+            if name=='ONE_UI': tests+=['menu_one_ui_identity_test.c']
             if name in ('METRO','ONE_UI','ADWAITA','HOLO'): tests+=['menu_new_themes_contract_test.c']
             for test in tests:
                 exe=Path(td)/name

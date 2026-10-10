@@ -8,6 +8,7 @@
 
 #include <lvgl.h>
 #include <lvgl_port.h>
+#include "../src/ui/menu_style.h"
 
 static uint32_t Inputs[3];
 
@@ -136,7 +137,8 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     uint64_t EntryHash = WritePpm(Directory, "entry-120ms", &Framebuffer);
     Advance(&Ui, 280U);
     uint64_t ReadyHash = WritePpm(Directory, "ready-400ms", &Framebuffer);
-    assert(EntryHash != ReadyHash);
+    /* Native LVGL has no custom entry fade: these two frames should be stable. */
+    assert(KSHIM_MENU_IS_NATIVE ? EntryHash == ReadyHash : EntryHash != ReadyHash);
 
     lv_obj_t *Third = lv_group_get_obj_by_index(Ui.Group, 2U);
     assert(Third != NULL);
@@ -145,12 +147,26 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     uint64_t FocusHash = WritePpm(Directory, "focus-130ms", &Framebuffer);
     assert(FocusHash != ReadyHash);
 
-    assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
-    TraceConfirmation("requested", &Ui);
-    Advance(&Ui, KSHIM_UI_CONFIRM_DURATION_MS / 2U);
-    uint64_t ConfirmHash = WritePpm(Directory, "confirm-90ms", &Framebuffer);
-    TraceConfirmation("sampled", &Ui);
-    assert(ConfirmHash != FocusHash);
+    if (KSHIM_MENU_IS_NATIVE) {
+        /* Sample actual native pressed feedback, not a synthetic kShim pulse. */
+        lv_area_t area; lv_obj_get_coords(Ui.BootButton, &area);
+        kshim_touch_event_t touch = {.type=KSHIM_TOUCH_EVENT_PRESS,
+            .x=(uint32_t)((area.x1+area.x2)/2), .y=(uint32_t)((area.y1+area.y2)/2)};
+        kshim_lvgl_touch(&Ui, &touch);
+        assert(kshim_lvgl_take_index(&Ui) == -1);
+        Advance(&Ui, KSHIM_UI_CONFIRM_DURATION_MS / 2U);
+        uint64_t ConfirmHash = WritePpm(Directory, "confirm-90ms", &Framebuffer);
+        assert(ConfirmHash != FocusHash && lv_obj_has_state(Ui.BootButton,LV_STATE_PRESSED));
+        touch.type=KSHIM_TOUCH_EVENT_RELEASE;
+        kshim_lvgl_touch(&Ui, &touch);
+    } else {
+        assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
+        TraceConfirmation("requested", &Ui);
+        Advance(&Ui, KSHIM_UI_CONFIRM_DURATION_MS / 2U);
+        uint64_t ConfirmHash = WritePpm(Directory, "confirm-90ms", &Framebuffer);
+        TraceConfirmation("sampled", &Ui);
+        assert(ConfirmHash != FocusHash);
+    }
     assert(kshim_lvgl_take_index(&Ui) == 2);
 
     kshim_lvgl_deinit(&Ui);

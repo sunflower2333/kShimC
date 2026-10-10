@@ -57,7 +57,7 @@ static inline int kshim_design_layout(const kshim_menu_design_t *d,
         if(d->layout!=KSHIM_LAYOUT_BENTO && cw>=kshim_design_px(d->grid_three,q)) g->columns=3;
     }
     g->horizontal=d->layout==KSHIM_LAYOUT_RIBBON && w>=320U && h>=240U;
-    g->split=d->layout==KSHIM_LAYOUT_SPLIT && w>h && w>=(uint32_t)kshim_design_px(800,q);
+    g->split=d->layout==KSHIM_LAYOUT_SPLIT && w>h && w>=(uint32_t)kshim_design_px(d->kind==KSHIM_DESIGN_ONE_UI?600:800,q);
     g->icon_size=kshim_design_px(d->icon_size,q);
     g->gap=kshim_design_px(d->gap,q);
     g->gutter=kshim_design_px(kshim_design_max((int32_t)d->row_shadow,(int32_t)d->focus_glow/2+(int32_t)d->focus_outline+2),q);

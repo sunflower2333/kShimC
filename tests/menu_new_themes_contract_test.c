@@ -10,9 +10,11 @@ static void check(unsigned w,unsigned h,unsigned n,unsigned scale) {
     assert(kshim_design_layout(&mMenuDesign,w,h,n,scale,&g)==0);
     assert(g.panel.x>=0 && g.panel.y>=0);
     assert(g.panel.x+g.panel.w<=(int)w && g.panel.y+g.panel.h<=(int)h);
-    assert(g.boot.y>=g.list.y+g.list.h);
+    if(g.split) assert(g.boot.x>g.list.x+g.list.w);
+    else assert(g.boot.y>=g.list.y+g.list.h);
     assert(g.boot.y+g.boot.h<=g.panel.h);
-    assert(g.columns==1 && !g.horizontal && !g.split);
+    assert(g.columns==1 && !g.horizontal);
+    if(g.split) assert(!strcmp(EXPECTED_STYLE,"ONE_UI") && w>h);
     for(unsigned i=0;i<n;i++) {
         kshim_design_item_geometry_t m;
         kshim_design_item_layout(&mMenuDesign,&g,i,32,&m);

@@ -235,7 +235,7 @@ static void TestAutomaticConfirmation(unsigned Width, unsigned Height)
             kshim_lvgl_frame(&Ui, 16U);
             Changed |= BootHash(&Fb, &Area) != Before;
         }
-        assert(Changed != 0U);
+        assert(KSHIM_MENU_IS_NATIVE ? Changed == 0U : Changed != 0U);
         assert(BootHash(&Fb, &Area) == Before);
         assert(lv_obj_get_style_transform_scale_x(Ui.BootButton, LV_PART_MAIN) == 256);
         assert(lv_obj_get_style_transform_scale_y(Ui.BootButton, LV_PART_MAIN) == 256);
@@ -250,7 +250,7 @@ static void TestAutomaticConfirmation(unsigned Width, unsigned Height)
 int main(void)
 {
     TestClosing();
-    if (mMenuDesign.enabled) {
+    if (mMenuDesign.enabled || KSHIM_MENU_IS_NATIVE) {
         TestAutomaticConfirmation(320U, 240U);
         TestAutomaticConfirmation(1080U, 2340U);
         TestSize(320U, 240U);
