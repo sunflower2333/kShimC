@@ -1,0 +1,119 @@
+name: Assemble verified native revision
+on:
+  push:
+    branches: [feature/2610-design-language]
+    paths:
+      - .github/native-revision-*.json
+      - .github/workflows/assemble-native-revision.yml
+permissions:
+  contents: read
+jobs:
+  assemble:
+    if: github.ref == 'refs/heads/feature/2610-design-language'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify exact source bytes and create an unreferenced candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess, urllib.request
+          from pathlib import Path, PurePosixPath
+          hashes = [
+              'a76c8231d213f8b0a071b64d8118e75c650e5d6644d4d6b81904e04926f3226d',
+              '1946dcdf510a5bfbfc4b927bcda01e71a3cc0d5901710093a58233c23fae5a47',
+              '00a1d8b8d73c03959eab3d5b16cc15903ce580c9d9268e926c701677563293f4',
+              '84d29b1d8a48c6b81def31306d389de969d977b2f677e7896e9a964c9d4f4eb8',
+          ]
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          def blob(raw):
+              return hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          changes = {}
+          for i, expected in enumerate(hashes):
+              raw = Path(f'.github/native-revision-{i}.json').read_bytes()
+              if hashlib.sha256(raw).hexdigest() != expected:
+                  raise SystemExit(f'Transport integrity failure: part {i}')
+              part = json.loads(raw)
+              if changes.keys() & part.keys():
+                  raise SystemExit('Duplicate file in transport')
+              changes.update(part)
+          if len(changes) != 29:
+              raise SystemExit('Unexpected changed-file count')
+          for name, change in changes.items():
+              path = PurePosixPath(name)
+              if path.is_absolute() or '..' in path.parts or not name.startswith(('src/', 'tests/', 'tools/', 'docs/', '.github/workflows/menu-styles.yml')):
+                  raise SystemExit('Unexpected path')
+              file = Path(name)
+              if file.is_symlink():
+                  raise SystemExit('Symlink cannot be replaced')
+              original = file.read_bytes() if file.exists() else b''
+              if (blob(original) if file.exists() else None) != change['old']:
+                  raise SystemExit(f'Stale base file: {name}')
+              text = original.decode('utf-8')
+              limit = len(text)
+              for start, end, value in reversed(change['edits']):
+                  if not 0 <= start <= end <= limit:
+                      raise SystemExit(f'Invalid edit span: {name}')
+                  text = text[:start] + value + text[end:]
+                  limit = start
+              raw = text.encode('utf-8')
+              if blob(raw) != change['new']:
+                  raise SystemExit(f'Candidate does not match locally tested bytes: {name}')
+              file.parent.mkdir(parents=True, exist_ok=True)
+              file.write_bytes(raw)
+              subprocess.run(['git', 'add', '--', name], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          actual = set(git('diff', '--cached', '--name-only').splitlines())
+          if actual != set(changes):
+              raise SystemExit('Unexpected staged change')
+          # These transport/export helpers never enter the final source tree.
+          temporary = [f'.github/native-revision-{i}.json' for i in range(4)] + [
+              '.github/workflows/assemble-native-revision.yml',
+              '.github/workflows/theme-validation-source.yml',
+          ]
+          subprocess.run(['git', 'rm', '--', *temporary], check=True)
+          elements = []
+          for name in git('diff', '--cached', '--name-only').splitlines():
+              element = {'path': name, 'mode': '100644', 'type': 'blob'}
+              if Path(name).exists():
+                  element['content'] = Path(name).read_text(encoding='utf-8')
+              else:
+                  element['sha'] = None
+              elements.append(element)
+          head = git('rev-parse', 'HEAD')
+          expected_tree = git('write-tree')
+          url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/'
+          def post(endpoint, payload):
+              request = urllib.request.Request(url + endpoint,
+                  data=json.dumps(payload, ensure_ascii=False).encode(), method='POST',
+                  headers={'Authorization': 'Bearer '+os.environ['GH_TOKEN'],
+                           'Accept': 'application/vnd.github+json',
+                           'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          tree = post('trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': elements})
+          if tree['sha'] != expected_tree:
+              raise SystemExit('GitHub tree differs from verified local index')
+          commit = post('commits', {
+              'message': 'feat(ui): replace One UI in place and add genuine LVGL default theme\n\nKeep the ONE_UI symbol while replacing its inset group with viewing/interaction\nregions and a landscape navigation/detail split. Add a separate native LVGL\ntheme/widget path with default Latin metrics and CJK glyph fallback. Preserve\nshared input, boot confirmation and lifecycle ownership. No ONE_UI_V2 preset.\n\nLocal native/One UI suites, reduced-effects variants, GCC/Clang/Kconfig contracts\nand gallery tests passed. Native style equivalence, visible focus, short-landscape\ninput and native preview samples have dedicated regressions. Full matrix CI is\nrequired before advancing feature/2610. Remove temporary source/transport helpers.',
+              'tree': tree['sha'], 'parents': [head]})
+          result = {'commit': commit['sha'], 'tree': tree['sha'], 'parent': head,
+                    'files': {name: value['new'] for name, value in changes.items()},
+                    'removed_helpers': temporary, 'branch_updated': False}
+          Path('/tmp/native-candidate').mkdir(exist_ok=True)
+          Path('/tmp/native-candidate/candidate.json').write_text(json.dumps(result, indent=2)+'\n')
+          print(json.dumps(result, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-revision-candidate
+          path: /tmp/native-candidate/candidate.json
+          if-no-files-found: error
+          retention-days: 3
