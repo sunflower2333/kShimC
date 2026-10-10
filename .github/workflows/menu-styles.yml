@@ -12,6 +12,8 @@ on:
       - "tools/test_menu_styles.py"
       - "tools/test_theme_design.py"
       - "tools/preview_manifest.py"
+      - "tools/build_theme_review.py"
+      - "tools/theme_review.html"
       - ".github/workflows/menu-styles.yml"
   pull_request:
     paths:
@@ -23,6 +25,8 @@ on:
       - "tools/test_menu_styles.py"
       - "tools/test_theme_design.py"
       - "tools/preview_manifest.py"
+      - "tools/build_theme_review.py"
+      - "tools/theme_review.html"
       - ".github/workflows/menu-styles.yml"
   workflow_dispatch:
 
@@ -45,6 +49,8 @@ jobs:
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc clang
           python3 tools/test_theme_design.py --cc gcc --sanitize
           python3 tools/test_theme_design.py --cc clang
+      - name: Test authentic-frame verification and HTML packaging
+        run: python3 -m unittest discover -s tests -p 'test_theme_review.py' -v
   lvgl-regression:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -129,15 +135,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
       - name: Collect the successful matrix's authentic preview artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: menu-*
           path: collected
+      - name: Verify original frames and build the offline HTML review
+        run: python3 tools/build_theme_review.py --input collected --output review
       - name: Upload one review bundle without changing frame bytes
         uses: actions/upload-artifact@v4
         with:
           name: all-menu-previews
           path: collected/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload the generated HTML, original PNGs and verification record
+        uses: actions/upload-artifact@v4
+        with:
+          name: theme-review-html
+          path: review/
           if-no-files-found: error
           retention-days: 14
