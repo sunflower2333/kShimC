@@ -85,7 +85,12 @@ static uint32_t KshimPadding(void)
 /* 计算布局：旧主题走原有布局，Surface 宽屏双栏，Bento 窄屏自动回落单列。 */
 static int KshimRelayoutChrome(void)
 {
-  if (mMenuDesign.enabled) return KshimDesignRelayout();
+  if (mMenuDesign.enabled) {
+    /* Focus may recursively reveal ancestors during the entry animation.
+     * Keep the screen fixed; only the entry list owns a scroll viewport. */
+    lv_obj_remove_flag(lv_screen_active(), LV_OBJ_FLAG_SCROLLABLE);
+    return KshimDesignRelayout();
+  }
   kshim_backdrop_layout_t NextLayout;
   if (mContext == NULL || mFramebuffer == NULL || mContext->EntryCount == 0U)
     return -1;

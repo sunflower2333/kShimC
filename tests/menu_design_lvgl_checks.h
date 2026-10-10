@@ -18,7 +18,15 @@ static inline void KshimTestDesignLayout(kshim_lvgl_t *ui) {
         (uint32_t)ui->EntryCount,KshimTestDesignScale(),&g)==0);
     lv_obj_t *panel=lv_obj_get_parent(ui->List);
     lv_area_t pa,li,bo; lv_obj_get_coords(panel,&pa);lv_obj_get_coords(ui->List,&li);lv_obj_get_coords(ui->BootButton,&bo);
+    if(pa.x1!=g.panel.x || pa.y1!=g.panel.y)
+        fprintf(stderr,"GEOMETRY %s %ux%u count=%u compact=%u: panel=(%ld,%ld) expected=(%ld,%ld) root-scroll=(%ld,%ld) translation=(%ld,%ld)\n",
+            mMenuDesign.name,(unsigned)ui->Framebuffer->width,(unsigned)ui->Framebuffer->height,
+            (unsigned)ui->EntryCount,g.compact,(long)pa.x1,(long)pa.y1,(long)g.panel.x,(long)g.panel.y,
+            (long)lv_obj_get_scroll_x(lv_screen_active()),(long)lv_obj_get_scroll_y(lv_screen_active()),
+            (long)lv_obj_get_style_translate_x(panel,LV_PART_MAIN),(long)lv_obj_get_style_translate_y(panel,LV_PART_MAIN));
     assert(pa.x1==g.panel.x && pa.y1==g.panel.y);
+    assert(!lv_obj_has_flag(lv_screen_active(),LV_OBJ_FLAG_SCROLLABLE));
+    assert(lv_obj_get_scroll_x(lv_screen_active())==0 && lv_obj_get_scroll_y(lv_screen_active())==0);
     assert(lv_obj_get_width(panel)==g.panel.w && lv_obj_get_height(panel)==g.panel.h);
     assert(pa.x1>=0 && pa.y1>=0 && pa.x2<(int32_t)ui->Framebuffer->width && pa.y2<(int32_t)ui->Framebuffer->height);
     assert(li.x1==pa.x1+g.list.x && li.y1==pa.y1+g.list.y);
