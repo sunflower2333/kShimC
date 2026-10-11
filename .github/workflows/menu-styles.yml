@@ -45,7 +45,7 @@ jobs:
         run: |
           python3 -m venv /tmp/kshim-style-venv
           /tmp/kshim-style-venv/bin/pip install kconfiglib==14.1.0
-      - name: GCC, Clang and all 30 real Kconfig choices
+      - name: GCC, Clang and all 29 real Kconfig choices
         run: |
           python3 tools/generate_design_presets.py --check
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc gcc --kconfig
@@ -53,7 +53,7 @@ jobs:
           python3 tools/test_theme_design.py --cc gcc --sanitize
           python3 tools/test_theme_design.py --cc clang
       - name: Test authentic-frame verification and HTML packaging
-        run: python3 -m unittest discover -s tests -p 'test_theme_review.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_theme_*.py' -v
   lvgl-regression:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -61,7 +61,7 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
-        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO, LVGL_DEFAULT]
+        style: [FLAT, CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ADWAITA, HOLO, LVGL_DEFAULT]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,9 +81,8 @@ jobs:
           ./build-menu/ui_preview_test previews | tee previews/render.log
           python3 tools/preview_manifest.py previews
       - name: Preserve every original theme pixel for pixel
-        if: matrix.style != 'ONE_UI' && matrix.style != 'LVGL_DEFAULT'
         run: |
-          base=35e9ad38529bcd6ff4222619a344a951d0366120
+          base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
           git fetch --depth=1 origin "$base"
           files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
           for file in $files; do git show "$base:$file" > "$file"; done
@@ -126,7 +125,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        style: [METRO, ONE_UI, ADWAITA, HOLO, LVGL_DEFAULT]
+        style: [METRO, ADWAITA, HOLO, LVGL_DEFAULT]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -153,7 +152,7 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ONE_UI, ADWAITA, HOLO, LVGL_DEFAULT]
+        style: [CLASSIC, CARDS, TERMINAL, MINIMAL, HIGH_CONTRAST, FLUENT, MATERIAL3, SURFACE, CUPERTINO, GLASS, AURORA, SOFT_UI, BENTO, NEON, NORD, MATERIAL2, MATERIAL2_DARK, FLUENT2, FLUENT2_DARK, FLUENT_DARK, SURFACE_DARK, HARMONYOS, CLOVER, IOS_HIG, METRO, ADWAITA, HOLO, LVGL_DEFAULT]
     steps:
       - uses: actions/checkout@v4
         with:

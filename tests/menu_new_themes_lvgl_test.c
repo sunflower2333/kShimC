@@ -68,14 +68,6 @@ static void check_size(unsigned width,unsigned height) {
                 assert(lv_obj_get_style_text_align(title,LV_PART_MAIN)==LV_TEXT_ALIGN_CENTER);
                 assert(lv_obj_get_style_clip_corner(ui.List,LV_PART_MAIN));
             }
-            if(mMenuDesign.kind==KSHIM_DESIGN_ONE_UI && height>width) {
-                assert(lv_obj_get_style_text_align(title,LV_PART_MAIN)==LV_TEXT_ALIGN_CENTER);
-                assert(!lv_obj_get_style_clip_corner(ui.List,LV_PART_MAIN));
-                assert(lv_obj_get_style_radius(ui.List,LV_PART_MAIN)==0);
-                assert(mMenuDesign.mark==KSHIM_MARK_PILL && g.icon_size>0);
-                if(width==1080 && height==2340 && !KshimTestDesignScale())
-                    assert(g.panel.y+g.boot.y+g.boot.h>(int32_t)height*9/10);
-            }
             if(mMenuDesign.kind==KSHIM_DESIGN_METRO) {
                 assert(lv_obj_get_style_text_align(title,LV_PART_MAIN)==LV_TEXT_ALIGN_LEFT);
                 assert(lv_obj_get_style_border_width(ui.BootButton,LV_PART_MAIN)>0);

@@ -497,7 +497,7 @@ static int KshimBuildChrome(void)
   lv_obj_set_style_text_color(BootLabel, lv_color_hex(mMenuStyle.BootText), 0);
   lv_obj_center(BootLabel);
 
-  if (mMenuStyle.Layout == 1U || mMenuDesign.kind == KSHIM_DESIGN_ONE_UI) {
+  if (mMenuStyle.Layout == 1U) {
     mDetail = lv_label_create(mPanel);
     if (mDetail == NULL) return -1;
     lv_label_set_text(mDetail, "Select an image.\nPress Boot to continue.");

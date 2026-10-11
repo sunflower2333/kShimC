@@ -57,7 +57,7 @@ static inline int kshim_design_layout(const kshim_menu_design_t *d,
         if(d->layout!=KSHIM_LAYOUT_BENTO && cw>=kshim_design_px(d->grid_three,q)) g->columns=3;
     }
     g->horizontal=d->layout==KSHIM_LAYOUT_RIBBON && w>=320U && h>=240U;
-    g->split=d->layout==KSHIM_LAYOUT_SPLIT && w>h && w>=(uint32_t)kshim_design_px(d->kind==KSHIM_DESIGN_ONE_UI?600:800,q);
+    g->split=d->layout==KSHIM_LAYOUT_SPLIT && w>h && w>=(uint32_t)kshim_design_px(800,q);
     g->icon_size=kshim_design_px(d->icon_size,q);
     g->gap=kshim_design_px(d->gap,q);
     g->gutter=kshim_design_px(kshim_design_max((int32_t)d->row_shadow,(int32_t)d->focus_glow/2+(int32_t)d->focus_outline+2),q);
@@ -117,21 +117,6 @@ static inline int kshim_design_layout(const kshim_menu_design_t *d,
         g->list.y=p+th+(th?section_gap:0);
         g->list.h=by-section_gap-sh-section_gap-g->list.y;
         g->status=(kshim_design_rect_t){p,g->list.y+g->list.h+section_gap,cw,sh};
-    }
-    /* One UI: a portrait viewing area above a reachable interaction area.
-     * Large entry sets use all available list space; focus never moves chrome. */
-    if(d->kind==KSHIM_DESIGN_ONE_UI && h>w && h>=(uint32_t)kshim_design_px(600,q) && th && sh) {
-        g->panel.h=cap; g->panel.y=margin;
-        g->boot.y=cap-p-bh;
-        int32_t min_top=p+th+sh+status_gap+section_gap;
-        int32_t available=g->boot.y-section_gap-min_top;
-        int32_t requested=(int32_t)n*rh+((int32_t)n-1)*g->gap+2*g->gutter;
-        int32_t limit=n>7U?available:kshim_design_min(available,cap*55/100);
-        g->list.h=kshim_design_max(rh+2*g->gutter,kshim_design_min(requested,limit));
-        g->list.y=g->boot.y-section_gap-g->list.h;
-        int32_t title_y=n>7U?p:kshim_design_max(p,kshim_design_min(cap/5,g->list.y-th-sh-status_gap-section_gap));
-        g->title.y=title_y;
-        g->status.y=title_y+th+status_gap;
     }
     /* Metro is a page of typography, not a centered modal. */
     if(d->kind==KSHIM_DESIGN_METRO) g->panel.y=margin;

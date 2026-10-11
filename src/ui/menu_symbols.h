@@ -45,7 +45,7 @@ static inline void KshimSymbolMedia(lv_event_t *e,uint16_t kind,uint32_t ink,
         KshimSymbolLine(e,ink,opa,x+s/7,y+s*3/4,x+s*6/7,y+s*3/4,stroke,true);
         KshimSymbolRect(e,accent,opa,x+s*3/4,y+s*7/8,s/12,s/24+1,s/24,0);
         KshimSymbolRect(e,ink,opa,x+s/5,y+s/5,s*3/5,s/3,s/10,stroke);
-    } else if(kind==KSHIM_DESIGN_HARMONYOS || kind==KSHIM_DESIGN_CARDS || kind==KSHIM_DESIGN_BENTO || kind==KSHIM_DESIGN_ONE_UI) {
+    } else if(kind==KSHIM_DESIGN_HARMONYOS || kind==KSHIM_DESIGN_CARDS || kind==KSHIM_DESIGN_BENTO) {
         KshimSymbolRect(e,surface,opa,x,y,s,s,kind==KSHIM_DESIGN_HARMONYOS?s/3:s/4,0);
         int32_t ix=x+s/4, iy=y+s/4, is=s/2;
         KshimSymbolRect(e,ink,opa,ix,iy,is,is,is/8,stroke);

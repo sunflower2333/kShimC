@@ -30,7 +30,7 @@ static inline bool KshimDesignReduced(void) {
 }
 static inline bool KshimDesignBarePanel(void) {
     unsigned k=mMenuDesign.kind;
-    return k==KSHIM_DESIGN_METRO || k==KSHIM_DESIGN_ONE_UI || k==KSHIM_DESIGN_MINIMAL || k==KSHIM_DESIGN_CARDS || k==KSHIM_DESIGN_CUPERTINO ||
+    return k==KSHIM_DESIGN_METRO || k==KSHIM_DESIGN_MINIMAL || k==KSHIM_DESIGN_CARDS || k==KSHIM_DESIGN_CUPERTINO ||
         k==KSHIM_DESIGN_IOS_HIG || k==KSHIM_DESIGN_HARMONYOS || k==KSHIM_DESIGN_CLOVER || k==KSHIM_DESIGN_BENTO;
 }
 static inline uint32_t KshimDesignPressColor(void) {
@@ -161,7 +161,7 @@ static int KshimDesignEntry(lv_obj_t *button,size_t index) {
     lv_opa_t resting=LV_OPA_COVER, focused=LV_OPA_COVER;
     if(mMenuDesign.kind==KSHIM_DESIGN_MINIMAL || mMenuDesign.kind==KSHIM_DESIGN_CLOVER)
         resting=focused=LV_OPA_TRANSP;
-    if(mMenuDesign.kind==KSHIM_DESIGN_CUPERTINO || mMenuDesign.kind==KSHIM_DESIGN_ONE_UI) resting=LV_OPA_TRANSP;
+    if(mMenuDesign.kind==KSHIM_DESIGN_CUPERTINO) resting=LV_OPA_TRANSP;
     if(mMenuDesign.kind==KSHIM_DESIGN_GLASS && !KshimDesignReduced()) resting=220;
     KshimDesignSolid(button,mMenuStyle.Item,resting,0);
     KshimDesignSolid(button,mMenuStyle.Focus,focused,LV_STATE_FOCUSED);

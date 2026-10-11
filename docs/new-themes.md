@@ -1,69 +1,47 @@
-# Metro, One UI, Adwaita and Holo
+# Additional presets and native LVGL
 
-Four additional compile-time presets extend the existing 25 choices. They use
-the real pinned LVGL renderer, existing CJK font and shared boot/input state
-machine. No native toolkit, proprietary font, OS logo or inactive control is
-imported. These are design-language adaptations, not official implementations.
+The supported additions are METRO, ADWAITA, HOLO and LVGL_DEFAULT. They use the
+pinned LVGL renderer and shared boot/input state machine. No proprietary font,
+OS logo or inactive control is imported.
 
 | Choice | Structural identity |
 | --- | --- |
-| METRO | Top-anchored unframed black page, 44-unit title / 26-unit row type, accent text and drawn selection check, local outlined action |
-| ONE_UI | Centered portrait viewing region over a continuous lower interaction surface, leading media icons and inset focus pill, wide Boot action; long lists expand upward; sufficiently wide landscape uses navigation/detail columns |
+| METRO | Top-anchored unframed black page, large title and row type, accent text, drawn selection check and local outlined action |
 | ADWAITA | Centered header surface, continuous boxed list, symbolic media icons, neutral separators and independent suggested action |
-| HOLO | Dark action-bar surface with cyan bottom rule, flat continuous separated rows, radio marks and restrained rectangular action |
+| HOLO | Dark action bar with cyan bottom rule, flat separated rows, radio marks and rectangular action |
+| LVGL_DEFAULT | Actual LVGL default theme with native list/buttons, focus and pressed feedback |
 
-Use one `CONFIG_KSHIM_MENU_STYLE_<NAME>=y`. Existing choices retain their
-colors, numeric descriptor values, motion and geometry. FLAT continues to bypass
-the new design layer. The editable descriptor generator now reproduces the actual
-committed old descriptors, including Terminal's 14-unit status text (the previous
-generator had drifted to 13); enum values are preserved and new kinds appended.
+Select one `CONFIG_KSHIM_MENU_STYLE_<NAME>=y`. The former `ONE_UI` option and its
+implementation have been removed, without a replacement alias. Regenerate older
+configurations through Kconfig; when no supported choice is selected, the normal
+FLAT default applies. Surface, iOS HIG, FLAT and LVGL_DEFAULT remain available.
+Numeric design kind 22 stays unused so other kind IDs do not move.
 
-`menu_new_themes_render.h` contains presentation-only hooks. One UI's layout is
-computed from viewport and entry count, not selected index. Focus movement never
-moves the fixed Boot control. All four use opaque surfaces and no new background
-cache. Explicit design scale and reduced-effects settings remain available.
+`menu_new_themes_render.h` contains only presentation hooks for Metro, Adwaita
+and Holo. These use opaque surfaces and no additional background cache. Selection,
+physical keys, pointer cancellation and the independent Boot action stay shared.
 
-## Validation
+## Validation and previews
 
-The CI matrix covers 30 default host builds and 29 non-FLAT ARM64 builds. The
-four additional themes and native LVGL also run the full host suite at explicit scale 256 with reduced
-effects. New pure geometry tests cover ten sizes, five entry counts and five
-scales; real LVGL tests verify CJK, selection pixels, long labels, fixed chrome,
-49-item rebuilds, independent confirmation and framebuffer guards. Existing
-keyboard, touch-cancellation and lifecycle assertions are not removed.
+The CI matrix covers 29 default host configurations and 28 non-FLAT ARM64 builds.
+Metro, Adwaita, Holo and native LVGL also run the full host suite at explicit scale
+256 with reduced effects. Pure geometry tests retain the viewport, entry-count,
+scale and label-reservation checks. Real LVGL tests cover CJK, visible selection,
+long labels, fixed chrome, 49-entry rebuilding and independent confirmation.
 
-All 28 unaffected presets render both original resolutions and four stages
-again using the previous 5167858 presentation headers. CI compares every PPM
-byte to the new build's output. FLAT additionally retains its older renderer
-comparison. A workflow configuration is not a passing result: consult the actual
-run and `previews/compatibility.txt` artifacts for completed comparisons.
+All 29 remaining themes, including native LVGL, compare both resolutions and all
+four full-frame samples with `a154e1af2eb65514b15b8f30bb067fb934b6fcad`. FLAT also
+retains its earlier renderer comparison. Only the retired theme's dedicated
+assertions are removed; the remaining input/lifecycle and native-style checks
+remain active. Registry tests keep Kconfig, generator, host choices, CI matrices
+and HTML previews synchronized.
 
-The original seven-entry preview fixture is unchanged. A successful matrix
-produces 240 authentic PNGs and an offline `theme-review-html` artifact. Current
-artifacts carry their exact checkout SHA; no image is relabelled with another
-commit. The old/new gallery's optional baseline mode still requires equal theme
-sets: a 25-theme historical matrix cannot pretend to contain the four new themes.
+A successful run produces 232 original PNGs and `theme-review-html`. Images keep
+their rendered checkout SHA. Old downloaded HTML files are immutable snapshots;
+regenerate the gallery to remove the retired entry. Configuring a job is not
+proof it passed: consult the run and retained compatibility/test logs.
 
-## Boundaries
-
-The reference scale is a design unit, not measured physical DPI. Compact displays
-may hide title/status and clip long text to keep the Boot control usable. This
-work does not measure device frame rate, startup latency, physical touch-target
-size or whole-product accessibility. Native appearance and target performance
-remain subject to visual and hardware review.
-
-Reference directions: Microsoft's typography/content-led Windows Phone Metro,
-Samsung One UI's viewing/interaction regions, GNOME HIG boxed lists and header
-bars, and Android's original Holo theme family. The new preset names do not
-imply vendor certification or native API use.
-
-## In-place One UI replacement and native LVGL
-
-`ONE_UI` replaces its previous inset-group design under the same Kconfig symbol.
-There is no `ONE_UI_V2` or compatibility preset. `IOS_HIG` is not changed. At
-640x360 and larger suitable landscape sizes, the two-column layout keeps the
-second row reachable without colliding with Boot; the geometry test guards this.
-Very narrow or small screens retain the safe compact fallback.
+## Native LVGL
 
 `LVGL_DEFAULT` enables the actual default theme in the pinned LVGL library and
 uses native container, list, list-button and button classes. It bypasses the
@@ -89,7 +67,9 @@ physical-key, touch-cancel, batched-tap, framebuffer-format, teardown and long-l
 tests also run. Native behavior is checked explicitly instead of requiring a
 custom animation that this preset intentionally does not have.
 
-The 28 unaffected presets compare both resolutions and all four full-frame
-samples to `35e9ad38529bcd6ff4222619a344a951d0366120`. One UI is deliberately excluded
-from that equality check because its design is replaced. A configured CI matrix
-is not evidence of success; consult the corresponding run and retained logs.
+## Boundaries
+
+Design scale is not measured physical DPI. Small displays may clip long text or
+hide title/status to retain usable input. Host tests and screenshots do not
+measure device frame rate, startup latency or physical touch-target size.
+Metro, Adwaita and Holo are adaptations, not native platform toolkits.

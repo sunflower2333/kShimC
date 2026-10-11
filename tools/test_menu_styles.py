@@ -10,7 +10,7 @@ import shlex
 import subprocess
 import tempfile
 
-STYLES = ('FLAT', 'CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD', 'MATERIAL2', 'MATERIAL2_DARK', 'FLUENT2', 'FLUENT2_DARK', 'FLUENT_DARK', 'SURFACE_DARK', 'HARMONYOS', 'CLOVER', 'IOS_HIG', 'METRO', 'ONE_UI', 'ADWAITA', 'HOLO', 'LVGL_DEFAULT')
+STYLES = ('FLAT', 'CLASSIC', 'CARDS', 'TERMINAL', 'MINIMAL', 'HIGH_CONTRAST', 'FLUENT', 'MATERIAL3', 'SURFACE', 'CUPERTINO', 'GLASS', 'AURORA', 'SOFT_UI', 'BENTO', 'NEON', 'NORD', 'MATERIAL2', 'MATERIAL2_DARK', 'FLUENT2', 'FLUENT2_DARK', 'FLUENT_DARK', 'SURFACE_DARK', 'HARMONYOS', 'CLOVER', 'IOS_HIG', 'METRO', 'ADWAITA', 'HOLO', 'LVGL_DEFAULT')
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tests/menu_style_tokens_test.c"
 FIELDS = ("screen", "panel", "text", "muted", "item", "focus", "focus_text",

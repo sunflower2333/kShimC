@@ -2,20 +2,6 @@
 #define KSHIM_MENU_NEW_THEMES_RENDER_H
 /* Presentation-only hooks. No input, selection ownership or fabricated actions. */
 static inline void KshimNewThemePanelDraw(lv_event_t *event) {
-    if(mMenuDesign.kind==KSHIM_DESIGN_ONE_UI) {
-        if(mDesignGeometry.compact) return;
-        lv_obj_t *panel=lv_event_get_target_obj(event);
-        lv_area_t a; lv_obj_get_coords(panel,&a);
-        lv_opa_t opacity=lv_obj_get_style_opa_recursive(panel,LV_PART_MAIN);
-        /* A continuous interaction surface, not an iOS inset group. */
-        int32_t x=mDesignGeometry.split?mDesignGeometry.status.x-KshimDesignPx(16):0;
-        int32_t y=mDesignGeometry.split?KshimDesignPx(16):mDesignGeometry.list.y-KshimDesignPx(16);
-        KshimSymbolRect(event,mMenuStyle.Item,opacity,a.x1+x,a.y1+y,
-            lv_obj_get_width(panel)-x,lv_obj_get_height(panel)-y,0,0);
-        if(!mDesignGeometry.split)
-            KshimSymbolLine(event,mMenuStyle.Border,opacity,a.x1,a.y1+y,a.x2,a.y1+y,KshimDesignStroke(1),false);
-        return;
-    }
     if(mMenuDesign.kind!=KSHIM_DESIGN_ADWAITA && mMenuDesign.kind!=KSHIM_DESIGN_HOLO) return;
     if(mDesignGeometry.compact || !mDesignGeometry.title.h) return;
     lv_obj_t *panel=lv_event_get_target_obj(event);
@@ -39,17 +25,11 @@ static inline void KshimNewThemeRowDraw(lv_event_t *event,size_t index) {
 }
 static inline void KshimNewThemeRelayout(void) {
     unsigned kind=mMenuDesign.kind;
-    if(kind!=KSHIM_DESIGN_METRO && kind!=KSHIM_DESIGN_ONE_UI && kind!=KSHIM_DESIGN_ADWAITA && kind!=KSHIM_DESIGN_HOLO) return;
+    if(kind!=KSHIM_DESIGN_METRO && kind!=KSHIM_DESIGN_ADWAITA && kind!=KSHIM_DESIGN_HOLO) return;
     bool compact=mDesignGeometry.compact!=0;
-    bool centered=kind==KSHIM_DESIGN_ADWAITA ||
-        (kind==KSHIM_DESIGN_ONE_UI && mFramebuffer->height>mFramebuffer->width && !compact);
+    bool centered=kind==KSHIM_DESIGN_ADWAITA;
     lv_obj_set_style_text_align(mTitle,centered?LV_TEXT_ALIGN_CENTER:LV_TEXT_ALIGN_LEFT,0);
-    lv_obj_set_style_text_align(mStatus,kind==KSHIM_DESIGN_ONE_UI && centered?LV_TEXT_ALIGN_CENTER:LV_TEXT_ALIGN_LEFT,0);
-    if(kind==KSHIM_DESIGN_ONE_UI) {
-        KshimDesignSolid(mList,mMenuStyle.Item,LV_OPA_TRANSP,0);
-        lv_obj_set_style_radius(mList,0,0);
-        lv_obj_set_style_clip_corner(mList,false,0);
-    }
+    lv_obj_set_style_text_align(mStatus,LV_TEXT_ALIGN_LEFT,0);
     if(kind==KSHIM_DESIGN_ADWAITA && !compact) {
         KshimDesignSolid(mList,mMenuStyle.Item,LV_OPA_COVER,0);
         lv_obj_set_style_radius(mList,KshimDesignPx(12),0);

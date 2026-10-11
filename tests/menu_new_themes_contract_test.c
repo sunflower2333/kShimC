@@ -10,11 +10,10 @@ static void check(unsigned w,unsigned h,unsigned n,unsigned scale) {
     assert(kshim_design_layout(&mMenuDesign,w,h,n,scale,&g)==0);
     assert(g.panel.x>=0 && g.panel.y>=0);
     assert(g.panel.x+g.panel.w<=(int)w && g.panel.y+g.panel.h<=(int)h);
-    if(g.split) assert(g.boot.x>g.list.x+g.list.w);
-    else assert(g.boot.y>=g.list.y+g.list.h);
+    assert(g.boot.y>=g.list.y+g.list.h);
     assert(g.boot.y+g.boot.h<=g.panel.h);
     assert(g.columns==1 && !g.horizontal);
-    if(g.split) assert(!strcmp(EXPECTED_STYLE,"ONE_UI") && w>h);
+    assert(!g.split);
     for(unsigned i=0;i<n;i++) {
         kshim_design_item_geometry_t m;
         kshim_design_item_layout(&mMenuDesign,&g,i,32,&m);
@@ -22,12 +21,6 @@ static void check(unsigned w,unsigned h,unsigned n,unsigned scale) {
         assert(m.label.x>=0 && m.label.x+m.label.w<=g.items[i].w);
         assert(m.label.y>=0 && m.label.y+m.label.h<=g.items[i].h);
         if(i) assert(g.items[i].y>=g.items[i-1].y+g.items[i-1].h);
-    }
-    if(!strcmp(EXPECTED_STYLE,"ONE_UI") && !scale && w==1080 && h==2340) {
-        assert(!g.compact);
-        assert(g.panel.y+g.boot.y+g.boot.h>(int)h*9/10);
-        if(n<=3) assert(g.panel.y+g.list.y>(int)h/2);
-        if(n==49) assert(g.list.h>(int)h/2);
     }
 }
 int main(void) {
