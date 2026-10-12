@@ -159,7 +159,6 @@ static int supply(const void *f, int node, struct kshim_touch_resource *t, int *
         r->rails[i].millivolts = min / 1000;
         const char *type = dt_string(f, parent, "qcom,regulator-type");
         if (!type || strcmp(type, "pmic5-ldo")) return -1;
-        if (i == 0 && t->generation == 4) r->rails[i].mode = 7; /* FTM4 AVDD load: 20 mA. */
     }
     if (fdt_getprop(f, parent, "mboxes", NULL)) {
         struct dt_spec spec;
@@ -207,18 +206,19 @@ int kshim_dt_touch(const void *f, struct kshim_touch_resource *t)
     t->address = address; t->qup.geni = range.base; t->qup.geni_size = range.size;
     int wrapper = dt_reference(f, bus, "qcom,wrapper-core", 0);
     if (wrapper < 0 || dt_reg(f, wrapper, 0, &range)) return -1;
-    bool ftm5 = fdt_getprop(f, n, "fts,irq-gpio", NULL) != NULL;
-    bool ftm4 = fdt_getprop(f, n, "st,irq-gpio", NULL) != NULL;
-    if (ftm4 == ftm5) return -1;
-    t->generation = ftm5 ? 5 : 4;
+    /* The FTM4 property family (st,irq-gpio and friends) is not supported;
+     * reject such a node instead of relabelling it as FTM5. */
+    if (fdt_getprop(f, n, "st,irq-gpio", NULL)) return -1;
+    if (!fdt_getprop(f, n, "fts,irq-gpio", NULL)) return -1;
+    t->generation = 5;
     t->width = 1440; t->height = 2880;
-    if (ftm5 && (dt_u32(f, n, "fts,x-max", &t->width) || dt_u32(f, n, "fts,y-max", &t->height))) return -1;
+    if (dt_u32(f, n, "fts,x-max", &t->width) || dt_u32(f, n, "fts,y-max", &t->height)) return -1;
     if (!t->width || !t->height || t->width > 8192 || t->height > 8192) return -1;
-    if (dt_bool(f, n, ftm5 ? "fts,x-flip" : "st,x-flip", &t->flip_x) ||
-        dt_bool(f, n, ftm5 ? "fts,y-flip" : "st,y-flip", &t->flip_y)) return -1;
+    if (dt_bool(f, n, "fts,x-flip", &t->flip_x) ||
+        dt_bool(f, n, "fts,y-flip", &t->flip_y)) return -1;
     struct pin irq, reset, pins[8] = {0}; size_t count = 0; uint32_t flags;
-    if (gpio_ref(f, n, ftm5 ? "fts,irq-gpio" : "st,irq-gpio", &irq, &flags) ||
-        gpio_ref(f, n, ftm5 ? "fts,reset-gpio" : "st,reset-gpio", &reset, NULL) ||
+    if (gpio_ref(f, n, "fts,irq-gpio", &irq, &flags) ||
+        gpio_ref(f, n, "fts,reset-gpio", &reset, NULL) ||
         pinctrl(f, bus, pins, 8, &count) || count != 2) return -1;
     t->qup.irq_active_low = (flags & 0xf) == 8 || (flags & 1);
     for (size_t i = 0; i < 2; ++i) { t->qup.bus_pins[i] = pins[i].address; t->qup.bus_config[i] = pins[i].config; }
@@ -231,7 +231,7 @@ int kshim_dt_touch(const void *f, struct kshim_touch_resource *t)
     }
     if (!got_irq || !got_reset || clocks(f, bus, &t->qup)) return -1;
     t->qup.irq_pin = irq.address; t->qup.reset_pin = reset.address;
-    t->qup.reset_low_us = ftm5 ? 10000 : 20000;
+    t->qup.reset_low_us = 10000;
     int controller = -1;
     if (supply(f, dt_reference(f, n, "avdd-supply", 0), t, &controller) ||
         supply(f, dt_reference(f, n, "vdd-supply", 0), t, &controller)) return -1;

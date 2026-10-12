@@ -7,7 +7,6 @@
 #include <psci.h>
 #include <kshim_mmu.h>
 #include <st_ftm5.h>
-#include <st_ftm4.h>
 #include <kshim_lvgl_os.h>
 #include <kshim_console.h>
 #include <timer.h>
@@ -46,7 +45,6 @@ static uint64_t LastTime;
 #if CONFIG_KSHIM_TOUCH
 static kshim_touch_t Touch;
 static struct CrQupContext TouchPlatform;
-static kshim_ftm4_t Ftm4;
 static kshim_ftm5_t Ftm5;
 static int TouchAttempted, TouchReady;
 static struct kshim_touch_resource *TouchResource;
@@ -63,7 +61,7 @@ static void touch_delay(void *context, uint32_t us)
 static int touch_quiesce(void)
 {
     if (!TouchAttempted) return 0;
-    int status = TouchResource->generation == 4 ? kshim_ftm4_quiesce(&Ftm4) : kshim_ftm5_quiesce(&Ftm5);
+    int status = kshim_ftm5_quiesce(&Ftm5);
     if (status || CrQupQuiesce(&TouchPlatform)) return -1;
     TouchAttempted = TouchReady = 0;
     return 0;
@@ -71,6 +69,9 @@ static int touch_quiesce(void)
 static void start_touch(struct kshim_resources *r)
 {
     if (r->touch_status) return;
+    /* Only the FTM5 generation has a runtime driver; unsupported generations
+     * fall back to the volume-key menu without touching MMIO. */
+    if (r->touch.generation != 5) return;
     TouchResource = &r->touch;
     kshim_touch_config_t cfg = {.source_width = r->touch.width, .source_height = r->touch.height,
         .output_width = Framebuffer.width, .output_height = Framebuffer.height,
@@ -79,10 +80,7 @@ static void start_touch(struct kshim_resources *r)
     int status = kshim_touch_init(&Touch, &cfg);
     if (!status) status = CrQupInit(&TouchPlatform, NULL, &r->touch.qup);
     TouchAttempted = 1;
-    if (!status && r->touch.generation == 4) {
-        kshim_ftm4_transport_t t = {NULL, touch_transfer, touch_delay};
-        status = kshim_ftm4_init(&Ftm4, &t, &Touch, false, false);
-    } else if (!status) {
+    if (!status) {
         kshim_ftm5_transport_t t = {NULL, touch_transfer, touch_delay, KSHIM_FTM5_BUS_I2C};
         status = kshim_ftm5_init(&Ftm5, &t, &Touch);
     }
@@ -132,7 +130,7 @@ static void menu_frame(void)
 #if CONFIG_KSHIM_TOUCH
     if (TouchReady) {
         int status = CrQupIrq(&TouchPlatform);
-        if (status > 0) status = TouchResource->generation == 4 ? kshim_ftm4_poll(&Ftm4) : kshim_ftm5_poll(&Ftm5);
+        if (status > 0) status = kshim_ftm5_poll(&Ftm5);
         if (status < 0) {
             TouchReady = 0; kshim_touch_cancel(&Touch);
             printf("Touch: input status %d\n", status);

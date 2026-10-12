@@ -37,7 +37,7 @@ def main():
         "ui": "flat", "bytes": binary.stat().st_size,
         "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "framebuffer": {"source": "DT reservation and validated live SDE scanout"},
-        "touch": "DT-selected ST FTM4 or FTM5 with chip-ID verification",
+        "touch": "DT-selected ST FTM5 with chip-ID verification",
         "display_prerequisite": "A supported active continuous splash layout",
         "uefi": "No UEFI payload is bundled",
         "hardware_tested": False,

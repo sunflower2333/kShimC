@@ -1,3 +1,5 @@
+> FTM4 support and its vendor snapshots have since been removed. FTM4 results below describe the historical validation snapshot; current touch support is FTM5 only.
+
 # CrDK / DT migration validation
 
 Validation date: 2026-09-26. This is an uncommitted worktree change.

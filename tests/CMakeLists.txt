@@ -79,7 +79,6 @@ kshim_test(qcom_touch_platform_test qcom_touch_platform_test.c)
 kshim_test(hdk8250_touch_platform_test hdk8250_touch_platform_test.c)
 kshim_test(touch_test touch_test.c "${KSHIM_ROOT}/src/drivers/touch.c")
 kshim_test(st_ftm5_test st_ftm5_test.c "${KSHIM_ROOT}/src/drivers/st_ftm5.c" "${KSHIM_ROOT}/src/drivers/touch.c")
-kshim_test(st_ftm4_test st_ftm4_test.c "${KSHIM_ROOT}/src/drivers/st_ftm4.c" "${KSHIM_ROOT}/src/drivers/touch.c")
 
 add_library(kshim_dt STATIC
     "${KSHIM_ROOT}/src/dt/dt.c" "${KSHIM_ROOT}/src/dt/spmi.c"
@@ -91,7 +90,7 @@ add_library(kshim_dt STATIC
     "${KSHIM_ROOT}/lib/libfdt/fdt_empty_tree.c" "${KSHIM_ROOT}/lib/libfdt/fdt_addresses.c")
 target_include_directories(kshim_dt PUBLIC "${KSHIM_ROOT}/src/include" "${KSHIM_ROOT}/lib/libfdt/include")
 target_link_libraries(kshim_dt PUBLIC crdk)
-foreach(target qualcomm_test qcom_bus_test qcom_touch_platform_test hdk8250_touch_platform_test st_ftm4_test st_ftm5_test)
+foreach(target qualcomm_test qcom_bus_test qcom_touch_platform_test hdk8250_touch_platform_test st_ftm5_test)
     target_link_libraries(${target} PRIVATE kshim_dt)
 endforeach()
 add_link_options(-Wl,--gc-sections)
