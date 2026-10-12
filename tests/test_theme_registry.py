@@ -52,11 +52,19 @@ class ThemeRegistryTest(unittest.TestCase):
         for name, value in {'SURFACE': 10, 'IOS_HIG': 12, 'METRO': 21, 'ADWAITA': 23, 'HOLO': 24, 'LVGL_DEFAULT': 25}.items():
             self.assertRegex(header, rf'\bKSHIM_DESIGN_{name}={value}\b')
 
-    def test_remaining_themes_all_get_pixel_comparison(self):
+    def test_unchanged_themes_keep_pixel_comparison_and_clover_has_new_contract(self):
         workflow = (ROOT / '.github/workflows/menu-styles.yml').read_text()
-        block = workflow.split('- name: Preserve every original theme pixel for pixel\n', 1)[1].split('      - name:', 1)[0]
-        self.assertNotRegex(block, r'(?m)^\s+if:')
+        block = workflow.split('- name: Preserve unchanged original theme pixels\n', 1)[1].split('      - name:', 1)[0]
+        # Exactly one intentional layout change, not a broad bypass of CI.
+        self.assertEqual(re.findall(r'(?m)^\s+if:\s*(.*)$', block), ["matrix.style != 'CLOVER'"])
         self.assertIn('base=a154e1af2eb65514b15b8f30bb067fb934b6fcad', block)
+        self.assertIn('cmp "$file" "previews/$(basename "$file")"', block)
+        cmake = (ROOT / 'tests/CMakeLists.txt').read_text()
+        self.assertIn('kshim_test(menu_clover_picker_test', cmake)
+        source = (ROOT / 'tests/menu_clover_picker_test.c').read_text()
+        self.assertIn('ui.BootButton==NULL', source)
+        self.assertIn('focus is not activation', source)
+        self.assertIn('scrolling must never activate', source)
 
 if __name__ == '__main__':
     unittest.main()

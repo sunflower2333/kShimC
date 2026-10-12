@@ -20,8 +20,15 @@ static void check(unsigned w, unsigned h, unsigned n, unsigned override) {
     assert(memcmp(&g,&again,sizeof g)==0);
     assert(inside(g.panel,(kshim_design_rect_t){0,0,(int32_t)w,(int32_t)h}));
     kshim_design_rect_t panel={0,0,g.panel.w,g.panel.h};
-    assert(inside(g.list,panel)); assert(inside(g.boot,panel));
-    assert(!overlap(g.list,g.boot));
+    assert(inside(g.list,panel));
+    if(mMenuDesign.kind==KSHIM_DESIGN_CLOVER) {
+        assert(g.boot.w==0 && g.boot.h==0);
+        assert(inside(g.tools,panel) && !overlap(g.list,g.tools));
+        if(g.status.h) assert(g.status.y>=g.tools.y+g.tools.h && inside(g.status,panel));
+    } else {
+        assert(inside(g.boot,panel) && !overlap(g.list,g.boot));
+        assert(g.tools.w==0 && g.tools.h==0);
+    }
     assert(g.count==n && g.columns>=1 && g.columns<=3);
     assert(g.scale_q8>=96 && g.scale_q8<=512);
     for(unsigned i=0;i<n;i++) {
@@ -86,8 +93,9 @@ int main(void) {
             for(unsigned entries=1;entries<=49;entries+=6) {
                 assert(kshim_design_layout(&mMenuDesign,displays[size][0],displays[size][1],entries,0,&g)==0);
                 assert(g.horizontal && !g.compact);
-                assert(g.status.y>=g.list.y+g.list.h);
-                assert(g.boot.y>=g.status.y+g.status.h);
+                assert(g.tools.y>=g.list.y+g.list.h);
+                assert(g.status.y>=g.tools.y+g.tools.h);
+                assert(g.boot.w==0 && g.boot.h==0);
                 kshim_design_item_geometry_t item;
                 kshim_design_item_layout(&mMenuDesign,&g,0,36,&item);
                 assert(item.icon.w>0 && item.mark.w>0);

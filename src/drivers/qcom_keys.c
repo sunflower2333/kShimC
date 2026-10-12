@@ -23,7 +23,7 @@ __attribute__((weak)) void kshim_qcom_spmi_delay_us(uint32_t Microseconds)
 
 #if CONFIG_QCOM_SPMI
 #define SPMI_PORTS 4
-struct spmi_port { SpmiDeviceContext *spmi; int fault; uintptr_t command; };
+struct spmi_port { SpmiDeviceContext *spmi; int fault; uintptr_t command, write_data; };
 static struct spmi_port ports[SPMI_PORTS];
 static unsigned port_count;
 void kshim_qcom_spmi_bind(SpmiDeviceContext **contexts, unsigned count)
@@ -74,9 +74,9 @@ static UINT32 KshimSpmiRead(void *Context, UINTN Address)
 static void KshimSpmiWrite(void *Context, UINTN Address, UINT32 Value)
 {
   struct spmi_port *port = Context;
-  /* The key adapter only submits a read command. No PMIC configuration or
-   * IRQ ownership writes are exposed through this polled integration. */
-  if (!KshimSpmiAddressValid(port, Address) || Address != port->command) {
+  /* Key reads grant only CMD. Power writes temporarily grant exactly one
+   * WDATA word as well; IRQ ownership/configuration remains inaccessible. */
+  if (!KshimSpmiAddressValid(port, Address) || (Address != port->command && (!port->write_data || Address != port->write_data))) {
     port->fault = 1;
     return;
   }
@@ -133,6 +133,33 @@ static int spmi_read(struct spmi_port *port, uint8_t Sid, uint32_t Address, uint
     return -1;
   *Value = Byte;
   return 0;
+}
+
+/* Dedicated one-byte PON transaction adapter, not a general PMIC write API. */
+int kshim_qcom_power_read8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t *value)
+{
+    uint32_t v;
+    if(!value||controller>=port_count||!ports[controller].spmi||ports[controller].spmi->BusId!=bus||
+       spmi_read(&ports[controller],sid,address,&v))return -1;
+    *value=(uint8_t)v;return 0;
+}
+int kshim_qcom_power_write8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t value)
+{
+    unsigned reg=address&255U;
+    if(controller>=port_count||!ports[controller].spmi||ports[controller].spmi->BusId!=bus||sid>15||
+       (reg!=0x5a&&reg!=0x5b&&reg!=0x57&&reg!=0x8f))return -1;
+    struct spmi_port *p=&ports[controller];
+    if(KshimSpmiInit(p))return -1;
+    p->fault=0;
+    uint32_t offset=p->spmi->PmicArb.Ops->GetChannelOffset(p->spmi,sid,address,SPMI_ARB_CHANNEL_RW);
+    SpmiMemoryRegion *r=&p->spmi->Regions[p->spmi->Version==SPMI_ARB_VERSION_1?
+        SPMI_MEMORY_REGION_TYPE_CORE:SPMI_MEMORY_REGION_TYPE_CH_SLAVES];
+    if(offset==UINT32_MAX||p->fault||r->BaseAddress>UINTPTR_MAX-offset||
+       !KshimSpmiContains(r,r->BaseAddress+offset,SPMI_PMIC_ARB_WDATA0+sizeof(uint32_t)))return -1;
+    p->command=r->BaseAddress+offset;p->write_data=p->command+SPMI_PMIC_ARB_WDATA0;
+    CR_STATUS status=SpmiWrite(p->spmi,sid,address,&value,1);
+    p->command=p->write_data=0;
+    return CR_ERROR(status)||p->fault?-1:0;
 }
 
 static CR_STATUS pmic_read(void *context, UINT8 sid, UINT16 address, UINT8 *buffer, UINTN size)

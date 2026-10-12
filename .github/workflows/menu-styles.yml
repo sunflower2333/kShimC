@@ -5,6 +5,10 @@ on:
     branches: ["feature/2610", "feature/2610-design-language"]
     paths:
       - "src/ui/**"
+      - "src/core/**"
+      - "src/drivers/**"
+      - "src/dt/**"
+      - "CMakeLists.txt"
       - "src/include/**"
       - "src/Kconfig"
       - "Kconfig"
@@ -14,11 +18,16 @@ on:
       - "tools/generate_design_presets.py"
       - "tools/preview_manifest.py"
       - "tools/build_theme_review.py"
+      - "tools/build_power_review.py"
       - "tools/theme_review.html"
       - ".github/workflows/menu-styles.yml"
   pull_request:
     paths:
       - "src/ui/**"
+      - "src/core/**"
+      - "src/drivers/**"
+      - "src/dt/**"
+      - "CMakeLists.txt"
       - "src/include/**"
       - "src/Kconfig"
       - "Kconfig"
@@ -28,6 +37,7 @@ on:
       - "tools/generate_design_presets.py"
       - "tools/preview_manifest.py"
       - "tools/build_theme_review.py"
+      - "tools/build_power_review.py"
       - "tools/theme_review.html"
       - ".github/workflows/menu-styles.yml"
   workflow_dispatch:
@@ -52,6 +62,12 @@ jobs:
           /tmp/kshim-style-venv/bin/python tools/test_menu_styles.py --cc clang
           python3 tools/test_theme_design.py --cc gcc --sanitize
           python3 tools/test_theme_design.py --cc clang
+      - name: GCC and Clang power sequencing with injected failures
+        run: |
+          for cc in gcc clang; do
+            $cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc/include tests/power_test.c src/drivers/power.c -o /tmp/power-test
+            /tmp/power-test
+          done
       - name: Test authentic-frame verification and HTML packaging
         run: python3 -m unittest discover -s tests -p 'test_theme_*.py' -v
   lvgl-regression:
@@ -80,11 +96,21 @@ jobs:
           git rev-parse HEAD > previews/source-commit.txt
           ./build-menu/ui_preview_test previews | tee previews/render.log
           python3 tools/preview_manifest.py previews
-      - name: Preserve every original theme pixel for pixel
+      - name: Render genuine power controls, mode selection and confirmation
+        run: |
+          mkdir -p power-previews
+          git rev-parse HEAD > power-previews/source-commit.txt
+          ./build-menu/power_preview_test power-previews | tee power-previews/render.log
+          python3 tools/preview_manifest.py power-previews
+      # Clover intentionally removes the Boot control and moves its description
+      # below the system-icon row. Its new interaction/layout contract is tested
+      # by menu_clover_picker_test; the other themes keep exact legacy pixels.
+      - name: Preserve unchanged original theme pixels
+        if: matrix.style != 'CLOVER'
         run: |
           base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
           git fetch --depth=1 origin "$base"
-          files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
+          files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_native.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
           for file in $files; do git show "$base:$file" > "$file"; done
           cmake --build build-menu --parallel 2 --target ui_preview_test
           mkdir -p compatibility-baseline
@@ -96,13 +122,15 @@ jobs:
         if: matrix.style == 'FLAT'
         run: |
           git fetch --depth=1 origin c1a80a45fd577dbb859e78404458477f98ab5d72
-          cp src/ui/lvgl_port.c /tmp/current-lvgl-port.c
+          base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
+          files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_native.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
+          for file in $files; do git show "$base:$file" > "$file"; done
           git show c1a80a45fd577dbb859e78404458477f98ab5d72:src/ui/lvgl_port.c > src/ui/lvgl_port.c
           cmake --build build-menu --parallel 2 --target ui_preview_test
           mkdir -p baseline
           ./build-menu/ui_preview_test baseline
           for file in baseline/*.ppm; do cmp "$file" "previews/$(basename "$file")"; done
-          cp /tmp/current-lvgl-port.c src/ui/lvgl_port.c
+          for file in $files; do git show "HEAD:$file" > "$file"; done
       - name: Upload actual rendered previews and regression log
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,6 +143,10 @@ jobs:
             previews/source-commit.txt
             previews/render.log
             previews/compatibility.txt
+            power-previews/*.png
+            power-previews/manifest.json
+            power-previews/source-commit.txt
+            power-previews/render.log
             build-menu/Testing/Temporary/LastTest.log
           if-no-files-found: error
           retention-days: 14
@@ -173,8 +205,43 @@ jobs:
           cmake --build build-runtime --parallel 2
           aarch64-linux-gnu-size build-runtime/kShimC.elf
           test -s build-runtime/kShimC.bin
+  platform-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [hdk8150_defconfig, hdk8250_defconfig, qemu_manifest_serial_defconfig]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install ARM64 toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu ninja-build
+          python3 -m venv /tmp/kshim-platform-venv
+          /tmp/kshim-platform-venv/bin/pip install kconfiglib==14.1.0
+      - name: Compile physical Qualcomm and headless configurations
+        run: |
+          export PATH="/tmp/kshim-platform-venv/bin:$PATH"
+          mkdir -p build-platform
+          cp configs/${{ matrix.config }} build-platform/.config
+          payload_args=()
+          if grep -qx 'CONFIG_KSHIM_UEFI_TEST_MENU=y' build-platform/.config; then
+            # Compile/link fixture, NOT firmware. AArch64 B . cannot boot an OS.
+            # Never execute or upload this binary as a usable device image.
+            export CI_LINK_PAYLOAD="$RUNNER_TEMP/compile-only-not-firmware.bin"
+            python3 -c 'import os; from pathlib import Path; Path(os.environ["CI_LINK_PAYLOAD"]).write_bytes(bytes.fromhex("00000014") * 1024)'
+            payload_args+=("-DKSHIM_UEFI_PAYLOAD=$CI_LINK_PAYLOAD")
+            echo '::notice::UEFI entry linkage uses a non-bootable compile-only fixture, not a validated firmware FD.'
+          fi
+          cmake -S . -B build-platform -G Ninja "${payload_args[@]}"
+          cmake --build build-platform --parallel 2
+          aarch64-linux-gnu-size build-platform/kShimC.elf
+          test -s build-platform/kShimC.bin
   package-previews:
-    needs: [preset-contracts, lvgl-regression, new-theme-variants, arm64-build]
+    needs: [preset-contracts, lvgl-regression, new-theme-variants, arm64-build, platform-build]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -185,7 +252,9 @@ jobs:
           pattern: menu-*
           path: collected
       - name: Verify original frames and build the offline HTML review
-        run: python3 tools/build_theme_review.py --input collected --output review
+        run: |
+          python3 tools/build_theme_review.py --input collected --output review
+          python3 tools/build_power_review.py --input collected --output power-review
       - name: Upload one review bundle without changing frame bytes
         uses: actions/upload-artifact@v4
         with:
@@ -198,5 +267,12 @@ jobs:
         with:
           name: theme-review-html
           path: review/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload original power-menu renders and offline HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: power-review-html
+          path: power-review/
           if-no-files-found: error
           retention-days: 14

@@ -55,6 +55,18 @@ static void check(unsigned w,unsigned h,int scratch_enabled) {
         lv_obj_get_coords(lv_obj_get_parent(ui.List),&panel);
         assert(boot.x1>=0 && boot.y1>list.y2 && boot.x2<(int)w && boot.y2<(int)h);
         assert(panel.x1>=0 && panel.y1>=0 && panel.x2<(int)w && panel.y2<(int)h);
+        /* Power-disabled chrome must retain native centering, including its
+         * rounding and relayout behavior after the entry count changes. */
+        lv_obj_set_size(reference, lv_area_get_width(&panel), lv_area_get_height(&panel));
+        lv_obj_center(reference);
+        lv_obj_update_layout(reference);
+        lv_area_t centered;
+        lv_obj_get_coords(reference, &centered);
+        if(panel.x1 != centered.x1 || panel.y1 != centered.y1)
+            fprintf(stderr, "native center %ux%u/%u: actual %d,%d; expected %d,%d\n",
+                    w, h, counts[n], (int)panel.x1, (int)panel.y1,
+                    (int)centered.x1, (int)centered.y1);
+        assert(panel.x1 == centered.x1 && panel.y1 == centered.y1);
         const lv_state_t states[]={LV_STATE_DEFAULT,LV_STATE_CHECKED|LV_STATE_FOCUSED,
             LV_STATE_CHECKED|LV_STATE_FOCUSED|LV_STATE_FOCUS_KEY,LV_STATE_CHECKED|LV_STATE_PRESSED};
         for(unsigned s=0;s<4;s++) {

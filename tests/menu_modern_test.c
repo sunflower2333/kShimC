@@ -123,10 +123,11 @@ static void TestSize(unsigned Width, unsigned Height)
             Tap(&Ui, lv_obj_get_child(Focused, 1U), 0);
             assert(lv_group_get_focused(Ui.Group) == Focused);
         }
+        assert(kshim_lvgl_take_index(&Ui) == (mMenuDesign.kind==KSHIM_DESIGN_CLOVER?(int)Count-1:-1));
+        lv_obj_t *Activation=Ui.BootButton?Ui.BootButton:Focused;
+        Tap(&Ui, Activation, 1);
         assert(kshim_lvgl_take_index(&Ui) == -1);
-        Tap(&Ui, Ui.BootButton, 1);
-        assert(kshim_lvgl_take_index(&Ui) == -1);
-        Tap(&Ui, Ui.BootButton, 0);
+        Tap(&Ui, Activation, 0);
         assert(kshim_lvgl_take_index(&Ui) == (int)Count - 1);
         assert(kshim_lvgl_take_index(&Ui) == -1);
         assert(kshim_lvgl_take_selection(&Ui) == KSHIM_MENU_NONE);
@@ -225,11 +226,12 @@ static void TestAutomaticConfirmation(unsigned Width, unsigned Height)
         assert(kshim_lvgl_init(&Ui, &Fb, NULL) == 0);
         Settle(&Ui);
         kshim_lvgl_frame(&Ui, Phase);
+        lv_obj_t *Activation=Ui.BootButton?Ui.BootButton:lv_group_get_focused(Ui.Group);
         lv_area_t Area;
-        lv_obj_get_coords(Ui.BootButton, &Area);
+        lv_obj_get_coords(Activation, &Area);
         uint64_t Before = BootHash(&Fb, &Area);
         unsigned Changed = 0U;
-        assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
+        assert(lv_obj_send_event(Activation, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
         assert(Ui.PendingIndex == 0);
         for (unsigned Frame = 0U; Frame < 32U; Frame++) {
             kshim_lvgl_frame(&Ui, 16U);
@@ -237,8 +239,8 @@ static void TestAutomaticConfirmation(unsigned Width, unsigned Height)
         }
         assert(KSHIM_MENU_IS_NATIVE ? Changed == 0U : Changed != 0U);
         assert(BootHash(&Fb, &Area) == Before);
-        assert(lv_obj_get_style_transform_scale_x(Ui.BootButton, LV_PART_MAIN) == 256);
-        assert(lv_obj_get_style_transform_scale_y(Ui.BootButton, LV_PART_MAIN) == 256);
+        assert(lv_obj_get_style_transform_scale_x(Activation, LV_PART_MAIN) == 256);
+        assert(lv_obj_get_style_transform_scale_y(Activation, LV_PART_MAIN) == 256);
         assert(kshim_lvgl_take_index(&Ui) == 0);
         assert(kshim_lvgl_take_index(&Ui) == -1);
         kshim_lvgl_deinit(&Ui);

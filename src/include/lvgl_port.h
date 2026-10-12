@@ -6,6 +6,7 @@
 #include <framebuffer.h>
 #include <qcom_keys.h>
 #include <touch.h>
+#include <power.h>
 
 #define KSHIM_MENU_MAX_ENTRIES 49U
 #define KSHIM_UI_ENTRY_DURATION_MS 360U
@@ -57,6 +58,10 @@ int kshim_lvgl_take_index(kshim_lvgl_t *Context);
  * outside rendering. Each event is synchronously delivered to LVGL. */
 void kshim_lvgl_touch(void *Context, const kshim_touch_event_t *Event);
 
+/* Capability-gated power UI. No reset is performed from an LVGL callback. */
+int kshim_lvgl_set_power_capabilities(kshim_lvgl_t *Context, uint32_t mask);
+kshim_power_action_t kshim_lvgl_take_power(kshim_lvgl_t *Context);
+
 /* Release the single early-boot UI instance, including partially built menus. */
 void kshim_lvgl_deinit(kshim_lvgl_t *Context);
 
@@ -73,7 +78,7 @@ struct kshim_lvgl {
   void                *PointerInput;
   void                *Group;
   void                *List;
-  void                *BootButton;
+  void                *BootButton; /* NULL for Clover: activate its boot entry directly. */
   void                *Background;
   const char           *Entries[KSHIM_MENU_MAX_ENTRIES];
   size_t                EntryCount;
@@ -89,6 +94,14 @@ struct kshim_lvgl {
   uint8_t              DefaultEntries;
   uint8_t              ReducedQuality;
   uint8_t              CountdownEnabled;
+  uint8_t              AutobootCancelled;
   uint32_t             CountdownMs;
   uint32_t             CountdownShown;
+  uint32_t             PowerCapabilities;
+  kshim_power_action_t  PendingPower;
+  size_t               SelectedIndex;
+  uint8_t              PowerUiEnabled;
+  void                *RestartButton, *PowerOffButton, *PowerDialog;
+  void                *PowerConfirmButton, *PowerCancelButton;
+  void                *PowerModeButtons[3];
 };

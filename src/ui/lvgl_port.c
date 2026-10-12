@@ -80,6 +80,23 @@ static uint32_t clamp_u32(uint32_t value, uint32_t minimum, uint32_t maximum)
   return min_u32(max_u32(value, minimum), maximum);
 }
 
+static void KshimPowerProcess(void);
+static void KshimPowerClose(void);
+static void KshimPowerReattach(void);
+static int KshimRebuildEntries(size_t Initial);
+static int KshimPowerIntegrated(void)
+{
+  return mMenuDesign.kind==KSHIM_DESIGN_FLUENT2 || mMenuDesign.kind==KSHIM_DESIGN_MATERIAL3 ||
+      mMenuDesign.kind==KSHIM_DESIGN_TERMINAL || mMenuDesign.kind==KSHIM_DESIGN_CLOVER;
+}
+static uint32_t KshimPowerReserve(void)
+{
+  if (!mContext || !mContext->PowerUiEnabled || !mFramebuffer || KshimPowerIntegrated()) return 0;
+  return clamp_u32(min_u32(mFramebuffer->width,mFramebuffer->height)/12U,32U,80U)+12U;
+}
+static uint32_t KshimContentHeight(void)
+{ return mFramebuffer->height-KshimPowerReserve(); }
+
 static lv_color_t KshimTextColor(void)
 {
   return lv_color_hex(mMenuStyle.Text);
@@ -144,6 +161,7 @@ static void KshimLvglReadKeys(lv_indev_t *Input, lv_indev_data_t *Data)
   case QCOM_KEY_ACTION_SELECT: mKey = LV_KEY_ENTER; break;
   default: return;
   }
+  if (mContext) { mContext->AutobootCancelled = 1; mContext->CountdownEnabled = 0; }
   Data->key = mKey;
   Data->state = LV_INDEV_STATE_PRESSED;
   mKeyReleasePending = 1U;
@@ -227,17 +245,26 @@ static int KshimButtonIndex(const lv_obj_t *Button)
   return -1;
 }
 
+static void KshimSelectionStatus(size_t Index)
+{
+  if (!mContext || !mStatus || Index >= mContext->EntryCount) return;
+  if (mMenuDesign.kind == KSHIM_DESIGN_CLOVER)
+    lv_label_set_text_fmt(mStatus, "Boot from %s", mContext->Entries[Index]);
+  else lv_label_set_text(mStatus, mContext->Entries[Index]);
+}
+
 static void KshimConfirmIndex(size_t Index)
 {
-  if (mContext == NULL || Index >= mContext->EntryCount)
+  if (mContext == NULL || mContext->PowerDialog || mContext->PendingPower || Index >= mContext->EntryCount)
     return;
   mContext->PendingIndex = (int)Index;
   if (mContext->DefaultEntries != 0U && Index < KSHIM_MENU_POWER_OFF)
     mContext->PendingAction = (kshim_menu_action_t)(Index + 1U);
-  if (mStatus != NULL)
-    lv_label_set_text(mStatus, mContext->Entries[Index]);
-  if (mBootButton != NULL && !KSHIM_MENU_IS_NATIVE)
-    KshimAnimate(mBootButton, KshimSetConfirmPulse, 0, 1024,
+  KshimSelectionStatus(Index);
+  lv_obj_t *Feedback = mMenuDesign.kind == KSHIM_DESIGN_CLOVER ?
+      lv_group_get_obj_by_index(mContext->Group, (uint32_t)Index) : mBootButton;
+  if (Feedback != NULL && !KSHIM_MENU_IS_NATIVE)
+    KshimAnimate(Feedback, KshimSetConfirmPulse, 0, 1024,
                  KSHIM_UI_CONFIRM_DURATION_MS, lv_anim_path_ease_in_out);
 }
 
@@ -262,9 +289,10 @@ static void KshimMenuEvent(lv_event_t *Event)
       else lv_obj_remove_state(Button, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
     }
     if (Code == LV_EVENT_FOCUSED) {
+      if (Index >= 0 && (size_t)Index < mContext->EntryCount) mContext->SelectedIndex=(size_t)Index;
       lv_obj_scroll_to_view(Button, LV_ANIM_ON);
-      if (Index >= 0 && (size_t)Index < mContext->EntryCount && mStatus != NULL)
-        lv_label_set_text(mStatus, mContext->Entries[Index]);
+      if (Index >= 0 && (size_t)Index < mContext->EntryCount)
+        KshimSelectionStatus((size_t)Index);
     }
     return;
   }
@@ -289,9 +317,11 @@ static void KshimMenuEvent(lv_event_t *Event)
   if (Code != LV_EVENT_CLICKED || Index < 0 || (size_t)Index >= mContext->EntryCount)
     return;
   lv_indev_t *Input = lv_event_get_indev(Event);
-  /* A row tap changes focus. Touch confirmation remains on the fixed Boot
-   * button, so an imprecise scroll cannot launch an image. */
-  if (Input != NULL && lv_indev_get_type(Input) == LV_INDEV_TYPE_POINTER)
+  /* Clover activates the entry itself. LVGL does not send CLICKED after a
+   * scroll or cancelled press. Other themes keep their separate Boot action;
+   * FOCUSED and PRESSED above never enqueue an image. */
+  if (Input != NULL && lv_indev_get_type(Input) == LV_INDEV_TYPE_POINTER &&
+      mMenuDesign.kind != KSHIM_DESIGN_CLOVER)
     return;
   KshimConfirmIndex((size_t)Index);
 }
@@ -303,8 +333,9 @@ static void KshimBootEvent(lv_event_t *Event)
     return;
   lv_obj_t *Focused = lv_group_get_focused((lv_group_t *)mContext->Group);
   int Index = KshimButtonIndex(Focused);
-  if (Index >= 0)
+  if (Index >= 0 && (size_t)Index < mContext->EntryCount)
     KshimConfirmIndex((size_t)Index);
+  else if (mContext->PowerUiEnabled) KshimConfirmIndex(mContext->SelectedIndex);
 }
 
 #include "menu_native.h"
@@ -332,9 +363,13 @@ static int KshimRebuildEntries(size_t Initial)
   lv_group_focus_obj(InitialButton);
   if (KSHIM_MENU_IS_NATIVE) lv_obj_add_state(InitialButton, LV_STATE_CHECKED | LV_STATE_FOCUS_KEY);
   lv_obj_scroll_to_view(InitialButton, LV_ANIM_OFF);
-  if (mStatus != NULL) lv_label_set_text(mStatus, mContext->Entries[Initial]);
+  KshimSelectionStatus(Initial);
+  mContext->SelectedIndex=Initial;
+  KshimPowerReattach();
   return 0;
 }
+
+#include "menu_power.h"
 
 static void KshimPrepareImage(lv_image_dsc_t *Image, uint32_t *Pixels)
 {
@@ -480,22 +515,24 @@ static int KshimBuildChrome(void)
   lv_obj_set_style_width(mList, 3, LV_PART_SCROLLBAR);
   lv_obj_set_scrollbar_mode(mList, LV_SCROLLBAR_MODE_AUTO);
 
-  mBootButton = lv_button_create(mPanel);
-  if (mBootButton == NULL) return -1;
-  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(mMenuStyle.Boot), 0);
-  lv_obj_set_style_bg_opa(mBootButton, LV_OPA_COVER, 0);
-  lv_obj_set_style_bg_color(mBootButton, lv_color_hex(mMenuStyle.BootPressed), LV_STATE_PRESSED);
-  lv_obj_set_style_border_width(mBootButton, 0, 0);
-  lv_obj_set_style_shadow_width(mBootButton, 0, 0);
-  lv_obj_set_style_outline_width(mBootButton, 0, LV_STATE_FOCUS_KEY);
-  KshimModernBoot(mBootButton);
-  lv_obj_add_event_cb(mBootButton, KshimBootEvent, LV_EVENT_CLICKED, NULL);
-  lv_obj_t *BootLabel = lv_label_create(mBootButton);
-  if (BootLabel == NULL) return -1;
-  lv_label_set_text_static(BootLabel, "Boot");
-  lv_obj_set_style_text_font(BootLabel, mRowFont, 0);
-  lv_obj_set_style_text_color(BootLabel, lv_color_hex(mMenuStyle.BootText), 0);
-  lv_obj_center(BootLabel);
+  if (mMenuDesign.kind != KSHIM_DESIGN_CLOVER) {
+    mBootButton = lv_button_create(mPanel);
+    if (mBootButton == NULL) return -1;
+    lv_obj_set_style_bg_color(mBootButton, lv_color_hex(mMenuStyle.Boot), 0);
+    lv_obj_set_style_bg_opa(mBootButton, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(mBootButton, lv_color_hex(mMenuStyle.BootPressed), LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(mBootButton, 0, 0);
+    lv_obj_set_style_shadow_width(mBootButton, 0, 0);
+    lv_obj_set_style_outline_width(mBootButton, 0, LV_STATE_FOCUS_KEY);
+    KshimModernBoot(mBootButton);
+    lv_obj_add_event_cb(mBootButton, KshimBootEvent, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *BootLabel = lv_label_create(mBootButton);
+    if (BootLabel == NULL) return -1;
+    lv_label_set_text_static(BootLabel, "Boot");
+    lv_obj_set_style_text_font(BootLabel, mRowFont, 0);
+    lv_obj_set_style_text_color(BootLabel, lv_color_hex(mMenuStyle.BootText), 0);
+    lv_obj_center(BootLabel);
+  }
 
   if (mMenuStyle.Layout == 1U) {
     mDetail = lv_label_create(mPanel);
@@ -611,7 +648,9 @@ void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs)
     Context->ElapsedMs += ElapsedMs;
     if (ElapsedMs > 40U) Context->ReducedQuality = 1U;
   }
+  KshimPowerProcess();
   lv_timer_handler();
+  KshimPowerProcess();
   if (Context->CountdownEnabled != 0U && mStatus != NULL) {
     uint32_t remaining = Context->ElapsedMs < Context->CountdownMs ? Context->CountdownMs - Context->ElapsedMs : 0U;
     uint32_t seconds = (remaining + 999U) / 1000U;
@@ -662,6 +701,7 @@ int kshim_lvgl_set_entries(kshim_lvgl_t *Context, const char *const *Names, size
   for (size_t Index = 0; Index < Count; Index++) {
     if (Names[Index] == NULL || Names[Index][0] == '\0') return -2;
   }
+  KshimPowerClose();
   Context->EntryCount = Count;
   Context->DefaultEntries = 0U;
   Context->PendingAction = KSHIM_MENU_NONE;
@@ -680,7 +720,7 @@ void kshim_lvgl_set_countdown(kshim_lvgl_t *Context, uint32_t timeout_ms)
 {
   if (!kshim_lvgl_ready(Context)) return;
   Context->CountdownMs = timeout_ms;
-  Context->CountdownEnabled = timeout_ms != 0U;
+  Context->CountdownEnabled = timeout_ms != 0U && !Context->AutobootCancelled;
   Context->CountdownShown = UINT32_MAX;
 }
 
@@ -692,6 +732,8 @@ void kshim_lvgl_touch(void *Context, const kshim_touch_event_t *Event)
   Ui->PointerY = min_u32(Event->y, Ui->Framebuffer->height - 1U);
   switch (Event->type) {
   case KSHIM_TOUCH_EVENT_PRESS:
+    Ui->AutobootCancelled=1; Ui->CountdownEnabled=0;
+    /* fall through */
   case KSHIM_TOUCH_EVENT_MOVE:
     Ui->PointerPressed = 1U;
     break;
@@ -725,6 +767,7 @@ int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context)
 void kshim_lvgl_deinit(kshim_lvgl_t *Context)
 {
   if (Context == NULL || Context != mContext) return;
+  KshimPowerClose();
   Context->Ready = 0U;
   mContext = NULL;
   lv_deinit();

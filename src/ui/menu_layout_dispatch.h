@@ -96,7 +96,7 @@ static int KshimRelayoutChrome(void)
   kshim_backdrop_layout_t NextLayout;
   if (mContext == NULL || mFramebuffer == NULL || mContext->EntryCount == 0U)
     return -1;
-  if (kshim_backdrop_layout(mFramebuffer->width, mFramebuffer->height,
+  if (kshim_backdrop_layout(mFramebuffer->width, KshimContentHeight(),
       CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS, mContext->EntryCount, &NextLayout) != 0)
     return -2;
   mBackdropLayout = NextLayout;
@@ -116,7 +116,7 @@ static int KshimRelayoutChrome(void)
   mTileWidth = 0U;
   if (mMenuStyle.Modern != 0U) {
     uint32_t Width = mFramebuffer->width;
-    uint32_t Height = mFramebuffer->height;
+    uint32_t Height = KshimContentHeight();
     mBackdropLayout.panel_width = Width >= 320U ? min_u32(Width - Padding * 2U, mMenuStyle.Layout == 4U ? 1600U : mMenuStyle.Layout == 5U ? 780U : 1200U) : NextLayout.panel_width;
     mSplit = mMenuStyle.Layout == 1U && Width >= 720U && Width > Height;
     mColumns = mMenuStyle.Layout == 2U && mBackdropLayout.panel_width >= 560U && Height >= 320U ? 2U : 1U;

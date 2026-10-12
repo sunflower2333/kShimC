@@ -70,7 +70,7 @@ def png_rgb(data:bytes):
     return w,h,bytes(pixels)
 
 
-def read_set(root: Path, *, themes=THEMES, sizes=SIZES,
+def read_set(root: Path, *, themes=THEMES, sizes=SIZES, stages=STAGES, preview_dir="previews",
              supplied_source: str | None = None) -> dict:
     """Read a complete artifact matrix, checking hashes, pixels, stamps and logs.
 
@@ -78,12 +78,17 @@ def read_set(root: Path, *, themes=THEMES, sizes=SIZES,
     their CI run. This is recorded as supplied, never as an embedded stamp.
     """
     root = Path(root)
+    if not re.fullmatch(r'[a-z-]+', preview_dir) or not stages or len(set(stages)) != len(stages):
+        raise ValueError('Invalid preview matrix')
+    if any(not re.fullmatch(r'[a-z0-9-]+', stage) for stage in stages):
+        raise ValueError('Invalid preview stage')
+    filename_pattern = re.compile(r'menu-([0-9]+)x([0-9]+)-(' + '|'.join(re.escape(s) for s in stages) + r')\.png')
     if supplied_source is not None and not SHA.fullmatch(supplied_source):
         raise ValueError("Invalid supplied source commit")
     result = dict(frames=[], bytes={}, evidence={}, sources=set(), tests_passed=0)
     stamped = 0
     for theme in themes:
-        prefix = f"menu-{theme}/previews/"
+        prefix = f"menu-{theme}/{preview_dir}/"
         manifest_name = prefix + "manifest.json"
         manifest_bytes = safe_path(root, manifest_name).read_bytes()
         manifest = json.loads(manifest_bytes)
@@ -105,7 +110,7 @@ def read_set(root: Path, *, themes=THEMES, sizes=SIZES,
         result['sources'].add(source)
         for item in manifest:
             name = item['file']
-            match = FILENAME.fullmatch(name) if isinstance(name, str) else None
+            match = filename_pattern.fullmatch(name) if isinstance(name, str) else None
             if match is None:
                 raise ValueError(f"Invalid frame filename: {name}")
             w, h = int(match[1]), int(match[2])
@@ -146,12 +151,13 @@ def read_set(root: Path, *, themes=THEMES, sizes=SIZES,
         result['evidence'][log_name] = log_data
     if len(result['sources']) != 1:
         raise ValueError("Mixed source commits in artifact matrix")
-    required = {f"{n}|{w}x{h}|{s}" for n in themes for w, h in sizes for s in STAGES}
+    required = {f"{n}|{w}x{h}|{s}" for n in themes for w, h in sizes for s in stages}
     missing = required - set(result['bytes'])
     if missing:
         raise ValueError(f"Missing {len(missing)} frames: {min(missing)}")
     result['source'] = result.pop('sources').pop()
     result['source_kind'] = 'stamped' if stamped == len(themes) else 'supplied' if not stamped else 'mixed-stamps-and-supplied'
+    result['stages'] = list(stages)
     result['themes'] = list(themes)
     result['sizes'] = [f"{w}x{h}" for w, h in sizes]
     return result
@@ -190,14 +196,14 @@ def write_review(new: dict, output: Path, old: dict | None = None) -> dict:
     summary = dict(new_source=new['source'], old_source=old['source'] if old else None,
         new_source_kind=new['source_kind'], old_source_kind=old['source_kind'] if old else None,
         new_frames=len(new['frames']), old_frames=len(old['frames']) if old else 0,
-        new_tests_passed=new['tests_passed'], **checks)
+        new_tests_passed=new['tests_passed'], power_ui=bool(new.get('power_ui')), **checks)
     template = Path(__file__).with_name('theme_review.html').read_text(encoding='utf-8')
     if template.count('__DATA__') != 1:
         raise ValueError('Viewer template must contain one dataset placeholder')
     versions = {'new': new}
     if old is not None:
         versions['old'] = old
-    dataset = dict(names=new['themes'], sizes=new['sizes'], stages=list(STAGES),
+    dataset = dict(names=new['themes'], sizes=new['sizes'], stages=list(new.get('stages', STAGES)),
         summary=summary, images={}, meta={})
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.theme-review-', dir=output.parent) as temp:

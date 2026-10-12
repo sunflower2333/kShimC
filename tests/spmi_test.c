@@ -125,6 +125,12 @@ static void TestV1(void)
     ExtraCommandBits = (3U << 20) | (2U << 12);
     HasApidMap = 0;
     ExerciseChannel(0x800U + 0x80U * 5U);
+    uint32_t *channel=Response(0x800U+0x80U*5U,3U,1U,0);
+    assert(!kshim_qcom_power_write8(0,0,3,0x25a,0xa1));
+    assert(channel[0x10/4]==0xa1 && ElapsedUs==3);
+    assert(kshim_qcom_power_write8(0,0,3,0x255,0)!=0);
+    assert(kshim_qcom_power_write8(0,1,3,0x25a,0)!=0);
+    assert(kshim_qcom_power_write8(0,0,16,0x25a,0)!=0);
 }
 
 static void TestV2(void)
@@ -266,6 +272,27 @@ static void TestMmioDispatch(void)
     assert(kshim_qcom_key_read32_status(NULL, (uintptr_t)&Register, NULL) != 0);
 }
 
+static void TestPowerWriteV5(void)
+{
+    SpmiDeviceContext controller={0};
+    kshim_test_spmi_core[0]=0x50000000U;kshim_test_spmi_core[1]=1;
+    kshim_test_spmi_core[0x900/4]=0x308U<<8;kshim_test_spmi_config[0x700/4]=2;
+    controller.ActiveEE=2;
+    controller.Regions[SPMI_MEMORY_REGION_TYPE_CORE]=(SpmiMemoryRegion){(uintptr_t)kshim_test_spmi_core,sizeof kshim_test_spmi_core};
+    controller.Regions[SPMI_MEMORY_REGION_TYPE_CH_SLAVES]=(SpmiMemoryRegion){(uintptr_t)kshim_test_spmi_observer,sizeof kshim_test_spmi_observer};
+    controller.Regions[SPMI_MEMORY_REGION_TYPE_OBSERVER]=controller.Regions[SPMI_MEMORY_REGION_TYPE_CH_SLAVES];
+    controller.Regions[SPMI_MEMORY_REGION_TYPE_CONFIG]=(SpmiMemoryRegion){(uintptr_t)kshim_test_spmi_config,sizeof kshim_test_spmi_config};
+    controller.Regions[SPMI_MEMORY_REGION_TYPE_INTERRUPT]=controller.Regions[SPMI_MEMORY_REGION_TYPE_CONFIG];
+    SpmiDeviceContext *contexts[]={&controller};kshim_qcom_spmi_bind(contexts,1);
+    uint32_t *channel=Response(0,3,1,0);assert(!kshim_qcom_power_write8(0,0,3,0x85a,0xa7));
+    assert(channel[0x10/4]==0xa7&&ElapsedUs==3);
+    /* Denied commands return an error, and read-only paths cannot touch WDATA. */
+    (void)Response(0,2,5,0);assert(kshim_qcom_power_write8(0,0,3,0x85a,0)!=0);
+    uint8_t value;Response(0x20000,1,1,0x44);assert(!kshim_qcom_power_read8(0,0,3,0x801,&value)&&value==0x44);
+    controller.Regions[SPMI_MEMORY_REGION_TYPE_CH_SLAVES].Size=0x10;
+    assert(kshim_qcom_power_write8(0,0,3,0x85b,0x80)!=0);
+}
+
 static void RunIsolated(const char *Name, void (*Test)(void))
 {
     /* Each child starts with the production driver's static context uninitialized. */
@@ -287,6 +314,7 @@ static void RunIsolated(const char *Name, void (*Test)(void))
 
 int main(void)
 {
+    RunIsolated("PON v5 write, denied and short-window protections", TestPowerWriteV5);
     RunIsolated("v1 channel 5 and full SID/address command", TestV1);
     RunIsolated("v2 APID 511 and observer layout", TestV2);
     RunIsolated("v3 APID 511 and observer layout", TestV3);

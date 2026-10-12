@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include <qcom_dt.h>
+#include <power.h>
 #include <config.h>
 #include <qcom_keys_fdt.h>
 #include <qcom_key_platform.h>
@@ -162,6 +163,7 @@ int kshim_resources_init(const void *f, size_t available)
             ui_scratch_type(f, resources.ui_scratch), KSHIM_MMU_READ | KSHIM_MMU_WRITE))
         resources.ui_scratch = (struct dt_range){0};
 #endif
+    if (kshim_power_map_resources(&resources)) return -1;
     initialized = true;
     return 0;
 }

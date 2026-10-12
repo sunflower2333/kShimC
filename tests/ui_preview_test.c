@@ -82,10 +82,11 @@ static void TraceConfirmation(const char *Stage, const kshim_lvgl_t *Ui)
 {
     printf("CONFIRM %s: index=%d ready=%u elapsed=%u\n", Stage,
            Ui->PendingIndex, (unsigned)Ui->Ready, (unsigned)Ui->ElapsedMs);
+    lv_obj_t *Target=Ui->BootButton?Ui->BootButton:lv_group_get_focused(Ui->Group);
     printf("CONFIRM %s: animation=%u scale_x=%ld scale_y=%ld running=%u\n", Stage,
-           (unsigned)(lv_anim_get(Ui->BootButton, NULL) != NULL),
-           (long)lv_obj_get_style_transform_scale_x(Ui->BootButton, LV_PART_MAIN),
-           (long)lv_obj_get_style_transform_scale_y(Ui->BootButton, LV_PART_MAIN),
+           (unsigned)(lv_anim_get(Target, NULL) != NULL),
+           (long)lv_obj_get_style_transform_scale_x(Target, LV_PART_MAIN),
+           (long)lv_obj_get_style_transform_scale_y(Target, LV_PART_MAIN),
            (unsigned)lv_anim_count_running());
     fflush(stdout);
 }
@@ -160,7 +161,8 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
         touch.type=KSHIM_TOUCH_EVENT_RELEASE;
         kshim_lvgl_touch(&Ui, &touch);
     } else {
-        assert(lv_obj_send_event(Ui.BootButton, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
+        lv_obj_t *Activation=Ui.BootButton?Ui.BootButton:Third;
+        assert(lv_obj_send_event(Activation, LV_EVENT_CLICKED, NULL) == LV_RESULT_OK);
         TraceConfirmation("requested", &Ui);
         Advance(&Ui, KSHIM_UI_CONFIRM_DURATION_MS / 2U);
         uint64_t ConfirmHash = WritePpm(Directory, "confirm-90ms", &Framebuffer);

@@ -18,3 +18,7 @@ int kshim_qcom_key_read32_status(
 
 #include <Library/spmi.h>
 void kshim_qcom_spmi_bind(SpmiDeviceContext **contexts, unsigned count);
+
+/* Restricted PON adapter used only by the power sequencer. */
+int kshim_qcom_power_read8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t *value);
+int kshim_qcom_power_write8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t value);

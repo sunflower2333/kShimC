@@ -141,3 +141,33 @@ if(KSHIM_TEST_MENU_STYLE STREQUAL "LVGL_DEFAULT")
         CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
         CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
 endif()
+
+# Power driver is tested with fake register/firmware operations, never real MMIO.
+kshim_test(power_test power_test.c "${KSHIM_ROOT}/src/drivers/power.c")
+kshim_test(power_menu_test power_menu_test.c ${KSHIM_TEST_UI_SOURCES})
+target_link_libraries(power_menu_test PRIVATE lvgl kshim_backdrop m)
+target_compile_definitions(power_menu_test PRIVATE CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1
+    CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
+    CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
+kshim_test(power_dt_test power_dt_test.c "${KSHIM_ROOT}/src/dt/power.c")
+target_link_libraries(power_dt_test PRIVATE kshim_dt)
+add_executable(power_preview_test power_preview_test.c ${KSHIM_TEST_UI_SOURCES})
+target_include_directories(power_preview_test PRIVATE "${KSHIM_ROOT}/src/include")
+target_link_libraries(power_preview_test PRIVATE lvgl kshim_backdrop m)
+target_compile_options(power_preview_test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+target_compile_definitions(power_preview_test PRIVATE
+    CONFIG_KSHIM_MENU_STYLE_${KSHIM_TEST_MENU_STYLE}=1
+    CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
+    CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
+
+target_compile_definitions(power_dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\"")
+
+set_tests_properties(power_test power_dt_test power_menu_test PROPERTIES TIMEOUT 60)
+
+if(KSHIM_TEST_MENU_STYLE STREQUAL "CLOVER")
+    kshim_test(menu_clover_picker_test menu_clover_picker_test.c ${KSHIM_TEST_UI_SOURCES})
+    target_link_libraries(menu_clover_picker_test PRIVATE lvgl kshim_backdrop m)
+    target_compile_definitions(menu_clover_picker_test PRIVATE CONFIG_KSHIM_MENU_STYLE_CLOVER=1
+        CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
+        CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
+endif()

@@ -168,6 +168,34 @@ class ThemeReviewTest(unittest.TestCase):
             self.assertEqual((out / 'new' / f['path']).read_bytes(), new['bytes'][f['key']])
         with self.assertRaisesRegex(ValueError, 'exists'): self.m.write_review(new, out, old)
 
+    def test_power_frame_matrix_uses_its_own_stages(self):
+        import inspect
+        self.assertIn('stages', inspect.signature(self.m.read_set).parameters)
+        root = self.fixture()
+        stages = ('power-controls', 'restart-options', 'edl-confirm', 'shutdown-confirm')
+        for directory in root.glob('*/previews'):
+            manifest = json.loads((directory / 'manifest.json').read_text())
+            for item, stage in zip(manifest, stages):
+                old = item['file']
+                item['file'] = 'menu-2x2-' + stage + '.png'
+                (directory / old).rename(directory / item['file'])
+            (directory / 'manifest.json').write_text(json.dumps(manifest))
+            directory.rename(directory.with_name('power-previews'))
+        data = self.m.read_set(root, themes=THEMES, sizes=SIZES, stages=stages,
+                               preview_dir='power-previews')
+        data['power_ui'] = True
+        out = self.root / 'power-review'
+        result = self.m.write_review(data, out)
+        self.assertTrue(result['power_ui'])
+        text = (out / 'index.html').read_text()
+        dataset = json.loads(text.split('<script id="dataset" type="application/json">')[1].split('</script>')[0])
+        self.assertEqual(dataset['stages'], list(stages))
+        self.assertEqual(len(dataset['images']['new']), 8)
+        self.assertIn('power-previews', next(iter(dataset['images']['new'].values())))
+        # A power artifact cannot be passed off as a boot animation matrix.
+        with self.assertRaises(OSError):
+            self.read(root)
+
     def test_current_only_does_not_claim_flat_comparison(self):
         out = self.root / 'review'
         result = self.m.write_review(self.read(self.fixture()), out)

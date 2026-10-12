@@ -17,7 +17,8 @@ static inline void KshimTestDesignLayout(kshim_lvgl_t *ui) {
     assert(kshim_design_layout(&mMenuDesign,ui->Framebuffer->width,ui->Framebuffer->height,
         (uint32_t)ui->EntryCount,KshimTestDesignScale(),&g)==0);
     lv_obj_t *panel=lv_obj_get_parent(ui->List);
-    lv_area_t pa,li,bo; lv_obj_get_coords(panel,&pa);lv_obj_get_coords(ui->List,&li);lv_obj_get_coords(ui->BootButton,&bo);
+    lv_area_t pa,li,bo; lv_obj_get_coords(panel,&pa);lv_obj_get_coords(ui->List,&li);
+    if(ui->BootButton) lv_obj_get_coords(ui->BootButton,&bo);
     if(pa.x1!=g.panel.x || pa.y1!=g.panel.y)
         fprintf(stderr,"GEOMETRY %s %ux%u count=%u compact=%u: panel=(%ld,%ld) expected=(%ld,%ld) root-scroll=(%ld,%ld) translation=(%ld,%ld)\n",
             mMenuDesign.name,(unsigned)ui->Framebuffer->width,(unsigned)ui->Framebuffer->height,
@@ -30,9 +31,14 @@ static inline void KshimTestDesignLayout(kshim_lvgl_t *ui) {
     assert(lv_obj_get_width(panel)==g.panel.w && lv_obj_get_height(panel)==g.panel.h);
     assert(pa.x1>=0 && pa.y1>=0 && pa.x2<(int32_t)ui->Framebuffer->width && pa.y2<(int32_t)ui->Framebuffer->height);
     assert(li.x1==pa.x1+g.list.x && li.y1==pa.y1+g.list.y);
-    assert(bo.x1==pa.x1+g.boot.x && bo.y1==pa.y1+g.boot.y);
-    assert(bo.x2<=pa.x2 && bo.y2<=pa.y2);
-    if(g.split) assert(bo.x1>li.x2); else assert(bo.y1>li.y2);
+    if(mMenuDesign.kind==KSHIM_DESIGN_CLOVER) {
+        assert(ui->BootButton==NULL && g.boot.w==0 && g.boot.h==0);
+    } else {
+        assert(ui->BootButton);
+        assert(bo.x1==pa.x1+g.boot.x && bo.y1==pa.y1+g.boot.y);
+        assert(bo.x2<=pa.x2 && bo.y2<=pa.y2);
+        if(g.split) assert(bo.x1>li.x2); else assert(bo.y1>li.y2);
+    }
     assert(lv_obj_get_scroll_dir(ui->List)==(g.horizontal?LV_DIR_HOR:LV_DIR_VER));
     for(unsigned i=0;i<ui->EntryCount;i++) {
         lv_obj_t *row=lv_group_get_obj_by_index(ui->Group,i);
@@ -78,7 +84,8 @@ static inline void KshimTestDesignChrome(kshim_lvgl_t *ui) {
     KshimTestDesignLayout(ui);
     KshimTestColor(lv_obj_get_style_text_color(a,LV_PART_MAIN),mMenuStyle.FocusText);
     KshimTestColor(lv_obj_get_style_text_color(b,LV_PART_MAIN),mMenuStyle.Text);
-    KshimTestColor(lv_obj_get_style_bg_color(ui->BootButton,LV_PART_MAIN),mMenuStyle.Boot);
+    if(mMenuDesign.kind==KSHIM_DESIGN_CLOVER) assert(ui->BootButton==NULL);
+    else KshimTestColor(lv_obj_get_style_bg_color(ui->BootButton,LV_PART_MAIN),mMenuStyle.Boot);
     lv_obj_add_state(a,LV_STATE_PRESSED);
     KshimTestColor(lv_obj_get_style_text_color(a,LV_PART_MAIN),mMenuStyle.Modern?mMenuStyle.PressText:mMenuStyle.FocusText);
     lv_obj_remove_state(a,LV_STATE_PRESSED);

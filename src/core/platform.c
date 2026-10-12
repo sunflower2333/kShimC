@@ -18,6 +18,7 @@
 #include <qcom_keys.h>
 #include <qcom_keys_fdt.h>
 #include <uefi_boot.h>
+#include <power.h>
 
 __attribute__((weak)) int kshim_menu_activate(kshim_menu_action_t action)
 { (void)action; return -1; }
@@ -205,13 +206,26 @@ int kshim_platform_select(uint64_t fdt, const char *const *names, size_t count,
 #if CONFIG_KSHIM_FRAMEBUFFER && CONFIG_KSHIM_LVGL
     int status = start_menu((const void *)(uintptr_t)fdt);
     if (!status && kshim_lvgl_set_entries(&Lvgl, names, count, initial) == 0) {
+        uint32_t power_caps = kshim_platform_power_init((const void *)(uintptr_t)fdt);
+        if (kshim_lvgl_set_power_capabilities(&Lvgl, power_caps))
+            kshim_lvgl_set_status(&Lvgl, "Power controls unavailable");
         kshim_lvgl_set_countdown(&Lvgl, timeout_ms);
         uint64_t start = get_current_time();
         for (;;) {
             menu_frame();
+            kshim_power_action_t action = kshim_lvgl_take_power(&Lvgl);
+            if (action != KSHIM_POWER_NONE) {
+                /* Never reset from an LVGL callback or leave active bus/render
+                 * workers accessing MMIO after the PMIC arbiter is stopped. */
+                int power_status = kshim_platform_prepare_handoff();
+                if (!power_status) power_status = kshim_platform_power_execute(action);
+                printf("Power action %u returned (%d); refusing payload handoff\n",
+                       (unsigned)action, power_status);
+                for (;;) (void)delay(100000);
+            }
             int index = kshim_lvgl_take_index(&Lvgl);
             if (index >= 0 && (size_t)index < count) { *selected = index; break; }
-            if (timeout_ms && get_current_time() - start >= timeout_ms) { *selected = initial; break; }
+            if (timeout_ms && !Lvgl.AutobootCancelled && get_current_time() - start >= timeout_ms) { *selected = initial; break; }
             (void)delay(5000);
         }
         return kshim_platform_prepare_handoff() ? -2 : 0;

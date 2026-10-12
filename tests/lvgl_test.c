@@ -7,6 +7,7 @@
 
 #include <lvgl.h>
 #include "../src/ui/menu_style.h"
+#include "../src/ui/menu_design.h"
 #include <lvgl_port.h>
 #include <ui_font.h>
 
@@ -110,7 +111,11 @@ static uint64_t FrameHash(const test_ui_t *Test)
         for (unsigned X = 0; X < Test->content_bytes; X++) {
             uint8_t Value = Frame[(size_t)Y * Test->framebuffer.stride + X];
             Hash = (Hash ^ Value) * UINT64_C(1099511628211);
-            Changed += Value != 0U;
+            /* A monochrome byte packs eight pixels. Sparse icon/text menus
+             * must be assessed in pixels, not solid-button byte density. */
+            if(Test->framebuffer.bpp==1U) {
+                for(unsigned bit=0;bit<8;bit++) Changed += (Value>>bit)&1U;
+            } else Changed += Value != 0U;
         }
     }
     assert(Changed > Test->height);
@@ -181,7 +186,7 @@ static void TestDefaultKeys(void)
     assert(kshim_lvgl_take_selection(&Test.ui) == KSHIM_MENU_NONE);
     assert(kshim_lvgl_take_index(&Test.ui) == 1);
     assert(kshim_lvgl_take_index(&Test.ui) == -1);
-    const lv_anim_t *Confirm = lv_anim_get(Test.ui.BootButton, NULL);
+    const lv_anim_t *Confirm = lv_anim_get(Test.ui.BootButton?Test.ui.BootButton:Second, NULL);
     if (KSHIM_MENU_IS_NATIVE) assert(Confirm == NULL);
     else assert(Confirm != NULL &&
            Confirm->duration == KSHIM_UI_CONFIRM_DURATION_MS);
@@ -241,9 +246,13 @@ static void TestDynamicAndTouch(void)
 
     lv_obj_t *Focused = lv_group_get_focused(Test.ui.Group);
     Touch(&Test.ui, Focused);
-    assert(kshim_lvgl_take_index(&Test.ui) == -1);
-    Touch(&Test.ui, Test.ui.BootButton);
-    assert(kshim_lvgl_take_index(&Test.ui) == 38);
+    if(mMenuDesign.kind==KSHIM_DESIGN_CLOVER) {
+        assert(Test.ui.BootButton==NULL && kshim_lvgl_take_index(&Test.ui)==38);
+    } else {
+        assert(kshim_lvgl_take_index(&Test.ui) == -1);
+        Touch(&Test.ui, Test.ui.BootButton);
+        assert(kshim_lvgl_take_index(&Test.ui) == 38);
+    }
 
     lv_area_t ListArea;
     lv_area_t FocusedArea;
@@ -286,15 +295,16 @@ static void TestBatchedTouchAndCancel(void)
      * between ENTER and LEAVE. The old sampled pointer loses this tap. */
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_ENTER, X, Y) == 0);
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_LEAVE, X, Y) == 0);
+    lv_obj_t *Activation=Test.ui.BootButton?Test.ui.BootButton:Second;
     if(lv_group_get_focused(Test.ui.Group) != Second) {
         lv_area_t l,p,b;lv_obj_get_coords(Test.ui.List,&l);
-        lv_obj_get_coords(lv_obj_get_parent(Test.ui.List),&p);lv_obj_get_coords(Test.ui.BootButton,&b);
+        lv_obj_get_coords(lv_obj_get_parent(Test.ui.List),&p);lv_obj_get_coords(Activation,&b);
         fprintf(stderr,"TOUCH %s XY=%u,%u row=%ld,%ld..%ld,%ld list=%ld,%ld..%ld,%ld panel=%ld,%ld boot=%ld,%ld scroll=%ld\n",mMenuStyle.Name,X,Y,(long)Area.x1,(long)Area.y1,(long)Area.x2,(long)Area.y2,(long)l.x1,(long)l.y1,(long)l.x2,(long)l.y2,(long)p.x1,(long)p.y1,(long)b.x1,(long)b.y1,(long)lv_obj_get_scroll_y(Test.ui.List));
     }
     assert(lv_group_get_focused(Test.ui.Group) == Second);
-    assert(kshim_lvgl_take_index(&Test.ui) == -1);
+    assert(kshim_lvgl_take_index(&Test.ui) == (mMenuDesign.kind==KSHIM_DESIGN_CLOVER?1:-1));
 
-    lv_obj_get_coords(Test.ui.BootButton, &Area);
+    lv_obj_get_coords(Activation, &Area);
     X = (uint32_t)((Area.x1 + Area.x2) / 2);
     Y = (uint32_t)((Area.y1 + Area.y2) / 2);
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_ENTER, X, Y) == 0);
@@ -302,7 +312,7 @@ static void TestBatchedTouchAndCancel(void)
     Advance(&Test.ui, 48U);
     assert(kshim_lvgl_take_index(&Test.ui) == -1);
     assert(Test.ui.PointerPressed == 0);
-    assert(!lv_obj_has_state(Test.ui.BootButton, LV_STATE_PRESSED));
+    assert(!lv_obj_has_state(Activation, LV_STATE_PRESSED));
 
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_ENTER, X, Y) == 0);
     assert(kshim_touch_update(&TouchState, 0, KSHIM_TOUCH_CONTACT_LEAVE, X, Y) == 0);

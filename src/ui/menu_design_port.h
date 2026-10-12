@@ -216,8 +216,9 @@ static int KshimDesignEntry(lv_obj_t *button,size_t index) {
     return 0;
 }
 static int KshimDesignRelayout(void) {
-    if(!mContext || !mFramebuffer || !mPanel || !mTitle || !mStatus || !mList || !mBootButton) return -1;
-    if(kshim_design_layout(&mMenuDesign,mFramebuffer->width,mFramebuffer->height,
+    if(!mContext || !mFramebuffer || !mPanel || !mTitle || !mStatus || !mList ||
+       (!mBootButton && mMenuDesign.kind!=KSHIM_DESIGN_CLOVER)) return -1;
+    if(kshim_design_layout(&mMenuDesign,mFramebuffer->width,KshimContentHeight(),
         (uint32_t)mContext->EntryCount,KshimDesignScaleOverride(),&mDesignGeometry)!=0) return -2;
     KshimDesignPlace(mPanel,mDesignGeometry.panel);
     lv_obj_set_style_radius(mPanel,mDesignGeometry.compact?0:KshimDesignPx(mMenuDesign.panel_radius),0);
@@ -230,7 +231,7 @@ static int KshimDesignRelayout(void) {
     KshimDesignPlace(mTitle,mDesignGeometry.title);
     KshimDesignPlace(mStatus,mDesignGeometry.status);
     KshimDesignPlace(mList,mDesignGeometry.list);
-    KshimDesignPlace(mBootButton,mDesignGeometry.boot);
+    if(mBootButton) KshimDesignPlace(mBootButton,mDesignGeometry.boot);
     lv_obj_set_style_text_font(mStatus,mDesignGeometry.split?mTitleFont:mStatusFont,0);
     lv_obj_set_layout(mList,0);
     lv_obj_set_style_pad_all(mList,0,0);
@@ -249,7 +250,7 @@ static int KshimDesignRelayout(void) {
     }
     int32_t radius=mMenuDesign.boot_radius==255?mDesignGeometry.boot.h/2:KshimDesignPx(mMenuDesign.boot_radius);
     radius=kshim_design_min(radius,mDesignGeometry.boot.h/2);
-    lv_obj_set_style_radius(mBootButton,mDesignGeometry.compact?0:radius,0);
+    if(mBootButton) lv_obj_set_style_radius(mBootButton,mDesignGeometry.compact?0:radius,0);
     if(mDetail) KshimDesignPlace(mDetail,mDesignGeometry.split?mDesignGeometry.detail:(kshim_design_rect_t){0});
     KshimNewThemeRelayout();
     lv_obj_update_layout(lv_screen_active());
@@ -286,6 +287,7 @@ static void KshimDesignDecorate(lv_obj_t *screen) {
     lv_obj_set_style_shadow_opa(mPanel,32,0);
     lv_obj_set_style_shadow_offset_y(mPanel,mMenuDesign.panel_shadow/4,0);
     lv_obj_add_event_cb(mPanel,KshimDesignPanelDraw,LV_EVENT_DRAW_MAIN,NULL);
+    if(!mBootButton) return;
     lv_obj_set_style_shadow_width(mBootButton,0,0);
     lv_obj_set_style_shadow_width(mBootButton,0,LV_STATE_PRESSED);
     lv_obj_t *label=lv_obj_get_child(mBootButton,0);

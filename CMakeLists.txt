@@ -118,6 +118,7 @@ include_directories(${INCLUDE_DIRS})
 
 # Define the executable target, including assembly and C source files
 set(SRC_FILES
+    src/core/power.c src/drivers/power.c src/dt/power.c src/dt/spmi.c
     src/core/main.c src/core/platform.c src/core/uefi_boot.c src/core/picoport.c
     src/dt/dt.c src/dt/console.c src/dt/resources.c
     src/drivers/console.c src/drivers/pl011.c src/drivers/keys.c
@@ -128,14 +129,15 @@ set(SRC_FILES
     lib/libfdt/fdt.c lib/libfdt/fdt_check.c lib/libfdt/fdt_ro.c lib/libfdt/fdt_addresses.c
     lib/libfdt/fdt_rw.c lib/libfdt/fdt_sw.c lib/libfdt/fdt_wip.c lib/libfdt/fdt_empty_tree.c lib/libfdt/fdt_strerror.c)
 
-if(CONFIG_QCOM_KEYS OR CONFIG_QCOM_SPMI)
-    list(APPEND SRC_FILES src/dt/spmi.c)
-endif()
+
 if(CONFIG_QCOM_KEYS OR CONFIG_KSHIM_TOUCH)
     list(APPEND SRC_FILES src/dt/gpio.c)
 endif()
 if(CONFIG_QCOM_KEYS)
-    list(APPEND SRC_FILES src/dt/keys.c src/drivers/qcom_keys.c)
+    list(APPEND SRC_FILES src/dt/keys.c)
+endif()
+if(CONFIG_QCOM_KEYS OR CONFIG_QCOM_SPMI)
+    list(APPEND SRC_FILES src/drivers/qcom_keys.c)
 endif()
 if(CONFIG_KSHIM_TOUCH)
     list(APPEND SRC_FILES src/dt/touch.c src/drivers/st_ftm4.c src/drivers/st_ftm5.c)

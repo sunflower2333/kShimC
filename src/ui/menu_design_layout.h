@@ -7,7 +7,7 @@
 
 typedef struct { int32_t x,y,w,h; } kshim_design_rect_t;
 typedef struct {
-    kshim_design_rect_t panel,title,status,list,boot,detail;
+    kshim_design_rect_t panel,title,status,list,boot,detail,tools;
     kshim_design_rect_t items[KSHIM_DESIGN_MAX_ENTRIES];
     int32_t content_width,content_height,row_height,icon_size,gutter,gap;
     uint16_t scale_q8;
@@ -34,6 +34,7 @@ static inline void kshim_design_compact(const kshim_menu_design_t *d,
     g->status=(kshim_design_rect_t){0}; g->detail=(kshim_design_rect_t){0};
     g->boot=(kshim_design_rect_t){p,g->panel.h-p-bh,g->panel.w-2*p,bh};
     g->list=(kshim_design_rect_t){p,p,g->panel.w-2*p,g->boot.y-2*p};
+    if(d->kind==KSHIM_DESIGN_CLOVER) { g->tools=g->boot; g->boot=(kshim_design_rect_t){0}; }
     g->row_height=kshim_design_max(12,kshim_design_min(kshim_design_px(d->row_height,g->scale_q8),g->list.h));
     for(uint32_t i=0;i<n;i++) g->items[i]=(kshim_design_rect_t){0,(int32_t)i*g->row_height,g->list.w,g->row_height};
     g->content_width=g->list.w;
@@ -117,6 +118,16 @@ static inline int kshim_design_layout(const kshim_menu_design_t *d,
         g->list.y=p+th+(th?section_gap:0);
         g->list.h=by-section_gap-sh-section_gap-g->list.y;
         g->status=(kshim_design_rect_t){p,g->list.y+g->list.h+section_gap,cw,sh};
+    }
+    /* Clover has two icon rows: boot media, then system utilities, then the
+     * current-entry description. There is no independent Boot control. */
+    if(d->kind==KSHIM_DESIGN_CLOVER) {
+        g->list.y=p+th+(th?section_gap:0);
+        g->list.h=by-section_gap-sh-(sh?section_gap:0)-g->list.y;
+        int32_t ty=g->list.y+g->list.h+section_gap;
+        g->tools=(kshim_design_rect_t){p,ty,cw,bh};
+        g->status=(kshim_design_rect_t){p,ty+bh+(sh?section_gap:0),cw,sh};
+        g->boot=(kshim_design_rect_t){0};
     }
     /* Metro is a page of typography, not a centered modal. */
     if(d->kind==KSHIM_DESIGN_METRO) g->panel.y=margin;

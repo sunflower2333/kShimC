@@ -32,7 +32,7 @@ static int KshimNativeRelayout(void)
 {
     if (!mContext || !mPanel || !mList || !mBootButton) return -1;
     int32_t width = (int32_t)mFramebuffer->width;
-    int32_t height = (int32_t)mFramebuffer->height;
+    int32_t height = (int32_t)KshimContentHeight();
     int32_t edge = width < height ? width : height;
     int32_t margin = edge < 160 ? 2 : lv_dpx(16);
     int32_t pw = kshim_design_min(width - 2 * margin, lv_dpx(720));
@@ -51,7 +51,9 @@ static int KshimNativeRelayout(void)
         (int32_t)mContext->EntryCount * row;
     int32_t ph = kshim_design_min(cap, kshim_design_min(lv_dpx(680), desired));
     lv_obj_set_size(mPanel, pw, ph);
-    lv_obj_center(mPanel);
+    /* Keep native inclusive-area centering and its deferred size updates.
+     * Shift the center only when the optional power toolbar reserves space. */
+    lv_obj_align(mPanel, LV_ALIGN_CENTER, 0, -(int32_t)KshimPowerReserve() / 2);
     if (headings) {
         lv_obj_remove_flag(mTitle, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(mStatus, LV_OBJ_FLAG_HIDDEN);
