@@ -227,3 +227,25 @@ Standalone copy-in validates that its scratch page does not overlap the
 incoming payload, and rejects an unsafe loader placement before writing.
 `tests/boot_emulation.py` checks overlapping and disjoint copies, original
 arguments, stack, BSS, relocations, both UEFI choices and that refusal path.
+
+## License / 许可证
+
+Unless a file carries a different license notice, kShimC's original source code
+is licensed under the **GNU General Public License, version 3 only**
+(`GPL-3.0-only`). See [LICENSE](LICENSE) for the full text.
+
+Third-party code, submodules, and font assets retain their own licenses and
+copyright notices. Existing per-file licenses remain in effect, including MIT,
+libfdt's dual license, the fonts' SIL Open Font License, and the `GPL-2.0-only`
+notices on `src/drivers/st_ftm4.c` and `src/include/st_ftm4.h`.
+Adding the project license does not relicense those files or establish that a
+runtime linking the FTM4 driver can be distributed under GPLv3; that build's
+license compatibility needs separate resolution.
+
+除文件中另有许可声明的部分外，kShimC 原创源码采用 **GNU 通用公共许可证第 3 版**
+（`GPL-3.0-only`），许可全文见 [LICENSE](LICENSE)。
+
+第三方代码、子模块和字库保留各自的许可证及版权声明。文件中已有的 MIT、libfdt 双重许可、
+字体 SIL Open Font License，以及 `src/drivers/st_ftm4.c`、`src/include/st_ftm4.h`
+的 `GPL-2.0-only` 声明继续有效。新增项目许可证不改变这些文件原有的授权；
+包含 FTM4 驱动的运行时是否能按 GPLv3 分发，仍需单独解决许可兼容问题。
