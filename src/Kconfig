@@ -33,7 +33,7 @@ endmenu
 
 menu "Touch input"
     config KSHIM_TOUCH
-        bool "Enable DT-selected ST FTM4/FTM5 touch input"
+        bool "Enable DT-selected ST FTM5 touch input"
         default n
 endmenu
 
