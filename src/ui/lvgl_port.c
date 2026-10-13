@@ -84,16 +84,13 @@ static void KshimPowerProcess(void);
 static void KshimPowerClose(void);
 static void KshimPowerReattach(void);
 static int KshimRebuildEntries(size_t Initial);
-static int KshimPowerIntegrated(void)
+static int KshimPowerReviewed(void)
 {
   return mMenuDesign.kind==KSHIM_DESIGN_FLUENT2 || mMenuDesign.kind==KSHIM_DESIGN_MATERIAL3 ||
       mMenuDesign.kind==KSHIM_DESIGN_TERMINAL || mMenuDesign.kind==KSHIM_DESIGN_CLOVER;
 }
-static uint32_t KshimPowerReserve(void)
-{
-  if (!mContext || !mContext->PowerUiEnabled || !mFramebuffer || KshimPowerIntegrated()) return 0;
-  return clamp_u32(min_u32(mFramebuffer->width,mFramebuffer->height)/12U,32U,80U)+12U;
-}
+/* System operations belong to their theme's chrome, never a framebuffer bar. */
+static uint32_t KshimPowerReserve(void) { return 0; }
 static uint32_t KshimContentHeight(void)
 { return mFramebuffer->height-KshimPowerReserve(); }
 

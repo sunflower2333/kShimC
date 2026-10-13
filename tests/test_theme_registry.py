@@ -36,7 +36,7 @@ class ThemeRegistryTest(unittest.TestCase):
         self.assertEqual(names, set(choices[1].split()))
         workflow = (ROOT / '.github/workflows/menu-styles.yml').read_text()
         matrices = [set(s.replace(',', ' ').split()) for s in re.findall(r'^\s+style: \[([^]]+)\]', workflow, re.M)]
-        self.assertEqual(matrices, [names, {'METRO', 'ADWAITA', 'HOLO', 'LVGL_DEFAULT'}, names - {'FLAT'}])
+        self.assertEqual(matrices, [names, {'METRO', 'ADWAITA', 'HOLO', 'LVGL_DEFAULT', 'CLOVER', 'GLASS', 'SURFACE', 'IOS_HIG'}, names - {'FLAT'}])
 
     def test_retired_implementation_removed(self):
         self.assertFalse((ROOT / 'src/ui/styles/one_ui.h').exists())
@@ -65,6 +65,27 @@ class ThemeRegistryTest(unittest.TestCase):
         self.assertIn('ui.BootButton==NULL', source)
         self.assertIn('focus is not activation', source)
         self.assertIn('scrolling must never activate', source)
+
+
+class PowerPresentationRegistryTest(unittest.TestCase):
+    def test_every_design_family_has_an_explicit_power_profile(self):
+        design = (ROOT / 'src/ui/menu_design.h').read_text()
+        profile = (ROOT / 'src/ui/menu_power_profile.h').read_text()
+        kinds = set(re.findall(r'\b(KSHIM_DESIGN_[A-Z0-9_]+)=\d+', design))
+        cases = set(re.findall(r'case (KSHIM_DESIGN_[A-Z0-9_]+):', profile))
+        self.assertEqual(kinds, cases)
+        self.assertIn('case 0:', profile)  # FLAT is deliberately not a custom descriptor.
+        self.assertIn('default: return (kshim_power_profile_t){0}', profile)
+
+    def test_framebuffer_bottom_bar_is_not_a_fallback(self):
+        port = (ROOT / 'src/ui/lvgl_port.c').read_text()
+        power = (ROOT / 'src/ui/menu_power.h').read_text()
+        self.assertIn('KshimPowerReserve(void) { return 0; }', port)
+        self.assertNotIn('(w-3*gap)/2', power)
+        self.assertNotIn('h-reserve+gap', power)
+        self.assertNotIn('960U', power)
+        self.assertIn('KshimPowerExtendedReattach()', power)
+        self.assertIn('KshimPowerExtendedDialog(action)', power)
 
 if __name__ == '__main__':
     unittest.main()

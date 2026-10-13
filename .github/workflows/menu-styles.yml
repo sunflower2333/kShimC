@@ -157,7 +157,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        style: [METRO, ADWAITA, HOLO, LVGL_DEFAULT]
+        style: [METRO, ADWAITA, HOLO, LVGL_DEFAULT, CLOVER, GLASS, SURFACE, IOS_HIG]
     steps:
       - uses: actions/checkout@v4
         with:

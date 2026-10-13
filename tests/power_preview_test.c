@@ -5,6 +5,26 @@
 #define main kshim_legacy_preview_main
 #include "ui_preview_test.c"
 #undef main
+/* Check the same real-font layout that is photographed, not only fallback
+ * Latin metrics from host tests without a scratch/font buffer. */
+static void review_labels(kshim_lvgl_t *u)
+{
+    lv_obj_t *buttons[]={u->RestartButton,u->PowerOffButton,u->PowerCancelButton,
+        u->PowerConfirmButton,u->PowerModeButtons[0],u->PowerModeButtons[1],u->PowerModeButtons[2]};
+    for(unsigned i=0;i<sizeof buttons/sizeof buttons[0];i++){
+        lv_obj_t *b=buttons[i];if(!b)continue;
+        lv_obj_t *label=lv_obj_get_child(b,0);
+        if(!label||lv_obj_has_flag(label,LV_OBJ_FLAG_HIDDEN))continue;
+        const char *text=lv_label_get_text(label);
+        if(strstr(text,"..."))fprintf(stderr,"power label was ellipsized: %s; label=%d, button=%d, glyphW=%d\n",text,(int)lv_obj_get_width(label),(int)lv_obj_get_width(b),(int)lv_font_get_glyph_width(lv_obj_get_style_text_font(label,LV_PART_MAIN),'W',0));
+        assert(strstr(text,"...")==NULL);
+        int32_t need=lv_text_get_width(text,(uint32_t)strlen(text),
+            lv_obj_get_style_text_font(label,LV_PART_MAIN),lv_obj_get_style_text_letter_space(label,LV_PART_MAIN));
+        int32_t have=lv_obj_get_content_width(label);
+        if(need>have)fprintf(stderr,"power label clipped: %s needs %d, has %d\n",text,(int)need,(int)have);
+        assert(need<=have);
+    }
+}
 static void press(kshim_lvgl_t *u,void *button)
 { assert(button);assert(lv_obj_send_event(button,LV_EVENT_CLICKED,NULL)==LV_RESULT_OK);Advance(u,400); }
 static void power_size(const char *directory,uint32_t width,uint32_t height)
@@ -18,10 +38,10 @@ static void power_size(const char *directory,uint32_t width,uint32_t height)
     const char *entries[]={"Android","UEFI 诊断","Recovery 恢复模式","Factory image","Network rescue"};
     assert(!kshim_lvgl_set_entries(&ui,entries,5,0));
     assert(!kshim_lvgl_set_power_capabilities(&ui,KSHIM_POWER_ALL));Advance(&ui,400);
-    WritePpm(directory,"power-controls",&fb);
-    press(&ui,ui.RestartButton);assert(ui.PowerDialog);WritePpm(directory,"restart-options",&fb);
-    press(&ui,ui.PowerModeButtons[2]);assert(ui.PowerConfirmButton);WritePpm(directory,"edl-confirm",&fb);
-    press(&ui,ui.PowerCancelButton);press(&ui,ui.PowerOffButton);WritePpm(directory,"shutdown-confirm",&fb);
+    review_labels(&ui);WritePpm(directory,"power-controls",&fb);
+    press(&ui,ui.RestartButton);assert(ui.PowerDialog);review_labels(&ui);WritePpm(directory,"restart-options",&fb);
+    press(&ui,ui.PowerModeButtons[2]);assert(ui.PowerConfirmButton);review_labels(&ui);WritePpm(directory,"edl-confirm",&fb);
+    press(&ui,ui.PowerCancelButton);press(&ui,ui.PowerOffButton);review_labels(&ui);WritePpm(directory,"shutdown-confirm",&fb);
     assert(!kshim_lvgl_take_power(&ui)&&kshim_lvgl_take_index(&ui)==-1);
     kshim_lvgl_deinit(&ui);free(pixels);
 }

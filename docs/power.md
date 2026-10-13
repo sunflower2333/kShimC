@@ -66,14 +66,17 @@ These controls do not flash storage, unlock a bootloader or bypass that policy.
 
 ## UI and lifecycle
 
-At viewports of at least 240 by 160 pixels, the boot content reserves a bottom
-strip for Restart and Power off. Below that size the optional toolbar is not
-installed. Unsupported actions are disabled. Existing theme roles are used in
-matched text/background pairs; `LVGL_DEFAULT` keeps the library's native theme.
-Restart opens Warm / Hard / EDL choices, and each operation has a separate
-confirmation. The initial modal focus is always Cancel. Touch cancellation never
-confirms, and the modal has its own keyboard group so volume-key input cannot
-activate a boot entry behind it. Closing the modal restores prior focus.
+At viewports of at least 240 by 160 pixels, Restart and Power off are
+integrated into each theme's existing boot chrome; no physical-screen bottom
+strip is reserved. Smaller framebuffers do not install the optional controls.
+Unsupported actions are disabled. `menu_power_profile.h` declares each family's
+placement and mode-menu structure; `power-ui-complete.md` records all 29 presets.
+`LVGL_DEFAULT` retains native widget state styles. Restart opens Warm / Hard /
+EDL choices; each operation requires its own confirmation. Initial modal focus
+is always Cancel. Touch cancellation never confirms, and the modal has its own
+keyboard group so physical keys cannot activate a boot entry behind it. Closing
+the modal restores prior focus. Clover retains its direct boot-entry activation
+and separate small system-tool row without a redundant Boot button.
 
 Any interaction cancels automatic boot, including opening a power menu. This is
 checked both in the UI countdown and in the platform timeout. Event callbacks

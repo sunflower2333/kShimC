@@ -1,21 +1,23 @@
 #ifndef KSHIM_MENU_POWER_DESIGN_H
 #define KSHIM_MENU_POWER_DESIGN_H
-/* Four presentation adapters. They never execute power operations or change the
+/* Reviewed presentation adapters. They never execute power operations or change the
  * common capability/confirmation state machine. Dimensions are design units. */
 enum { POWER_VIEW_ENTRY=1, POWER_VIEW_ROW, POWER_VIEW_CANCEL, POWER_VIEW_CONFIRM };
 static lv_obj_t *KshimPowerButton(lv_obj_t *,const char *,unsigned,lv_group_t *);
+static int32_t KshimPowerPx(uint32_t);
 static void KshimPowerGlyphDraw(lv_event_t *e)
 {
     lv_obj_t *b=lv_event_get_target_obj(e);
     unsigned data=(unsigned)(uintptr_t)lv_event_get_user_data(e),command=data&255U,role=data>>8;
+    int tile=(role&16U)!=0;role&=15U;
     int clover=mMenuDesign.kind==KSHIM_DESIGN_CLOVER;
     lv_area_t a;lv_obj_get_coords(b,&a);
     int32_t w=lv_obj_get_width(b),h=lv_obj_get_height(b);
-    int32_t size=KshimDesignPx(clover?(role==POWER_VIEW_ROW?48:24):20);
+    int32_t size=KshimPowerPx(tile?32:clover?(role==POWER_VIEW_ROW?48:24):20);
     size=kshim_design_min(size,kshim_design_min(w-8,h-8));if(size<8)return;
-    int32_t x=a.x1+KshimDesignPx(12),y=a.y1+(h-size)/2;
-    if(role==POWER_VIEW_ENTRY&&mMenuDesign.kind==KSHIM_DESIGN_FLUENT2)x=a.x1+(w-size)/2;
-    if(clover){x=a.x1+(w-size)/2;y=role==POWER_VIEW_ENTRY?a.y1+(h-size)/2:a.y1+KshimDesignPx(18);}
+    int32_t x=a.x1+KshimPowerPx(12),y=a.y1+(h-size)/2;
+    if(role==POWER_VIEW_ENTRY&&KshimPowerProfile().icon_entry==1)x=a.x1+(w-size)/2;
+    if(clover||tile){x=a.x1+(w-size)/2;y=role==POWER_VIEW_ENTRY?a.y1+(h-size)/2:a.y1+KshimPowerPx(tile?12:18);}
     uint32_t ink=lv_color_to_u32(lv_obj_get_style_text_color(b,LV_PART_MAIN))&0xffffffU;
     lv_opa_t opa=lv_obj_get_style_opa_recursive(b,LV_PART_MAIN);
     int32_t stroke=KshimDesignStroke(clover?2:1);if(stroke<2&&size>=24)stroke=2;
@@ -43,7 +45,7 @@ static void KshimPowerGlyphDraw(lv_event_t *e)
         }
     }
     if(clover&&lv_obj_has_state(b,LV_STATE_FOCUSED))
-        KshimSymbolCorners(e,mMenuStyle.FocusBorder,opa,a.x1+2,a.y1+2,w-4,h-4,KshimDesignPx(7),stroke);
+        KshimSymbolCorners(e,mMenuStyle.FocusBorder,opa,a.x1+2,a.y1+2,w-4,h-4,KshimPowerPx(7),stroke);
 }
 static void KshimPowerThemeStyle(lv_obj_t *b,unsigned command,unsigned role)
 {
@@ -85,8 +87,8 @@ static void KshimPowerThemeStyle(lv_obj_t *b,unsigned command,unsigned role)
     lv_obj_center(label);
     if(terminal){
         if(role==POWER_VIEW_ENTRY)lv_label_set_text(label,command==POWER_RESTART?"[restart]":"[poweroff]");
-        if(role==POWER_VIEW_CANCEL)lv_label_set_text(label,"[ Cancel ]");
-        if(role==POWER_VIEW_CONFIRM)lv_label_set_text(label,"[ Execute ]");
+        if(role==POWER_VIEW_CANCEL)lv_label_set_text(label,width>=(int32_t)lv_font_get_glyph_width(mStatusFont,'W',0)*10?"[ Cancel ]":"Back");
+        if(role==POWER_VIEW_CONFIRM)lv_label_set_text(label,width>=(int32_t)lv_font_get_glyph_width(mStatusFont,'W',0)*11?"[ Execute ]":"Run");
         if(role==POWER_VIEW_ROW){
             static const char *cmds[]={"[1] reboot --warm","[2] reboot --hard","[3] reboot --edl"};
             lv_label_set_text(label,cmds[command-POWER_WARM]);
@@ -258,7 +260,9 @@ static int KshimPowerThemeDialog(kshim_power_action_t action)
             else lv_obj_add_state(b,LV_STATE_DISABLED);
         }
     }
-    int32_t buttonw=kshim_design_min((inner-gap)/2,KshimDesignPx(terminal?160:112));
+    int32_t target=KshimDesignPx(terminal?160:112);
+    if(terminal)target=kshim_design_max(target,(int32_t)lv_font_get_glyph_width(mStatusFont,'W',0)*11+KshimDesignPx(8));
+    int32_t buttonw=kshim_design_min((inner-gap)/2,target);
     lv_obj_t *cancel=KshimPowerButton(box,"Cancel",POWER_CANCEL,mPowerGroup);if(!cancel)return -1;
     lv_obj_set_size(cancel,buttonw,buttonh);
     int32_t cancelx=action?bw-pad-2*buttonw-gap:clover?(bw-buttonw)/2:bw-pad-buttonw;

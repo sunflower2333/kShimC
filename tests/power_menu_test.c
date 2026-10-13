@@ -6,10 +6,10 @@
 #include <lvgl.h>
 #include <lvgl_port.h>
 #include "../src/ui/menu_design.h"
-static int integrated(void) {
-    return mMenuDesign.kind==KSHIM_DESIGN_FLUENT2 || mMenuDesign.kind==KSHIM_DESIGN_MATERIAL3 ||
-           mMenuDesign.kind==KSHIM_DESIGN_TERMINAL || mMenuDesign.kind==KSHIM_DESIGN_CLOVER;
-}
+#include "../src/ui/menu_power_profile.h"
+/* Every selectable theme must place tools in its own chrome. */
+static int integrated(void) { return 1; }
+
 static int separate(lv_area_t a,lv_area_t b) {
     return a.x2<b.x1 || b.x2<a.x1 || a.y2<b.y1 || b.y2<a.y1;
 }
@@ -49,7 +49,11 @@ static void check(unsigned w,unsigned h){
         assert(separate(a,b)&&separate(a,list)&&separate(b,list));
         if(mMenuDesign.kind==KSHIM_DESIGN_CLOVER) {
             assert(!u.BootButton && a.y1>list.y2 && b.y1==a.y1);
-        }else assert(separate(a,boot)&&separate(b,boot));
+        }else {
+            if(!separate(a,boot)||!separate(b,boot))
+                fprintf(stderr,"tools overlap Boot at %ux%u: restart=%d..%d off=%d..%d boot=%d..%d\n",w,h,a.x1,a.x2,b.x1,b.x2,boot.x1,boot.x2);
+            assert(separate(a,boot)&&separate(b,boot));
+        }
         if(w>=720)assert(lv_area_get_width(&a)<(int)w/3&&lv_area_get_width(&b)<(int)w/3);
     } else assert(p.y2<a.y1);
     assert(lv_group_get_obj_count(u.Group)==5);
@@ -66,8 +70,26 @@ static void check(unsigned w,unsigned h){
             assert(lv_obj_get_width(label)>=80 && "mode label is clipped before the layout resolves");
         }
     }
+    if(w>=720&&h>=720){
+        kshim_power_profile_t profile=KshimPowerProfile();
+        lv_area_t first,last,box;
+        lv_obj_get_coords(u.PowerModeButtons[0],&first);lv_obj_get_coords(u.PowerModeButtons[2],&last);
+        lv_obj_get_coords(lv_obj_get_child(u.PowerDialog,0),&box);
+        if(profile.menu==POWER_MENU_SHEET)assert(box.y1>(int)h/2);
+        if(profile.menu==POWER_MENU_TILES)assert(first.y1==last.y1 && first.x2<last.x1);
+        if(profile.menu==POWER_MENU_BENTO)assert(first.y2<last.y1 && lv_area_get_width(&first)>lv_area_get_width(&last));
+        if(profile.look==POWER_LOOK_METRO)assert(lv_obj_get_style_bg_opa(u.PowerDialog,LV_PART_MAIN)==LV_OPA_COVER);
+    }
     click(&u,u.PowerModeButtons[2]);assert(u.PowerConfirmButton&&u.PowerCancelButton);
     assert(lv_group_get_focused(lv_indev_get_group(u.Input))==u.PowerCancelButton);
+    /* A text-only execution action must not inherit its background as ink. */
+    lv_obj_t *cb=u.PowerConfirmButton;
+    lv_obj_t *background=lv_obj_get_parent(cb);
+    lv_color_t ink=lv_obj_get_style_text_color(cb,LV_PART_MAIN);
+    lv_color_t paper=lv_obj_get_style_bg_opa(cb,LV_PART_MAIN)?
+        lv_obj_get_style_bg_color(cb,LV_PART_MAIN):lv_obj_get_style_bg_color(background,LV_PART_MAIN);
+    assert(!lv_color_eq(ink,paper) && "execution text is invisible on its surface");
+
     if(integrated())assert(lv_obj_get_style_outline_width(u.PowerCancelButton,LV_PART_MAIN)>0 &&
         "Cancel-first keyboard focus must have a visible cue");
     click(&u,u.PowerCancelButton);assert(!u.PowerDialog&&!kshim_lvgl_take_power(&u));

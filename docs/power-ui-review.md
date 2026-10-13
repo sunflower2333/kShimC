@@ -1,3 +1,5 @@
+> Historical first-four-family review. Superseded by [all-preset integration](power-ui-complete.md); the earlier limited scope and generic fallback no longer describe current code.
+
 # Power UI design review — first four visual families
 
 This changes presentation, not Qualcomm sequencing. It is a visual-review

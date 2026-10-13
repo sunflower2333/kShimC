@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../src/ui/menu_design_layout.h"
+#include "../src/ui/menu_power_profile.h"
 #ifndef EXPECTED_STYLE
 #define EXPECTED_STYLE "FLAT"
 #endif
@@ -57,6 +58,7 @@ int main(void) {
     assert(kshim_design_stroke(2, 96)==1);
     assert(kshim_design_stroke(1, 512)==2);
     assert(strcmp(mMenuDesign.name,EXPECTED_STYLE)==0);
+    assert(KshimPowerProfile().width >= 280 && "every theme needs an explicit power presentation");
     if(!mMenuDesign.enabled) {
         assert(!strcmp(EXPECTED_STYLE,"FLAT") || !strcmp(EXPECTED_STYLE,"LVGL_DEFAULT"));
         printf("%s: custom design bypass\n",EXPECTED_STYLE); return 0;
