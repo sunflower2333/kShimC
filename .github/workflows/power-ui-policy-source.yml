@@ -1,0 +1,29 @@
+name: Power UI policy source
+on:
+  push:
+    branches: [feature/2610]
+    paths: [.github/workflows/power-ui-policy-source.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 85bc7eac797caf25271742b6856c77ebe83f4ef7
+          persist-credentials: false
+      - name: Export exact tracked files for reconciliation
+        run: |
+          mkdir -p /tmp/power-policy-source
+          git rev-parse HEAD > /tmp/power-policy-source/commit.txt
+          git ls-tree -r HEAD > /tmp/power-policy-source/tree.txt
+          git archive --format=tar.gz HEAD > /tmp/power-policy-source/source.tar.gz
+          git bundle create /tmp/power-policy-source/repo.bundle HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: power-policy-source
+          path: /tmp/power-policy-source/
+          if-no-files-found: error
+          retention-days: 3
