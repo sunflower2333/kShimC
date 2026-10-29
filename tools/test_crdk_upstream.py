@@ -30,7 +30,7 @@ def main():
              "Library/GeniSeLib/geni_resources.c", "Library/ClockLib/clock_poll.c",
              "Library/RpmhLib/rpmh_poll.c", "Library/CmdDBLib/cmddb_bounded.c",
              "Library/DebugUartLib/debug_uart_poll.c", "Library/DisplayLib/splash.c",
-             "Driver/I2CCrDxe/I2CCrDxe.c", "Target/Sm8450/CrQupTarget.c"]
+             "Library/GpioLib/gpio.c", "Library/RpmhLib/rpmh.c"]
     cmd = [args.cross, "-std=gnu11", "-fshort-wchar", "-ffreestanding", "-fsyntax-only",
            "-Werror=implicit-function-declaration", "-I" + str(source / "Include"),
            "-I" + str(edk / "MdePkg/Include"), "-I" + str(edk / "MdePkg/Include/AArch64"),
@@ -44,7 +44,7 @@ def main():
     results["limits"] = "Host and syntax checks only; no full UEFI/WDK build or hardware execution."
     results["patches"] = json.loads((root / "ports/crdk/UPSTREAM.json").read_text())["patches"]
     (out / "validation.json").write_text(json.dumps(results, indent=2) + "\n")
-    print("AArch64 UEFI syntax: PASS (10 translation units)")
+    print(f"AArch64 UEFI syntax: PASS ({len(files)} translation units)")
 
 
 if __name__ == "__main__":
