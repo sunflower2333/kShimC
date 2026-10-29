@@ -160,8 +160,17 @@ if(CONFIG_KSHIM_LVGL)
     list(APPEND SRC_FILES ${CMAKE_BINARY_DIR}/ui_font_blob.S)
 endif()
 set(CRDK_SPMI ${CONFIG_QCOM_SPMI} CACHE BOOL "" FORCE)
-set(CRDK_GPIO ${CONFIG_QCOM_KEYS} CACHE BOOL "" FORCE)
-set(CRDK_GENI ${CONFIG_KSHIM_TOUCH} CACHE BOOL "" FORCE)
+if(CONFIG_QCOM_KEYS OR CONFIG_BLK_SDHCI)
+    set(CRDK_GPIO ON CACHE BOOL "" FORCE)
+else()
+    set(CRDK_GPIO OFF CACHE BOOL "" FORCE)
+endif()
+# Storage votes rails through the polled CMD DB/RPMh API and uses ClockLib.
+if(CONFIG_KSHIM_TOUCH OR CONFIG_BLK_UFS OR CONFIG_BLK_SDHCI)
+    set(CRDK_GENI ON CACHE BOOL "" FORCE)
+else()
+    set(CRDK_GENI OFF CACHE BOOL "" FORCE)
+endif()
 set(CRDK_DISPLAY ${CONFIG_KSHIM_FRAMEBUFFER} CACHE BOOL "" FORCE)
 # Console type is selected from DT, so UART support remains a capability in every profile.
 set(CRDK_UART ON CACHE BOOL "" FORCE)
@@ -180,6 +189,7 @@ set(KSHIM_UI_LIBRARIES lvgl)
 endif()
 add_subdirectory(ports/crdk)
 target_link_libraries(crdk PRIVATE c)
+include(src/drivers/block/block.cmake)
 
 # Specify the linker script
 set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/src/arch/arm64/aarch64.lds")
@@ -205,6 +215,7 @@ add_dependencies(${OUTPUT_NAME}.elf preprocess_linker_script)
 target_link_libraries(${OUTPUT_NAME}.elf PRIVATE
     "-Wl,--start-group"
     ${KSHIM_UI_LIBRARIES}
+    ${KSHIM_BLOCK_LIBRARIES}
     crdk
     c
     gcc

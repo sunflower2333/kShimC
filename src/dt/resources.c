@@ -5,6 +5,9 @@
 #include <qcom_keys_fdt.h>
 #include <qcom_key_platform.h>
 #include <string.h>
+#if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
+#include <kshim/storage.h>
+#endif
 static struct kshim_resources resources;
 static bool initialized;
 struct kshim_resources *kshim_resources_get(void) { return &resources; }
@@ -164,6 +167,9 @@ int kshim_resources_init(const void *f, size_t available)
         resources.ui_scratch = (struct dt_range){0};
 #endif
     if (kshim_power_map_resources(&resources)) return -1;
+#if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
+    (void)kshim_storage_map_resources(&resources); /* optional; restores on failure */
+#endif
     initialized = true;
     return 0;
 }

@@ -8,6 +8,9 @@
 #include <platform.h>
 #include <dt.h>
 #include <qcom_dt.h>
+#if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
+#include <kshim/storage.h>
+#endif
 
 #define PL011_UART_BASE 0x09000000ULL
 #ifndef CONFIG_KSHIM_QEMU_PLATFORM
@@ -251,6 +254,9 @@ extern void _arm64_mmu_setup(void);
 /* Last operation before leaving the runtime, after all boot diagnostics. */
 static void prepare_boot(void)
 {
+#if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
+    kshim_storage_quiesce();
+#endif
     if (kshim_platform_prepare_handoff() || kshim_console_quiesce()) {
         printf("Device shutdown incomplete; refusing payload handoff\n");
         for (;;) (void)delay(100000);
@@ -276,6 +282,9 @@ int kshim_main(
         printf("Invalid runtime device resources\n");
         for (;;) (void)delay(100000);
     }
+#if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
+    if (runtime_fdt) (void)kshim_storage_probe(runtime_fdt);
+#endif
 #if CONFIG_ENABLE_BANNER
     printf(CONFIG_BANNER "\n");
 #endif
