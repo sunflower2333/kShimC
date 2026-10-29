@@ -25,7 +25,7 @@ class ThemeRegistryTest(unittest.TestCase):
         generator = load('generate_design_presets')
         self.assertEqual(names, {'FLAT'} | set(generator.ORDER))
         self.assertEqual(names, set(load('build_theme_review').THEMES))
-        configs = [ROOT / 'kernel/Kconfig', *sorted((ROOT / 'user/ui/styles').glob('*Kconfig'))]
+        configs = [ROOT / 'user/Kconfig', *sorted((ROOT / 'user/ui/styles').glob('*Kconfig'))]
         symbols = set()
         for path in configs:
             symbols.update(re.findall(r'^\s*config KSHIM_MENU_STYLE_([A-Z0-9_]+)\s*$', path.read_text(), re.M))

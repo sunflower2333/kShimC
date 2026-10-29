@@ -1,3 +1,3 @@
 # Top level
 source "$srctree/kernel/Kconfig"
-source "$srctree/user/ui/menu_design.Kconfig"
+source "$srctree/user/Kconfig"

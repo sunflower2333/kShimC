@@ -53,7 +53,7 @@ menu "Multicore"
         default 3
 endmenu
 
-menu "Framebuffer and UI"
+menu "Display"
     config KSHIM_QEMU_PLATFORM
         bool "Enable QEMU test memory and framebuffer"
         default y
@@ -101,40 +101,6 @@ menu "Framebuffer and UI"
         help
             LVGL renders color pixels and converts them to this target format.
 
-    config KSHIM_LVGL
-        bool "Enable LVGL boot menu"
-        default y
-        help
-            Build the pinned LVGL boot menu with a selectable visual style.
-            The default FLAT style retains the animated acrylic panel.
-            Qualcomm Volume Up, Volume Down, and Power map to up, down,
-            and confirm respectively. See docs/menu-styles.md.
-
-    choice KSHIM_MENU_STYLE
-        prompt "Boot menu style"
-        depends on KSHIM_LVGL
-        default KSHIM_MENU_STYLE_FLAT
-        help
-            Select the device boot menu appearance, not host menuconfig colors.
-            Input and boot actions are shared. Only FLAT uses animated textures.
-            Modern styles do not enable LVGL's built-in default theme.
-
-        config KSHIM_MENU_STYLE_FLAT
-            bool "FLAT - original dark acrylic"
-        config KSHIM_MENU_STYLE_CLASSIC
-            bool "CLASSIC - existing framed firmware menu"
-        config KSHIM_MENU_STYLE_CARDS
-            bool "CARDS - existing light rounded cards"
-        config KSHIM_MENU_STYLE_TERMINAL
-            bool "TERMINAL - existing green terminal look"
-        config KSHIM_MENU_STYLE_MINIMAL
-            bool "MINIMAL - existing quiet monochrome"
-        config KSHIM_MENU_STYLE_HIGH_CONTRAST
-            bool "HIGH_CONTRAST - existing black and white"
-
-        source "$srctree/user/ui/styles/Kconfig"
-    endchoice
-
     config KSHIM_UI_SCRATCH_BASE
         hex "UI scratch memory base (fallback)"
         default 0x0
@@ -150,14 +116,6 @@ menu "Framebuffer and UI"
             Qualcomm boards use the display reservation past scanout.
             Without scratch the menu uses the existing Latin fallback font.
 
-    config KSHIM_LVGL_BUFFER_BYTES
-        int "LVGL partial render buffer size"
-        range 128 1048576
-        default 16384
-        depends on KSHIM_LVGL
-        help
-            Bytes per partial color render buffer. Must hold one framebuffer
-            row. Board profiles use 256 KiB buffers.
 endmenu
 
 menu "Generic"
@@ -168,12 +126,6 @@ menu "Generic"
             Requires KSHIM_UEFI_PAYLOAD in CMake. The two names select the
             same payload, copied into its board-specific FD reservation.
 
-    config KSHIM_MENU_ENTRY1
-        string "First menu entry"
-        default "Boot"
-    config KSHIM_MENU_ENTRY2
-        string "Second menu entry"
-        default "Recovery"
     config KSHIM_UEFI_LOAD_ADDRESS
         hex "UEFI FD destination/entry address"
         default 0xFFC00000
