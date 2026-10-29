@@ -176,3 +176,4 @@ endif()
 
 # Block layer, filesystems and firmware loader (MIT variants; EROFS opt-in).
 add_subdirectory(storage)
+include("${CMAKE_CURRENT_LIST_DIR}/storage_drivers.cmake")

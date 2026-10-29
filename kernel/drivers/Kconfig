@@ -1,0 +1,1 @@
+source "$srctree/kernel/drivers/block/Kconfig"

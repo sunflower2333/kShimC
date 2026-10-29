@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+menu "Block storage"
+    config BLK_UFS
+        bool "Qualcomm UFS (UFSHCI) logical units as block devices"
+        default n
+        depends on BLOCK
+        help
+            Discover the "qcom,ufshc" host from DT and register one block
+            device per enabled logical unit ("ufs0:lu<N>"). The controller
+            and link left running by XBL/ABL are taken over when verifiably
+            live. Rails, GDSC and clocks use CrDK target data and ClockLib
+            (SM8250); the QMP PHY is never calibrated by kShimC.
+
+    config BLK_UFS_FULL_INIT
+        bool "Fall back to a UFSHCI reset and link startup"
+        default y
+        depends on BLK_UFS
+        help
+            When the inherited controller state is not live, reset the host
+            controller and redo DME_LINKSTARTUP and fDeviceInit on the
+            still-powered PHY. When disabled, only an inherited live
+            controller is used and it is never reset.
+
+    config BLK_UFS_WRITE
+        bool "Expose UFS writes (SCSI WRITE(10/16))"
+        default n
+        depends on BLK_UFS
+
+    config BLK_QCOM_CLOCKS
+        bool "Drive storage GDSC/clocks with CrDK ClockLib (SM8250 graph)"
+        default n
+        depends on BLK_UFS || BLK_SDHCI
+        help
+            Links CrDK ClockLib and the SM8250 GCC target graph (about
+            80 KiB) so the UFS GDSC/clocks and the SDCC AHB/APPS clocks can
+            be acquired and the SD card clock rate changed. Without it, UFS
+            is used only when its GDSC is already powered (inherited power
+            and clocks), and SDHCI cannot run.
+
+    config BLK_SDHCI
+        bool "Qualcomm SDCC (sdhci-msm v5) SD/eMMC as block devices"
+        default n
+        depends on BLOCK
+        select BLK_QCOM_CLOCKS
+        help
+            Identify an SD card or eMMC behind a "qcom,sdhci-msm-v5" host
+            using CrDK's SdhciMsmLib PIO core and register "sdhc<N>".
+            Needs a CrDK SD target and clock graph for the SoC (SM8250).
+
+    config BLK_SDHCI_WRITE
+        bool "Expose SD/eMMC writes (CMD24/CMD25)"
+        default n
+        depends on BLK_SDHCI
+endmenu
