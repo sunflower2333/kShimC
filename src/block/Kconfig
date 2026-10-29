@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: MIT
+menu "Storage and firmware loading"
+
+config BLOCK
+    bool "Block device layer and GPT partitions"
+    default n
+    help
+        Block device registry used by storage drivers (UFS, SDHCI), with
+        bounds-checked reads split by each device's transfer limit,
+        byte-granular reads through a bounce buffer, a RAM-backed device and
+        a read-only GPT scanner that registers one partition device per
+        entry ("<disk>:<label>").  MIT; no CrDK code.
+
+config FS_FAT
+    bool "FAT12/16/32 reader"
+    depends on BLOCK
+    default n
+    help
+        Read-only FAT reader from CrDK FirmwareLoaderLib (MIT).  Typical use:
+        the NON-HLOS "modem" partition.
+
+config FS_EXT4
+    bool "ext4 reader"
+    depends on BLOCK
+    default n
+    help
+        Read-only ext4 reader from CrDK FirmwareLoaderLib (MIT): extents,
+        indirect blocks and metadata checksums on a clean filesystem; no
+        journal replay, encryption, inline data or bigalloc.
+
+config FS_F2FS
+    bool "F2FS reader"
+    depends on BLOCK
+    default n
+    help
+        Read-only F2FS reader from CrDK FirmwareLoaderLib (MIT).  Requires a
+        clean checkpoint; encrypted, compressed and casefolded files are
+        refused.
+
+config FS_EROFS
+    bool "EROFS reader (makes the resulting binary GPL-2.0)"
+    depends on BLOCK
+    default n
+    help
+        Read-only EROFS reader from CrDK FirmwareLoaderLib NhErofs.c, which
+        is licensed GPL-2.0-or-later (it carries a U-Boot derived compact
+        index decoder).  kShimC itself is MIT.  Enabling this option links
+        GPL-2.0-or-later code into kShimC, so the resulting binary as a whole
+        must be distributed under the terms of the GPL, version 2 or later,
+        including the corresponding source.  Leave it disabled for an
+        MIT-only binary.
+
+config FS_CORE
+    bool
+    default y if FS_FAT || FS_EXT4 || FS_F2FS || FS_EROFS
+    help
+        Filesystem adapter (src/fs) and Android liblp "super" reader over CrDK
+        FirmwareLoaderLib; selected by any filesystem reader.
+
+config FIRMWARE_LOADER
+    bool "Android firmware loader"
+    depends on BLOCK && FS_CORE
+    default n
+    help
+        Loads firmware from the Android partitions of the internal storage
+        device using CrDK FirmwareLoaderLib's selection policy: ordered
+        explicit locations (super/vendor{slot}, modem{slot}, ...), current
+        boot slot from the bootloader handoff, Virtual A/B admission and
+        PIL .mdt/.bXX group consistency.  See docs/firmware-loader.md.
+
+endmenu

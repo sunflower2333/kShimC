@@ -8,6 +8,9 @@
 #include <platform.h>
 #include <dt.h>
 #include <qcom_dt.h>
+#ifdef CONFIG_BLOCK
+#include <kshim/storage.h>
+#endif
 
 #define PL011_UART_BASE 0x09000000ULL
 #ifndef CONFIG_KSHIM_QEMU_PLATFORM
@@ -278,6 +281,9 @@ int kshim_main(
     }
 #if CONFIG_ENABLE_BANNER
     printf(CONFIG_BANNER "\n");
+#endif
+#ifdef CONFIG_BLOCK
+    (void)kshim_storage_init(runtime_fdt);
 #endif
 #if KSHIM_STANDALONE
     return kshim_platform_main(device_tree_address, kernel_arg1, kernel_arg2, kernel_arg3);
