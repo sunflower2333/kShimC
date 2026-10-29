@@ -170,3 +170,6 @@ if(KSHIM_TEST_MENU_STYLE STREQUAL "CLOVER")
         CONFIG_KSHIM_MENU_SCALE_Q8=${KSHIM_TEST_MENU_SCALE_Q8}
         CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
 endif()
+
+# Block layer, filesystems and firmware loader (MIT variants; EROFS opt-in).
+add_subdirectory(storage)
