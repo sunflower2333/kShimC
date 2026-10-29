@@ -20,4 +20,4 @@ config CONFIG_ARCH_X86
     prompt "X86"
 endchoice
 
-source "$srctree/arch/arm64/Kconfig"
+source "$srctree/kernel/arch/arm64/Kconfig"

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../src/ui/menu_style.h"
+#include "../user/ui/menu_style.h"
 
 /* 无 LVGL 依赖的预设契约检查，并输出实际编译得到的色值。 */
 int main(void)

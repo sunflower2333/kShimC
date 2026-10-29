@@ -10,7 +10,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--cc',default='gcc'); p.add_argument('--sanitize',action='store_true')
     a=p.parse_args()
-    header=(ROOT/'src/ui/menu_design.h').read_text(encoding='utf-8')
+    header=(ROOT/'user/ui/menu_design.h').read_text(encoding='utf-8')
     names=['FLAT']+re.findall(r'^#(?:if|elif) defined\(CONFIG_KSHIM_MENU_STYLE_([A-Z0-9_]+)\)',header,re.M)
     if len(names)!=29 or len(set(names))!=29: raise SystemExit('Expected 29 unique presets')
     with tempfile.TemporaryDirectory(prefix='kshim-design-') as td:

@@ -8,7 +8,7 @@
 #include <lvgl_port.h>
 #include <ui_font.h>
 
-#include "../src/ui/menu_style.h"
+#include "../user/ui/menu_style.h"
 #include "menu_design_lvgl_checks.h"
 #include "menu_native_theme_checks.h"
 

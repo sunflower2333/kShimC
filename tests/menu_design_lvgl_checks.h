@@ -1,7 +1,7 @@
 #ifndef KSHIM_MENU_DESIGN_LVGL_CHECKS_H
 #define KSHIM_MENU_DESIGN_LVGL_CHECKS_H
 /* Real LVGL assertions used by the existing host regression executables. */
-#include "../src/ui/menu_design_layout.h"
+#include "../user/ui/menu_design_layout.h"
 static inline uint32_t KshimTestDesignScale(void) {
 #ifdef CONFIG_KSHIM_MENU_SCALE_Q8
     return CONFIG_KSHIM_MENU_SCALE_Q8;

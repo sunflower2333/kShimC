@@ -1,11 +1,11 @@
 mainmenu "kShimC $(VERSION) Configuration"
 
 menu "Architecture"
-    source "$srctree/arch/Kconfig"
+    source "$srctree/kernel/arch/Kconfig"
 endmenu
 
 menu "Drivers"
-    source "$srctree/drivers/Kconfig"
+    source "$srctree/kernel/drivers/Kconfig"
 endmenu
 
 menu "Qualcomm Input"
@@ -132,7 +132,7 @@ menu "Framebuffer and UI"
         config KSHIM_MENU_STYLE_HIGH_CONTRAST
             bool "HIGH_CONTRAST - existing black and white"
 
-        source "$srctree/ui/styles/Kconfig"
+        source "$srctree/user/ui/styles/Kconfig"
     endchoice
 
     config KSHIM_UI_SCRATCH_BASE

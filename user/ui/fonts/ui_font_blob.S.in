@@ -1,4 +1,4 @@
-/* The compressed menu font (src/ui/fonts/noto_sans_cjk_sc.ksf). */
+/* The compressed menu font (user/ui/fonts/noto_sans_cjk_sc.ksf). */
 .section .rodata.kshim_ui_font, "a"
 .balign 16
 .global kshim_ui_font_blob

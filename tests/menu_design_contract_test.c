@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "../src/ui/menu_design_layout.h"
-#include "../src/ui/menu_power_profile.h"
+#include "../user/ui/menu_design_layout.h"
+#include "../user/ui/menu_power_profile.h"
 #ifndef EXPECTED_STYLE
 #define EXPECTED_STYLE "FLAT"
 #endif

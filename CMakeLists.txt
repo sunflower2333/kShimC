@@ -61,7 +61,7 @@ set(HOST_ARCH "${CMAKE_HOST_SYSTEM_PROCESSOR}")
 string(TIMESTAMP BUILD_TIME "%Y-%m-%d %H:%M:%S" UTC)
 get_filename_component(COMPILER_BASENAME "${CMAKE_C_COMPILER}" NAME)
 set(HOST_INFO "$ENV{USER}$ENV{USERNAME}@$ENV{HOSTNAME}$ENV{COMPUTERNAME} ${COMPILER_BASENAME} (${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION})")
-set(KCONFIG_ENV "srctree=${CMAKE_SOURCE_DIR}/src" "HOST_ARCH=${HOST_ARCH}" "HOST_INFO=${HOST_INFO}"
+set(KCONFIG_ENV "srctree=${CMAKE_SOURCE_DIR}" "HOST_ARCH=${HOST_ARCH}" "HOST_INFO=${HOST_INFO}"
                 "BUILD_TIME=${BUILD_TIME}" "ARCH=${CMAKE_SYSTEM_PROCESSOR}" "VERSION=${KSHIMC_VERSION}"
 )
 
@@ -75,7 +75,7 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_BINARY_DIR}/.config" "${CMAKE_SOURCE_DIR}/Kconfig"
-    "${CMAKE_SOURCE_DIR}/src/Kconfig" "${CMAKE_SOURCE_DIR}/src/drivers/Kconfig"
+    "${CMAKE_SOURCE_DIR}/kernel/Kconfig" "${CMAKE_SOURCE_DIR}/kernel/drivers/Kconfig"
     "${CMAKE_SOURCE_DIR}/tools/configure_kconfig.py")
 execute_process(COMMAND ${CMAKE_COMMAND} -E env ${KCONFIG_ENV}
     ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/configure_kconfig.py
@@ -110,7 +110,8 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/picolibc ${CMAKE_BINARY_DIR}/lib/picoli
 set(INCLUDE_DIRS
     ${CMAKE_BINARY_DIR}/generated/
     ${CMAKE_BINARY_DIR}/generated/include/
-    ${CMAKE_SOURCE_DIR}/src/include/
+    ${CMAKE_SOURCE_DIR}/kernel/include/
+    ${CMAKE_SOURCE_DIR}/user/include/
     ${CMAKE_SOURCE_DIR}/lib/libfdt/include/
 )
 
@@ -118,43 +119,43 @@ include_directories(${INCLUDE_DIRS})
 
 # Define the executable target, including assembly and C source files
 set(SRC_FILES
-    src/core/power.c src/drivers/power.c src/dt/power.c src/dt/spmi.c
-    src/core/main.c src/core/platform.c src/core/uefi_boot.c src/core/picoport.c
-    src/dt/dt.c src/dt/console.c src/dt/resources.c
-    src/drivers/console.c src/drivers/pl011.c src/drivers/keys.c
-    src/arch/arm64/exception.c src/arch/arm64/relocation.c src/arch/arm64/mmu.c
-    src/arch/arm64/psci.c src/arch/arm64/timer.c src/arch/arm64/smp.c src/arch/arm64/smp_selftest.c src/arch/arm64/gicv3.c
-    src/arch/arm64/startup.S src/arch/arm64/mpstartup.S src/arch/arm64/arm64.S
-    src/arch/arm64/psci.S src/arch/arm64/timer.S src/arch/arm64/smc.S src/arch/arm64/gicv3.S
+    kernel/core/power.c kernel/drivers/power.c kernel/dt/power.c kernel/dt/spmi.c
+    kernel/core/main.c kernel/core/platform.c kernel/core/uefi_boot.c kernel/lib/picoport.c
+    kernel/dt/dt.c kernel/dt/console.c kernel/dt/resources.c
+    kernel/drivers/console.c kernel/drivers/pl011.c kernel/drivers/keys.c
+    kernel/arch/arm64/exception.c kernel/arch/arm64/relocation.c kernel/arch/arm64/mmu.c
+    kernel/arch/arm64/psci.c kernel/arch/arm64/timer.c kernel/arch/arm64/smp.c kernel/arch/arm64/smp_selftest.c kernel/arch/arm64/gicv3.c
+    kernel/arch/arm64/startup.S kernel/arch/arm64/mpstartup.S kernel/arch/arm64/arm64.S
+    kernel/arch/arm64/psci.S kernel/arch/arm64/timer.S kernel/arch/arm64/smc.S kernel/arch/arm64/gicv3.S
     lib/libfdt/fdt.c lib/libfdt/fdt_check.c lib/libfdt/fdt_ro.c lib/libfdt/fdt_addresses.c
     lib/libfdt/fdt_rw.c lib/libfdt/fdt_sw.c lib/libfdt/fdt_wip.c lib/libfdt/fdt_empty_tree.c lib/libfdt/fdt_strerror.c)
 
 
 if(CONFIG_QCOM_KEYS OR CONFIG_KSHIM_TOUCH)
-    list(APPEND SRC_FILES src/dt/gpio.c)
+    list(APPEND SRC_FILES kernel/dt/gpio.c)
 endif()
 if(CONFIG_QCOM_KEYS)
-    list(APPEND SRC_FILES src/dt/keys.c)
+    list(APPEND SRC_FILES kernel/dt/keys.c)
 endif()
 if(CONFIG_QCOM_KEYS OR CONFIG_QCOM_SPMI)
-    list(APPEND SRC_FILES src/drivers/qcom_keys.c)
+    list(APPEND SRC_FILES kernel/drivers/qcom_keys.c)
 endif()
 if(CONFIG_KSHIM_TOUCH)
-    list(APPEND SRC_FILES src/dt/touch.c src/drivers/st_ftm5.c)
+    list(APPEND SRC_FILES kernel/dt/touch.c kernel/drivers/st_ftm5.c)
 endif()
 if(CONFIG_KSHIM_FRAMEBUFFER)
-    list(APPEND SRC_FILES src/dt/splash.c)
+    list(APPEND SRC_FILES kernel/dt/splash.c)
 endif()
 if(CONFIG_KSHIM_FRAMEBUFFER OR CONFIG_KSHIM_LVGL)
-    list(APPEND SRC_FILES src/ui/framebuffer.c)
+    list(APPEND SRC_FILES user/ui/framebuffer.c)
 endif()
 if(CONFIG_KSHIM_TOUCH OR CONFIG_KSHIM_LVGL)
-    list(APPEND SRC_FILES src/drivers/touch.c)
+    list(APPEND SRC_FILES kernel/drivers/touch.c)
 endif()
 if(CONFIG_KSHIM_LVGL)
-    list(APPEND SRC_FILES src/ui/backdrop.c src/ui/font.c src/ui/lvgl_port.c src/ui/lvgl_os.c)
-    set(KSHIM_UI_FONT_BLOB "${CMAKE_SOURCE_DIR}/src/ui/fonts/noto_sans_cjk_sc.ksf")
-    configure_file(src/ui/fonts/ui_font_blob.S.in ${CMAKE_BINARY_DIR}/ui_font_blob.S @ONLY)
+    list(APPEND SRC_FILES user/ui/backdrop.c user/ui/font.c user/ui/lvgl_port.c user/lvgl/lvgl_os.c)
+    set(KSHIM_UI_FONT_BLOB "${CMAKE_SOURCE_DIR}/user/ui/fonts/noto_sans_cjk_sc.ksf")
+    configure_file(user/ui/fonts/ui_font_blob.S.in ${CMAKE_BINARY_DIR}/ui_font_blob.S @ONLY)
     set_source_files_properties(${CMAKE_BINARY_DIR}/ui_font_blob.S PROPERTIES
         OBJECT_DEPENDS "${KSHIM_UI_FONT_BLOB}")
     list(APPEND SRC_FILES ${CMAKE_BINARY_DIR}/ui_font_blob.S)
@@ -170,7 +171,7 @@ if(CONFIG_KSHIM_LVGL)
 set(LV_CONF_BUILD_DISABLE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
-set(LV_CONF_PATH "${CMAKE_SOURCE_DIR}/src/include/lv_conf.h" CACHE FILEPATH "" FORCE)
+set(LV_CONF_PATH "${CMAKE_SOURCE_DIR}/user/include/lv_conf.h" CACHE FILEPATH "" FORCE)
 add_subdirectory(third_party/lvgl EXCLUDE_FROM_ALL)
 include(${CMAKE_SOURCE_DIR}/ports/lvgl/CMakeLists.txt)
 kshim_enable_lvgl_smp_adapter(lvgl "${CMAKE_SOURCE_DIR}/third_party/lvgl")
@@ -182,12 +183,12 @@ add_subdirectory(ports/crdk)
 target_link_libraries(crdk PRIVATE c)
 
 # Specify the linker script
-set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/src/arch/arm64/aarch64.lds")
+set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/kernel/arch/arm64/aarch64.lds")
 set(PROCESSED_LINKER_SCRIPT "${CMAKE_BINARY_DIR}/aarch64.lds")
-file(GLOB LINKER_HEADERS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/include/ld/*")
+file(GLOB LINKER_HEADERS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/kernel/include/ld/*")
 add_custom_command(
     OUTPUT ${PROCESSED_LINKER_SCRIPT}
-    COMMAND ${CMAKE_C_COMPILER} -E -P -x c ${LINKER_SCRIPT} -o ${PROCESSED_LINKER_SCRIPT} -I${CMAKE_SOURCE_DIR}/src/include/ -D__LD_SCRIPT__ -DKSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} -DKSHIM_RUNTIME_SLOT_SIZE=${KSHIM_RUNTIME_SLOT_SIZE}
+    COMMAND ${CMAKE_C_COMPILER} -E -P -x c ${LINKER_SCRIPT} -o ${PROCESSED_LINKER_SCRIPT} -I${CMAKE_SOURCE_DIR}/kernel/include/ -D__LD_SCRIPT__ -DKSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} -DKSHIM_RUNTIME_SLOT_SIZE=${KSHIM_RUNTIME_SLOT_SIZE}
     DEPENDS ${LINKER_SCRIPT} ${LINKER_HEADERS}
     COMMENT "Preprocessing linker script"
 )
@@ -196,7 +197,7 @@ add_custom_target(preprocess_linker_script ALL DEPENDS ${PROCESSED_LINKER_SCRIPT
 add_executable(${OUTPUT_NAME}.elf ${SRC_FILES})
 if(KSHIM_UEFI_PAYLOAD)
     get_filename_component(KSHIM_UEFI_PAYLOAD "${KSHIM_UEFI_PAYLOAD}" ABSOLUTE)
-    configure_file(src/arch/arm64/uefi_payload.S.in ${CMAKE_BINARY_DIR}/uefi_payload.S @ONLY)
+    configure_file(kernel/arch/arm64/uefi_payload.S.in ${CMAKE_BINARY_DIR}/uefi_payload.S @ONLY)
     set_source_files_properties(${CMAKE_BINARY_DIR}/uefi_payload.S PROPERTIES OBJECT_DEPENDS "${KSHIM_UEFI_PAYLOAD}")
     target_sources(${OUTPUT_NAME}.elf PRIVATE ${CMAKE_BINARY_DIR}/uefi_payload.S)
     target_compile_definitions(${OUTPUT_NAME}.elf PRIVATE KSHIM_HAS_UEFI_PAYLOAD=1)

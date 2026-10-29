@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build the menu's embedded Noto Sans CJK SC subset (src/ui/fonts/).
+"""Build the menu's embedded Noto Sans CJK SC subset (user/ui/fonts/).
 
 The subset keeps the outlines (CFF) of printable ASCII, Latin-1 and Latin
 Extended-A, general and CJK punctuation, kana, full-width forms and the
 3,755 GB2312 level-1 hanzi; LVGL's TinyTTF rasterizes it at any size. It
 is stored LZ4-compressed (LVGL's decoder) behind a small header and is
-inflated into RAM outside the runtime slot at boot (src/ui/font.c).
+inflated into RAM outside the runtime slot at boot (user/ui/font.c).
 
 Needs fonttools and lz4 (pip install fonttools lz4). The source font is
 downloaded unless --source is given; its SHA-256 is recorded either way.
@@ -47,7 +47,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, help="NotoSansCJKsc-Regular.otf")
     parser.add_argument("--out", type=Path,
-                        default=Path(__file__).resolve().parents[1] / "src/ui/fonts")
+                        default=Path(__file__).resolve().parents[1] / "user/ui/fonts")
     args = parser.parse_args()
     source = args.source.read_bytes() if args.source else \
         urllib.request.urlopen(SOURCE_URL).read()

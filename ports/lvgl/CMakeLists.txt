@@ -37,5 +37,5 @@ function(kshim_enable_lvgl_smp_adapter target lvgl_root)
     set_property(TARGET "${target}" PROPERTY SOURCES "${lvgl_sources}")
     set_source_files_properties("${generated}" PROPERTIES GENERATED TRUE)
     target_include_directories("${target}" PRIVATE
-        "${CMAKE_SOURCE_DIR}/src/include")
+        "${CMAKE_SOURCE_DIR}/user/include")
 endfunction()

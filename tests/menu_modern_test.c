@@ -6,7 +6,7 @@
 #include <string.h>
 #include <lvgl.h>
 #include <lvgl_port.h>
-#include "../src/ui/menu_style.h"
+#include "../user/ui/menu_style.h"
 #include "menu_design_lvgl_checks.h"
 
 /* 等待入场、焦点及滚动动画稳定。 */

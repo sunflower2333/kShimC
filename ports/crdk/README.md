@@ -63,7 +63,7 @@ QupResourceLib and SplashLib.
 
 ## DT and display policy
 
-`src/dt` validates full blobs, ancestor status, property lengths, unique
+`kernel/dt` validates full blobs, ancestor status, property lengths, unique
 phandles, specifier cells, register names and ranges translation. Android
 SPMI peripheral tuples are decoded as peripheral offsets, never CPU MMIO.
 Each arbiter has its own controller, bus ID and SID. Qualcomm PON and PMIC

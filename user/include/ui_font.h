@@ -7,7 +7,7 @@
  * The menu's font: an LZ4-compressed Noto Sans CJK SC subset (ASCII, Latin,
  * punctuation, kana, GB2312 level 1) embedded in the image and inflated at
  * boot into RAM outside the runtime slot; LVGL's TinyTTF draws it at any
- * size. See src/ui/fonts/provenance.json and tools/gen_ui_font.py.
+ * size. See user/ui/fonts/provenance.json and tools/gen_ui_font.py.
  */
 
 /* Bytes the inflated font needs. */

@@ -6,8 +6,8 @@
 #include <string.h>
 
 #include <lvgl.h>
-#include "../src/ui/menu_style.h"
-#include "../src/ui/menu_design.h"
+#include "../user/ui/menu_style.h"
+#include "../user/ui/menu_design.h"
 #include <lvgl_port.h>
 #include <ui_font.h>
 

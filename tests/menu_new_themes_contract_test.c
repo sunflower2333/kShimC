@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "../src/ui/menu_design_layout.h"
+#include "../user/ui/menu_design_layout.h"
 #ifndef EXPECTED_STYLE
 #error EXPECTED_STYLE required
 #endif

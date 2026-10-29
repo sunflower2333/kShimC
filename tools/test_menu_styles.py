@@ -76,7 +76,7 @@ def check_effects(compiler: list[str], temporary: Path, name: str) -> None:
                       ', '.join('(unsigned)mMenuStyle.' + f for f in fields) + '); return 0; }\n')
     executable = temporary / "effects"
     result = run(compiler + ["-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-I", str(ROOT / "src/ui"),
+                            "-I", str(ROOT / "user/ui"),
                             f"-DCONFIG_KSHIM_MENU_STYLE_{name}=1", str(source), "-o", str(executable)])
     if result.returncode:
         raise RuntimeError(f"Effect probe failed: {result.stderr}")
@@ -112,7 +112,7 @@ def check_kconfig(compiler: list[str], temporary: Path) -> None:
         import kconfiglib
     except ImportError as error:
         raise RuntimeError("--kconfig requires: python -m pip install kconfiglib") from error
-    os.environ.update(srctree=str(ROOT / "src"), HOST_ARCH="x86_64", ARCH="aarch64",
+    os.environ.update(srctree=str(ROOT), HOST_ARCH="x86_64", ARCH="aarch64",
                       HOST_INFO="menu-style-test", BUILD_TIME="test", VERSION="test")
     config = kconfiglib.Kconfig(str(ROOT / "Kconfig"))
     choice = config.named_choices["KSHIM_MENU_STYLE"]

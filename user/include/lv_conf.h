@@ -42,7 +42,7 @@
 #define LV_USE_ASSERT_MEM_INTEGRITY 0
 #define LV_USE_ASSERT_OBJ 0
 
-/* The menu draws Noto Sans CJK SC (src/ui/font.c) with TinyTTF at any size;
+/* The menu draws Noto Sans CJK SC (user/ui/font.c) with TinyTTF at any size;
  * Montserrat 20 is only the Latin fallback when the font cannot be
  * inflated (no scratch memory outside the runtime slot). */
 #if defined(CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT) && CONFIG_KSHIM_MENU_STYLE_LVGL_DEFAULT

@@ -104,4 +104,4 @@ config KSHIM_MENU_STYLE_IOS_HIG
         primary Boot action. Uses the existing CJK font, not UIKit, SF Symbols,
         Liquid Glass or Apple branding. Selection alone does not boot.
 
-source "$srctree/ui/styles/new_themes.Kconfig"
+source "$srctree/user/ui/styles/new_themes.Kconfig"

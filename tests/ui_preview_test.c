@@ -8,7 +8,7 @@
 
 #include <lvgl.h>
 #include <lvgl_port.h>
-#include "../src/ui/menu_style.h"
+#include "../user/ui/menu_style.h"
 
 static uint32_t Inputs[3];
 
