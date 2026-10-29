@@ -25,7 +25,7 @@ class ThemeRegistryTest(unittest.TestCase):
         generator = load('generate_design_presets')
         self.assertEqual(names, {'FLAT'} | set(generator.ORDER))
         self.assertEqual(names, set(load('build_theme_review').THEMES))
-        configs = [ROOT / 'src/Kconfig', *sorted((ROOT / 'src/ui/styles').glob('*Kconfig'))]
+        configs = [ROOT / 'user/Kconfig', *sorted((ROOT / 'user/ui/styles').glob('*Kconfig'))]
         symbols = set()
         for path in configs:
             symbols.update(re.findall(r'^\s*config KSHIM_MENU_STYLE_([A-Z0-9_]+)\s*$', path.read_text(), re.M))
@@ -39,15 +39,15 @@ class ThemeRegistryTest(unittest.TestCase):
         self.assertEqual(matrices, [names, {'METRO', 'ADWAITA', 'HOLO', 'LVGL_DEFAULT', 'CLOVER', 'GLASS', 'SURFACE', 'IOS_HIG'}, names - {'FLAT'}])
 
     def test_retired_implementation_removed(self):
-        self.assertFalse((ROOT / 'src/ui/styles/one_ui.h').exists())
+        self.assertFalse((ROOT / 'user/ui/styles/one_ui.h').exists())
         self.assertFalse((ROOT / 'tests/menu_one_ui_identity_test.c').exists())
-        for path in (ROOT / 'src/ui').rglob('*'):
+        for path in (ROOT / 'user/ui').rglob('*'):
             if path.is_file() and path.suffix in ('.c', '.h'):
                 self.assertNotIn('KSHIM_DESIGN_ONE_UI', path.read_text(), str(path))
                 self.assertNotIn('CONFIG_KSHIM_MENU_STYLE_ONE_UI', path.read_text(), str(path))
 
     def test_generated_header_and_stable_kind_ids(self):
-        header = (ROOT / 'src/ui/menu_design.h').read_text()
+        header = (ROOT / 'user/ui/menu_design.h').read_text()
         self.assertEqual(header, load('generate_design_presets').generate())
         for name, value in {'SURFACE': 10, 'IOS_HIG': 12, 'METRO': 21, 'ADWAITA': 23, 'HOLO': 24, 'LVGL_DEFAULT': 25}.items():
             self.assertRegex(header, rf'\bKSHIM_DESIGN_{name}={value}\b')
@@ -69,8 +69,8 @@ class ThemeRegistryTest(unittest.TestCase):
 
 class PowerPresentationRegistryTest(unittest.TestCase):
     def test_every_design_family_has_an_explicit_power_profile(self):
-        design = (ROOT / 'src/ui/menu_design.h').read_text()
-        profile = (ROOT / 'src/ui/menu_power_profile.h').read_text()
+        design = (ROOT / 'user/ui/menu_design.h').read_text()
+        profile = (ROOT / 'user/ui/menu_power_profile.h').read_text()
         kinds = set(re.findall(r'\b(KSHIM_DESIGN_[A-Z0-9_]+)=\d+', design))
         cases = set(re.findall(r'case (KSHIM_DESIGN_[A-Z0-9_]+):', profile))
         self.assertEqual(kinds, cases)
@@ -78,8 +78,8 @@ class PowerPresentationRegistryTest(unittest.TestCase):
         self.assertIn('default: return (kshim_power_profile_t){0}', profile)
 
     def test_framebuffer_bottom_bar_is_not_a_fallback(self):
-        port = (ROOT / 'src/ui/lvgl_port.c').read_text()
-        power = (ROOT / 'src/ui/menu_power.h').read_text()
+        port = (ROOT / 'user/ui/lvgl_port.c').read_text()
+        power = (ROOT / 'user/ui/menu_power.h').read_text()
         self.assertIn('KshimPowerReserve(void) { return 0; }', port)
         self.assertNotIn('(w-3*gap)/2', power)
         self.assertNotIn('h-reserve+gap', power)

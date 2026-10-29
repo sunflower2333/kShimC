@@ -4,13 +4,14 @@ on:
   push:
     branches: ["feature/2610", "feature/2610-design-language"]
     paths:
-      - "src/ui/**"
-      - "src/core/**"
-      - "src/drivers/**"
-      - "src/dt/**"
+      - "user/**"
+      - "kernel/core/**"
+      - "kernel/drivers/**"
+      - "kernel/dt/**"
       - "CMakeLists.txt"
-      - "src/include/**"
-      - "src/Kconfig"
+      - "include/**"
+      - "kernel/include/**"
+      - "kernel/Kconfig"
       - "Kconfig"
       - "tests/**"
       - "tools/test_menu_styles.py"
@@ -23,13 +24,14 @@ on:
       - ".github/workflows/menu-styles.yml"
   pull_request:
     paths:
-      - "src/ui/**"
-      - "src/core/**"
-      - "src/drivers/**"
-      - "src/dt/**"
+      - "user/**"
+      - "kernel/core/**"
+      - "kernel/drivers/**"
+      - "kernel/dt/**"
       - "CMakeLists.txt"
-      - "src/include/**"
-      - "src/Kconfig"
+      - "include/**"
+      - "kernel/include/**"
+      - "kernel/Kconfig"
       - "Kconfig"
       - "tests/**"
       - "tools/test_menu_styles.py"
@@ -65,7 +67,7 @@ jobs:
       - name: GCC and Clang power sequencing with injected failures
         run: |
           for cc in gcc clang; do
-            $cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Isrc/include tests/power_test.c src/drivers/power.c -o /tmp/power-test
+            $cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Iinclude -Ikernel/include tests/power_test.c kernel/drivers/power.c -o /tmp/power-test
             /tmp/power-test
           done
       - name: Test authentic-frame verification and HTML packaging
@@ -110,27 +112,33 @@ jobs:
         run: |
           base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
           git fetch --depth=1 origin "$base"
-          files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_native.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
-          for file in $files; do git show "$base:$file" > "$file"; done
+          # Baseline paths predate the kernel/ + user/ split: "<path at $base>:<path now>".
+          # lvgl_port.h is swapped too: its key input moved to the public kshim/input.h API.
+          files="src/ui/lvgl_port.c:user/ui/lvgl_port.c src/ui/menu_style.h:user/ui/menu_style.h src/ui/menu_design.h:user/ui/menu_design.h src/ui/menu_design_layout.h:user/ui/menu_design_layout.h src/ui/menu_design_port.h:user/ui/menu_design_port.h src/ui/menu_layout_dispatch.h:user/ui/menu_layout_dispatch.h src/ui/menu_native.h:user/ui/menu_native.h src/ui/menu_new_themes_render.h:user/ui/menu_new_themes_render.h src/ui/menu_symbols.h:user/ui/menu_symbols.h src/include/lv_conf.h:user/include/lv_conf.h src/include/lvgl_port.h:user/include/lvgl_port.h tests/ui_preview_test.c:tests/ui_preview_test.c"
+          for pair in $files; do git show "$base:${pair%%:*}" > "${pair#*:}"; done
+          sed -i 's|"\.\./src/ui/|"../user/ui/|' tests/ui_preview_test.c
           cmake --build build-menu --parallel 2 --target ui_preview_test
           mkdir -p compatibility-baseline
           ./build-menu/ui_preview_test compatibility-baseline
           for file in compatibility-baseline/*.ppm; do cmp "$file" "previews/$(basename "$file")"; done
-          for file in $files; do git show "HEAD:$file" > "$file"; done
+          for pair in $files; do git show "HEAD:${pair#*:}" > "${pair#*:}"; done
           printf 'PASS: %s, both resolutions and all four stages match %s\n' '${{ matrix.style }}' "$base" > previews/compatibility.txt
       - name: Verify FLAT against the previous renderer pixel for pixel
         if: matrix.style == 'FLAT'
         run: |
           git fetch --depth=1 origin c1a80a45fd577dbb859e78404458477f98ab5d72
           base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
-          files="src/ui/lvgl_port.c src/ui/menu_style.h src/ui/menu_design.h src/ui/menu_design_layout.h src/ui/menu_design_port.h src/ui/menu_layout_dispatch.h src/ui/menu_native.h src/ui/menu_new_themes_render.h src/ui/menu_symbols.h src/include/lv_conf.h tests/ui_preview_test.c"
-          for file in $files; do git show "$base:$file" > "$file"; done
-          git show c1a80a45fd577dbb859e78404458477f98ab5d72:src/ui/lvgl_port.c > src/ui/lvgl_port.c
+          # Baseline paths predate the kernel/ + user/ split: "<path at $base>:<path now>".
+          # lvgl_port.h is swapped too: its key input moved to the public kshim/input.h API.
+          files="src/ui/lvgl_port.c:user/ui/lvgl_port.c src/ui/menu_style.h:user/ui/menu_style.h src/ui/menu_design.h:user/ui/menu_design.h src/ui/menu_design_layout.h:user/ui/menu_design_layout.h src/ui/menu_design_port.h:user/ui/menu_design_port.h src/ui/menu_layout_dispatch.h:user/ui/menu_layout_dispatch.h src/ui/menu_native.h:user/ui/menu_native.h src/ui/menu_new_themes_render.h:user/ui/menu_new_themes_render.h src/ui/menu_symbols.h:user/ui/menu_symbols.h src/include/lv_conf.h:user/include/lv_conf.h src/include/lvgl_port.h:user/include/lvgl_port.h tests/ui_preview_test.c:tests/ui_preview_test.c"
+          for pair in $files; do git show "$base:${pair%%:*}" > "${pair#*:}"; done
+          sed -i 's|"\.\./src/ui/|"../user/ui/|' tests/ui_preview_test.c
+          git show c1a80a45fd577dbb859e78404458477f98ab5d72:src/ui/lvgl_port.c > user/ui/lvgl_port.c
           cmake --build build-menu --parallel 2 --target ui_preview_test
           mkdir -p baseline
           ./build-menu/ui_preview_test baseline
           for file in baseline/*.ppm; do cmp "$file" "previews/$(basename "$file")"; done
-          for file in $files; do git show "HEAD:$file" > "$file"; done
+          for pair in $files; do git show "HEAD:${pair#*:}" > "${pair#*:}"; done
       - name: Upload actual rendered previews and regression log
         if: always()
         uses: actions/upload-artifact@v4

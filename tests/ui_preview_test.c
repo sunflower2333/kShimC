@@ -8,7 +8,8 @@
 
 #include <lvgl.h>
 #include <lvgl_port.h>
-#include "../src/ui/menu_style.h"
+#include <qcom_keys.h>
+#include "../user/ui/menu_style.h"
 
 static uint32_t Inputs[3];
 
@@ -125,7 +126,7 @@ static void RenderSize(const char *Directory, uint32_t Width, uint32_t Height)
     static uint8_t Scratch[4U << 20] __attribute__((aligned(64)));
     kshim_lvgl_set_scratch(Scratch, sizeof(Scratch));
     kshim_lvgl_t Ui;
-    assert(kshim_lvgl_init(&Ui, &Framebuffer, &Keys) == 0);
+    assert(kshim_lvgl_init(&Ui, &Framebuffer, QcomKeysSource(&Keys)) == 0);
     assert(kshim_lvgl_has_cjk_font(&Ui));
     static const char *const Entries[] = {
         "Android", "UEFI 诊断", "Recovery 恢复模式", "Factory image",

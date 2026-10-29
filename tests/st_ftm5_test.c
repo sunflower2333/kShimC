@@ -1,4 +1,4 @@
-/* Host regression tests; link with src/drivers/st_ftm5.c and src/drivers/touch.c. */
+/* Host regression tests; link with kernel/drivers/st_ftm5.c and kernel/drivers/touch.c. */
 #include <st_ftm5.h>
 
 #include <assert.h>

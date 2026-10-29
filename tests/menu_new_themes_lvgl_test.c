@@ -6,7 +6,7 @@
 #include <string.h>
 #include <lvgl.h>
 #include <lvgl_port.h>
-#include "../src/ui/menu_style.h"
+#include "../user/ui/menu_style.h"
 #include "menu_design_lvgl_checks.h"
 static void settle(kshim_lvgl_t *ui) {
     for(unsigned i=0;i<48U;i++) kshim_lvgl_frame(ui,16U);

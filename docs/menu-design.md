@@ -51,7 +51,7 @@ font. No proprietary or host-system font assets are added.
 ## Files and regeneration
 
 `tools/generate_design_presets.py` is the editable descriptor source. Run it to
-regenerate `src/ui/menu_design.h`, or use `--check` to verify exact reproduction.
+regenerate `user/ui/menu_design.h`, or use `--check` to verify exact reproduction.
 `menu_design_layout.h` computes pure bounded geometry and label reservations.
 `menu_design_port.h` binds it to LVGL and draws the style-specific surfaces.
 `menu_symbols.h`, `menu_design_font.h` and `menu_design_background.h` own their

@@ -70,7 +70,7 @@ iOS 使用单列分组、右侧独立预留的勾选区与居中主按钮；勾�
 
 ## 实现与资源
 
-`src/ui/menu_style.h` 定义预设字段，`src/ui/styles/*.h` 保存独立数据，
+`user/ui/menu_style.h` 定义预设字段，`user/ui/styles/*.h` 保存独立数据，
 只编入所选预设。`menu_style_render.h` 应用材质、层次、徽标与焦点效果，
 `menu_ios.h` 实现 iOS 分组和勾号，`lvgl_port.c` 共用控件与事件回调。
 

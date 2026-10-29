@@ -3,7 +3,7 @@
   "branch": "andromeda-p-oss",
   "revision": "74347f5521fb444936f5986ff0937264307d78fe",
   "upstream_license": "GPL-2.0-only",
-  "implementation": "src/drivers/st_ftm5.c (freestanding protocol implementation; vendor source is not linked)",
+  "implementation": "kernel/drivers/st_ftm5.c (freestanding protocol implementation; vendor source is not linked)",
   "sources": {
     "drivers/input/touchscreen/fts_521/fts.c": "09476281f0c656d3f9794fa84a2da305fa8d5737933332dfa991cdf7c62c1f8a",
     "drivers/input/touchscreen/fts_521/fts.h": "1b695d5922c841bb399d937362ec91f83a8c6fe02b1667ef5bd249e73a18db63",

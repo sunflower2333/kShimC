@@ -1,6 +1,6 @@
 # ST FTM5 protocol reference
 
-`src/drivers/st_ftm5.c` implements the input protocol of the MIX 3 5G controller.
+`kernel/drivers/st_ftm5.c` implements the input protocol of the MIX 3 5G controller.
 The reference is Xiaomi's `andromeda-p-oss` kernel, pinned in `UPSTREAM.json`.
 That manifest records SHA256 hashes of the files fetched from GitHub,
 including the board defconfig which selects `fts_521`, the device tree and

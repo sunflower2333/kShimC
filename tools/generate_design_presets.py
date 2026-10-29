@@ -75,7 +75,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check',action='store_true')
     args=parser.parse_args()
-    path=ROOT/'src/ui/menu_design.h'
+    path=ROOT/'user/ui/menu_design.h'
     generated=generate()
     if args.check:
         if path.read_text(encoding='utf-8')!=generated:

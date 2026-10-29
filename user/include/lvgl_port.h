@@ -1,0 +1,95 @@
+#pragma once
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include <framebuffer.h>
+#include <kshim/boot.h>
+#include <kshim/input.h>
+#include <kshim/power.h>
+
+#define KSHIM_MENU_MAX_ENTRIES 49U
+#define KSHIM_UI_ENTRY_DURATION_MS 360U
+#define KSHIM_UI_FOCUS_DURATION_MS 260U
+#define KSHIM_UI_PRESS_DURATION_MS 120U
+#define KSHIM_UI_CONFIRM_DURATION_MS 180U
+
+typedef struct kshim_lvgl kshim_lvgl_t;
+
+/* RAM outside the runtime slot for the inflated Noto Sans CJK font and the
+ * background textures; call before kshim_lvgl_init. Without it (or if it is
+ * too small) the menu uses a Latin-only font on a plain background. */
+void kshim_lvgl_set_scratch(void *Base, size_t Size);
+
+/* Non-zero when the menu draws with Noto Sans CJK. */
+int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context);
+
+/* Initialize the LVGL menu and its keypad (Keys may be NULL). */
+int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
+                    kshim_key_source_t *Keys);
+
+/* Advance LVGL's cooperative timer loop. elapsed_ms may be zero. */
+void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs);
+
+/* Return non-zero after kshim_lvgl_init has installed a display. */
+int kshim_lvgl_ready(const kshim_lvgl_t *Context);
+
+/* Consume one Power-confirmed menu choice; NONE means no new confirmation. */
+kshim_menu_action_t kshim_lvgl_take_selection(kshim_lvgl_t *Context);
+void kshim_lvgl_set_status(kshim_lvgl_t *Context, const char *Text);
+void kshim_lvgl_set_countdown(kshim_lvgl_t *Context, uint32_t timeout_ms);
+
+/* Replace the compatibility menu with 1..49 manifest-owned labels. */
+int kshim_lvgl_set_entries(kshim_lvgl_t *Context,
+                           const char *const *Names, size_t Count,
+                           size_t Initial);
+
+/* Consume one confirmed dynamic-menu index; -1 means no new selection. */
+int kshim_lvgl_take_index(kshim_lvgl_t *Context);
+
+/* Touch callback for kshim_touch_config_t.emit; call on the UI/boot CPU,
+ * outside rendering. Each event is synchronously delivered to LVGL. */
+void kshim_lvgl_touch(void *Context, const kshim_touch_event_t *Event);
+
+/* Capability-gated power UI. No reset is performed from an LVGL callback. */
+int kshim_lvgl_set_power_capabilities(kshim_lvgl_t *Context, uint32_t mask);
+kshim_power_action_t kshim_lvgl_take_power(kshim_lvgl_t *Context);
+
+/* Release the single early-boot UI instance, including partially built menus. */
+void kshim_lvgl_deinit(kshim_lvgl_t *Context);
+
+struct kshim_lvgl {
+  kshim_framebuffer_t *Framebuffer;
+  kshim_key_source_t  *Keys;
+  void                *Display;
+  void                *Input;
+  void                *PointerInput;
+  void                *Group;
+  void                *List;
+  void                *BootButton; /* NULL for Clover: activate its boot entry directly. */
+  void                *Background;
+  const char           *Entries[KSHIM_MENU_MAX_ENTRIES];
+  size_t                EntryCount;
+  kshim_menu_action_t   PendingAction;
+  int                   PendingIndex;
+  uint32_t              PointerX;
+  uint32_t              PointerY;
+  uint32_t              ElapsedMs;
+  uint16_t              TextureWidth;
+  uint16_t              TextureHeight;
+  uint8_t              Ready;
+  uint8_t              PointerPressed;
+  uint8_t              DefaultEntries;
+  uint8_t              ReducedQuality;
+  uint8_t              CountdownEnabled;
+  uint8_t              AutobootCancelled;
+  uint32_t             CountdownMs;
+  uint32_t             CountdownShown;
+  uint32_t             PowerCapabilities;
+  kshim_power_action_t  PendingPower;
+  size_t               SelectedIndex;
+  uint8_t              PowerUiEnabled;
+  void                *RestartButton, *PowerOffButton, *PowerDialog;
+  void                *PowerConfirmButton, *PowerCancelButton;
+  void                *PowerModeButtons[3];
+};

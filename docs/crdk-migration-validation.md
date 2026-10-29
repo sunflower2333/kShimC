@@ -49,8 +49,8 @@ The complete CrDK submodule is clean at
 
 Implementation, ownership rules, source pins and supported resource bindings
 are documented in [ports/crdk/README.md](../ports/crdk/README.md). Runtime
-sources are organized under `src/core`, `src/dt`, `src/drivers`, `src/ui`
-and `src/arch/arm64`, with common public headers under `src/include`.
+sources are organized under `kernel/` (`core`, `dt`, `drivers`, `arch/arm64`)
+and `user/` (`ui`, `bootmenu`); see [source-layout.md](source-layout.md).
 Old scattered CrDK copies and unused MMU/FDT/GIC/OSKAL copies were removed.
 
 ## Completed checks

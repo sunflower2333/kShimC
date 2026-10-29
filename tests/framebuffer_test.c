@@ -1,4 +1,4 @@
-/* Host regression tests; link this file with src/ui/framebuffer.c. */
+/* Host regression tests; link this file with user/ui/framebuffer.c. */
 #include <framebuffer.h>
 
 #include <limits.h>

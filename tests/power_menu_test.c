@@ -5,8 +5,8 @@
 #include <string.h>
 #include <lvgl.h>
 #include <lvgl_port.h>
-#include "../src/ui/menu_design.h"
-#include "../src/ui/menu_power_profile.h"
+#include "../user/ui/menu_design.h"
+#include "../user/ui/menu_power_profile.h"
 /* Every selectable theme must place tools in its own chrome. */
 static int integrated(void) { return 1; }
 

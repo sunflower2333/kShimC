@@ -1,7 +1,7 @@
 /* Preserve the original mark reservation when a dense icon card has little room. */
 #include <assert.h>
 #include <stdio.h>
-#include "../src/ui/menu_design_layout.h"
+#include "../user/ui/menu_design_layout.h"
 int main(void) {
     kshim_menu_design_t d=mMenuDesign;
     d.kind=KSHIM_DESIGN_HARMONYOS; d.mark=KSHIM_MARK_CHECK;
