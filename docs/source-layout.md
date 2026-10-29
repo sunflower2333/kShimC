@@ -31,14 +31,19 @@ user/
 
 `ports/` (CrDK and LVGL build adapters), `lib/` and `third_party/` are unchanged.
 
-### Reserved for upcoming kernel subsystems
+### Storage and firmware subsystems
 
-These directories do not exist yet. New code should go here, and its public
-parts should go in `include/kshim/`:
+- `kernel/block/`: blkdev registry, RAM disk and GPT partition scanning.
+- `kernel/drivers/block/`: block device drivers (UFS, SDHCI).
+- `kernel/fs/`: read-only filesystems over CrDK FirmwareLoaderLib, plus liblp
+  `super` logical partitions.
+- `kernel/firmware/`: the firmware loader and Android boot-slot capture.
 
-- `kernel/drivers/block/`: block devices (UFS, SDHCI) behind a common block API.
-- `kernel/fs/`: read-only filesystems on top of the block layer.
-- `kernel/firmware/`: the firmware loader (find and verify blobs for drivers).
+Their headers (`blkdev.h`, `block.h`, `storage.h`, `fs.h`, `firmware.h`) are
+kernel-internal and live in `kernel/include/kshim/`, because they depend on
+`error_no.h`. Promote a header to `include/kshim/` only once userspace needs it
+and it no longer pulls in kernel-internal headers. Build glue is in
+`cmake/storage.cmake`; see `docs/firmware-loader.md`.
 
 ## Boundary API (`include/kshim/`)
 

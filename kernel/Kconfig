@@ -8,6 +8,8 @@ menu "Drivers"
     source "$srctree/kernel/drivers/Kconfig"
 endmenu
 
+source "$srctree/kernel/block/Kconfig"
+
 menu "Qualcomm Input"
     config QCOM_KEYS
         bool "Enable Qualcomm key input"
