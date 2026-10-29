@@ -13,26 +13,6 @@ static bool kshim_fb_is_mono(const kshim_framebuffer_t *framebuffer)
            framebuffer->format == KSHIM_FB_FORMAT_MONO1_MSB;
 }
 
-uint32_t kshim_fb_format_bpp(kshim_fb_format_t format)
-{
-    switch (format) {
-    case KSHIM_FB_FORMAT_MONO1_LSB:
-    case KSHIM_FB_FORMAT_MONO1_MSB:
-        return 1;
-    case KSHIM_FB_FORMAT_GRAY8:
-        return 8;
-    case KSHIM_FB_FORMAT_RGB565:
-        return 16;
-    case KSHIM_FB_FORMAT_XRGB8888:
-    case KSHIM_FB_FORMAT_ARGB8888:
-    case KSHIM_FB_FORMAT_XBGR8888:
-    case KSHIM_FB_FORMAT_ABGR8888:
-        return 32;
-    default:
-        return 0;
-    }
-}
-
 static bool kshim_fb_mul_overflow_size(size_t left, size_t right, size_t *result)
 {
     if (left != 0 && right > SIZE_MAX / left)

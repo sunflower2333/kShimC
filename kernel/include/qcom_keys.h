@@ -215,3 +215,11 @@ int QcomKeysPoll(QcomKeys *Keys, QcomKeyEvent *Event);
 int QcomKeyReadPressed(
     const QcomKeys *Keys, const QcomKeyDescriptor *Descriptor,
     uint8_t *Pressed);
+
+/* The public kshim_key_source_t (kshim/input.h) is a QcomKeys behind an
+ * opaque handle; kshim_key_source_poll() wraps QcomKeysPoll(). */
+#include <kshim/input.h>
+static inline kshim_key_source_t *QcomKeysSource(QcomKeys *Keys)
+{
+  return (kshim_key_source_t *)(void *)Keys;
+}

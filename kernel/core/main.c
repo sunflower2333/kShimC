@@ -6,6 +6,7 @@
 #include <arm64/boot.h>
 #include <manifest.h>
 #include <platform.h>
+#include <kshim/user.h>
 #include <dt.h>
 #include <qcom_dt.h>
 
@@ -239,7 +240,7 @@ static uint32_t select_image(const MANIFEST_VIEW *view, uint64_t fdt)
         if (i == view->manifest->header.default_entry) initial = count;
         ++count;
     }
-    if (kshim_platform_select(fdt, names, count, initial, view->manifest->header.timeout_ms, &selected)) {
+    if (kshim_user_select(fdt, names, count, initial, view->manifest->header.timeout_ms, &selected)) {
         printf("Unsafe UI shutdown; refusing payload handoff\n");
         for (;;) (void)delay(100000);
     }

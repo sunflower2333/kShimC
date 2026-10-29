@@ -40,7 +40,7 @@ static const lv_font_t *mTitleFont;
 static const lv_font_t *mStatusFont;
 static lv_image_dsc_t mBackdropImages[2];
 static kshim_backdrop_layout_t mBackdropLayout;
-static QcomKeys *mKeys;
+static kshim_key_source_t *mKeys;
 static kshim_framebuffer_t *mFramebuffer;
 static lv_indev_t *mKeyInput;
 static lv_indev_t *mPointerInput;
@@ -135,7 +135,7 @@ static void KshimLvglFlush(lv_display_t *Display, const lv_area_t *Area,
 
 static void KshimLvglReadKeys(lv_indev_t *Input, lv_indev_data_t *Data)
 {
-  QcomKeyEvent Event;
+  kshim_key_event_t Event;
   int Status;
   (void)Input;
   if (Data == NULL)
@@ -149,13 +149,13 @@ static void KshimLvglReadKeys(lv_indev_t *Input, lv_indev_data_t *Data)
   }
   if (mKeys == NULL)
     return;
-  Status = QcomKeysPoll(mKeys, &Event);
-  if (Status != QCOM_KEYS_EVENT || Event.Type != QCOM_KEY_EVENT_PRESS)
+  Status = kshim_key_source_poll(mKeys, &Event);
+  if (Status != KSHIM_KEYS_EVENT || Event.type != KSHIM_KEY_EVENT_PRESS)
     return;
-  switch (Event.Action) {
-  case QCOM_KEY_ACTION_UP: mKey = LV_KEY_PREV; break;
-  case QCOM_KEY_ACTION_DOWN: mKey = LV_KEY_NEXT; break;
-  case QCOM_KEY_ACTION_SELECT: mKey = LV_KEY_ENTER; break;
+  switch (Event.action) {
+  case KSHIM_KEY_ACTION_UP: mKey = LV_KEY_PREV; break;
+  case KSHIM_KEY_ACTION_DOWN: mKey = LV_KEY_NEXT; break;
+  case KSHIM_KEY_ACTION_SELECT: mKey = LV_KEY_ENTER; break;
   default: return;
   }
   if (mContext) { mContext->AutobootCancelled = 1; mContext->CountdownEnabled = 0; }
@@ -551,7 +551,7 @@ static int KshimBuildChrome(void)
   return 0;
 }
 
-int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer, QcomKeys *Keys)
+int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer, kshim_key_source_t *Keys)
 {
   static const char *const DefaultEntries[] = {
       CONFIG_KSHIM_MENU_ENTRY1, CONFIG_KSHIM_MENU_ENTRY2,

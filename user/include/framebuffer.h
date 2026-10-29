@@ -13,17 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum kshim_fb_format {
-    /* One pixel per bit.  The first pixel in a byte is bit 0 or bit 7. */
-    KSHIM_FB_FORMAT_MONO1_LSB = 1,
-    KSHIM_FB_FORMAT_MONO1_MSB = 2,
-    KSHIM_FB_FORMAT_GRAY8 = 3,
-    KSHIM_FB_FORMAT_RGB565 = 4,
-    KSHIM_FB_FORMAT_XRGB8888 = 5,
-    KSHIM_FB_FORMAT_ARGB8888 = 6,
-    KSHIM_FB_FORMAT_XBGR8888 = 7,
-    KSHIM_FB_FORMAT_ABGR8888 = 8,
-} kshim_fb_format_t;
+/* Formats, the scanout description and kshim_fb_format_bpp() are public. */
+#include <kshim/display.h>
 
 typedef enum kshim_fb_status {
     KSHIM_FB_OK = 0,
@@ -33,23 +24,6 @@ typedef enum kshim_fb_status {
     KSHIM_FB_ERR_OUT_OF_BOUNDS = -4,
     KSHIM_FB_ERR_BUFFER_TOO_SMALL = -5,
 } kshim_fb_status_t;
-
-typedef struct kshim_framebuffer_config {
-    /* Physical or virtual address of the first byte of the first row. */
-    uintptr_t render_address;
-    uint32_t width;
-    uint32_t height;
-    /* Bytes between two rows.  Zero selects the minimum stride. */
-    uint32_t stride;
-    /* Bits per pixel.  It must match the selected format. */
-    uint32_t bpp;
-    kshim_fb_format_t format;
-    /* Raw pixel values used by monochrome drawing primitives. */
-    uint32_t foreground;
-    uint32_t background;
-    /* Optional bound for validation; zero means the mapping size is unknown. */
-    size_t buffer_size;
-} kshim_framebuffer_config_t;
 
 typedef struct kshim_framebuffer {
     uintptr_t render_address;
@@ -63,9 +37,6 @@ typedef struct kshim_framebuffer {
     size_t buffer_size;
     size_t frame_size;
 } kshim_framebuffer_t;
-
-/* Return the required bits per pixel for a format, or zero if unsupported. */
-uint32_t kshim_fb_format_bpp(kshim_fb_format_t format);
 
 /* Configure a framebuffer without touching its backing memory. */
 kshim_fb_status_t kshim_fb_init(

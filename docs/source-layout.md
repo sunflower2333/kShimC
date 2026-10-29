@@ -50,7 +50,7 @@ parts should go in `include/kshim/`:
 | `boot.h` | `kshim_menu_action_t` and `kshim_menu_activate()` (the board/UEFI handoff hook) |
 | `platform.h` | `kshim_platform_accelerate()` (start PSCI workers and enable the MMU), `kshim_platform_prepare_handoff()` |
 | `smp.h` | Worker offload: CPU counts, `kshim_smp_submit()` / `_join()`, status codes, time |
-| `time.h` | `delay()` and `get_current_time()` (microseconds) |
+| `time.h` | `delay()` (microseconds) and `get_current_time()` (milliseconds) |
 | `console.h` | `kshim_console_write()` and `kshim_console_try_read()` |
 | `user.h` | **Upcalls**: entry points userspace implements and the kernel calls (`kshim_user_select()`, `kshim_user_main()`, `kshim_user_prepare_handoff()`, `kshim_user_smp_selftest()`) |
 

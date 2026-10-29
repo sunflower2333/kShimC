@@ -3,12 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum {
-    KSHIM_POWER_NONE = 0, KSHIM_POWER_OFF, KSHIM_POWER_WARM,
-    KSHIM_POWER_HARD, KSHIM_POWER_EDL
-} kshim_power_action_t;
-#define KSHIM_POWER_BIT(a) (1U << (unsigned)(a))
-#define KSHIM_POWER_ALL 0x1eU
+/* Actions, capability bits and the platform entry points are public. */
+#include <kshim/power.h>
 #define KSHIM_POWER_MAX_PMICS 4U
 /* Negative results never mean that a requested reset took place. */
 enum { KSHIM_POWER_UNSUPPORTED=-1, KSHIM_POWER_IO=-2,
@@ -37,6 +33,4 @@ int kshim_power_probe(struct kshim_power_config *, const struct kshim_power_ops 
 int kshim_power_execute(struct kshim_power_config *, const struct kshim_power_ops *, kshim_power_action_t);
 struct kshim_resources;
 int kshim_dt_power(const void *, struct kshim_power_config *);
-uint32_t kshim_platform_power_init(const void *);
-int kshim_platform_power_execute(kshim_power_action_t);
 int kshim_power_map_resources(struct kshim_resources *);

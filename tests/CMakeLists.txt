@@ -4,7 +4,8 @@ enable_testing()
 
 get_filename_component(KSHIM_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 # Host tests unit-test internals on both sides of the kernel/user boundary.
-set(KSHIM_TEST_INCLUDE_DIRS "${KSHIM_ROOT}/kernel/include" "${KSHIM_ROOT}/user/include")
+set(KSHIM_TEST_INCLUDE_DIRS "${KSHIM_ROOT}/include" "${KSHIM_ROOT}/kernel/include"
+    "${KSHIM_ROOT}/user/include")
 set(KSHIM_TEST_MENU_STYLE "FLAT" CACHE STRING "Boot menu preset used by host UI tests")
 set(KSHIM_TEST_MENU_STYLES FLAT CLASSIC CARDS TERMINAL MINIMAL HIGH_CONTRAST
     FLUENT MATERIAL3 SURFACE CUPERTINO GLASS AURORA SOFT_UI BENTO NEON NORD

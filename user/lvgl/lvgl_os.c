@@ -1,5 +1,5 @@
 #include <config.h>
-#include <smp.h>
+#include <kshim/smp.h>
 
 #include <lvgl.h>
 

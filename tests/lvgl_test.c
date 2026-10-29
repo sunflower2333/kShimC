@@ -10,6 +10,9 @@
 #include "../user/ui/menu_design.h"
 #include <lvgl_port.h>
 #include <ui_font.h>
+/* Kernel drivers driven directly by this test. */
+#include <qcom_keys.h>
+#include <touch.h>
 
 #ifdef CONFIG_KSHIM_UEFI_TEST_MENU
 #define DEFAULT_ENTRY_COUNT 2U
@@ -98,7 +101,7 @@ static void InitStableUi(test_ui_t *Test, unsigned Width, unsigned Height,
     };
     assert(kshim_fb_init(&Test->framebuffer, &Config) == KSHIM_FB_OK);
     assert(kshim_fb_clear(&Test->framebuffer) == KSHIM_FB_OK);
-    assert(kshim_lvgl_init(&Test->ui, &Test->framebuffer, &Test->keys) == 0);
+    assert(kshim_lvgl_init(&Test->ui, &Test->framebuffer, QcomKeysSource(&Test->keys)) == 0);
     assert(kshim_lvgl_ready(&Test->ui));
 }
 

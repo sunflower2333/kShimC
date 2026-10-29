@@ -584,3 +584,32 @@ int QcomKeysPoll(QcomKeys *Keys, QcomKeyEvent *Event)
     return Status;
   return Sampled != 0U ? QCOM_KEYS_NO_EVENT : FirstError;
 }
+
+/* Public key-source adapter (kshim/input.h): same results as QcomKeysPoll. */
+_Static_assert(KSHIM_KEYS_EVENT == QCOM_KEYS_EVENT &&
+               KSHIM_KEYS_NO_EVENT == QCOM_KEYS_NO_EVENT, "key poll codes");
+_Static_assert((int)KSHIM_KEY_ACTION_UP == (int)QCOM_KEY_ACTION_UP &&
+               (int)KSHIM_KEY_ACTION_DOWN == (int)QCOM_KEY_ACTION_DOWN &&
+               (int)KSHIM_KEY_ACTION_SELECT == (int)QCOM_KEY_ACTION_SELECT,
+               "key actions");
+_Static_assert((int)KSHIM_KEY_EVENT_PRESS == (int)QCOM_KEY_EVENT_PRESS &&
+               (int)KSHIM_KEY_EVENT_RELEASE == (int)QCOM_KEY_EVENT_RELEASE,
+               "key event types");
+
+int kshim_key_source_poll(kshim_key_source_t *Source, kshim_key_event_t *Event)
+{
+  QcomKeyEvent Raw;
+  int Status;
+
+  if (Event == NULL)
+    return QCOM_KEYS_EINVAL;
+  Status = QcomKeysPoll((QcomKeys *)(void *)Source, &Raw);
+  if (Status == QCOM_KEYS_EVENT)
+    *Event = (kshim_key_event_t){
+        .type = (kshim_key_event_type_t)Raw.Type,
+        .action = (kshim_key_action_t)Raw.Action,
+        .code = Raw.Code,
+        .pressed = Raw.Pressed,
+    };
+  return Status;
+}

@@ -4,9 +4,9 @@
 #include <stdint.h>
 
 #include <framebuffer.h>
-#include <qcom_keys.h>
-#include <touch.h>
-#include <power.h>
+#include <kshim/boot.h>
+#include <kshim/input.h>
+#include <kshim/power.h>
 
 #define KSHIM_MENU_MAX_ENTRIES 49U
 #define KSHIM_UI_ENTRY_DURATION_MS 360U
@@ -16,13 +16,6 @@
 
 typedef struct kshim_lvgl kshim_lvgl_t;
 
-typedef enum {
-  KSHIM_MENU_NONE = 0,
-  KSHIM_MENU_BOOT,
-  KSHIM_MENU_RECOVERY,
-  KSHIM_MENU_POWER_OFF,
-} kshim_menu_action_t;
-
 /* RAM outside the runtime slot for the inflated Noto Sans CJK font and the
  * background textures; call before kshim_lvgl_init. Without it (or if it is
  * too small) the menu uses a Latin-only font on a plain background. */
@@ -31,9 +24,9 @@ void kshim_lvgl_set_scratch(void *Base, size_t Size);
 /* Non-zero when the menu draws with Noto Sans CJK. */
 int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context);
 
-/* Initialize the LVGL menu and Qualcomm keypad. */
+/* Initialize the LVGL menu and its keypad (Keys may be NULL). */
 int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
-                    QcomKeys *Keys);
+                    kshim_key_source_t *Keys);
 
 /* Advance LVGL's cooperative timer loop. elapsed_ms may be zero. */
 void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs);
@@ -65,14 +58,9 @@ kshim_power_action_t kshim_lvgl_take_power(kshim_lvgl_t *Context);
 /* Release the single early-boot UI instance, including partially built menus. */
 void kshim_lvgl_deinit(kshim_lvgl_t *Context);
 
-/* Board hook called by the main loop. Return zero if the action was accepted.
- * The weak default reports unavailable until a board supplies a boot/power
- * handler; menu confirmation never pretends to perform a missing action. */
-int kshim_menu_activate(kshim_menu_action_t Action);
-
 struct kshim_lvgl {
   kshim_framebuffer_t *Framebuffer;
-  QcomKeys            *Keys;
+  kshim_key_source_t  *Keys;
   void                *Display;
   void                *Input;
   void                *PointerInput;

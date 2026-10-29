@@ -3,7 +3,7 @@
 #include <dt.h>
 #include <Library/spmi.h>
 #include <Library/cr_resources.h>
-#include <framebuffer.h>
+#include <kshim/display.h>
 #include <kshim_mmu.h>
 #define KSHIM_SPMI_MAX 4
 #define KSHIM_RESOURCE_MAX 96

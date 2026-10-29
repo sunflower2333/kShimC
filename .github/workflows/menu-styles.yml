@@ -67,7 +67,7 @@ jobs:
       - name: GCC and Clang power sequencing with injected failures
         run: |
           for cc in gcc clang; do
-            $cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Ikernel/include tests/power_test.c kernel/drivers/power.c -o /tmp/power-test
+            $cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie -Iinclude -Ikernel/include tests/power_test.c kernel/drivers/power.c -o /tmp/power-test
             /tmp/power-test
           done
       - name: Test authentic-frame verification and HTML packaging
@@ -113,7 +113,8 @@ jobs:
           base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
           git fetch --depth=1 origin "$base"
           # Baseline paths predate the kernel/ + user/ split: "<path at $base>:<path now>".
-          files="src/ui/lvgl_port.c:user/ui/lvgl_port.c src/ui/menu_style.h:user/ui/menu_style.h src/ui/menu_design.h:user/ui/menu_design.h src/ui/menu_design_layout.h:user/ui/menu_design_layout.h src/ui/menu_design_port.h:user/ui/menu_design_port.h src/ui/menu_layout_dispatch.h:user/ui/menu_layout_dispatch.h src/ui/menu_native.h:user/ui/menu_native.h src/ui/menu_new_themes_render.h:user/ui/menu_new_themes_render.h src/ui/menu_symbols.h:user/ui/menu_symbols.h src/include/lv_conf.h:user/include/lv_conf.h tests/ui_preview_test.c:tests/ui_preview_test.c"
+          # lvgl_port.h is swapped too: its key input moved to the public kshim/input.h API.
+          files="src/ui/lvgl_port.c:user/ui/lvgl_port.c src/ui/menu_style.h:user/ui/menu_style.h src/ui/menu_design.h:user/ui/menu_design.h src/ui/menu_design_layout.h:user/ui/menu_design_layout.h src/ui/menu_design_port.h:user/ui/menu_design_port.h src/ui/menu_layout_dispatch.h:user/ui/menu_layout_dispatch.h src/ui/menu_native.h:user/ui/menu_native.h src/ui/menu_new_themes_render.h:user/ui/menu_new_themes_render.h src/ui/menu_symbols.h:user/ui/menu_symbols.h src/include/lv_conf.h:user/include/lv_conf.h src/include/lvgl_port.h:user/include/lvgl_port.h tests/ui_preview_test.c:tests/ui_preview_test.c"
           for pair in $files; do git show "$base:${pair%%:*}" > "${pair#*:}"; done
           sed -i 's|"\.\./src/ui/|"../user/ui/|' tests/ui_preview_test.c
           cmake --build build-menu --parallel 2 --target ui_preview_test
@@ -128,7 +129,8 @@ jobs:
           git fetch --depth=1 origin c1a80a45fd577dbb859e78404458477f98ab5d72
           base=a154e1af2eb65514b15b8f30bb067fb934b6fcad
           # Baseline paths predate the kernel/ + user/ split: "<path at $base>:<path now>".
-          files="src/ui/lvgl_port.c:user/ui/lvgl_port.c src/ui/menu_style.h:user/ui/menu_style.h src/ui/menu_design.h:user/ui/menu_design.h src/ui/menu_design_layout.h:user/ui/menu_design_layout.h src/ui/menu_design_port.h:user/ui/menu_design_port.h src/ui/menu_layout_dispatch.h:user/ui/menu_layout_dispatch.h src/ui/menu_native.h:user/ui/menu_native.h src/ui/menu_new_themes_render.h:user/ui/menu_new_themes_render.h src/ui/menu_symbols.h:user/ui/menu_symbols.h src/include/lv_conf.h:user/include/lv_conf.h tests/ui_preview_test.c:tests/ui_preview_test.c"
+          # lvgl_port.h is swapped too: its key input moved to the public kshim/input.h API.
+          files="src/ui/lvgl_port.c:user/ui/lvgl_port.c src/ui/menu_style.h:user/ui/menu_style.h src/ui/menu_design.h:user/ui/menu_design.h src/ui/menu_design_layout.h:user/ui/menu_design_layout.h src/ui/menu_design_port.h:user/ui/menu_design_port.h src/ui/menu_layout_dispatch.h:user/ui/menu_layout_dispatch.h src/ui/menu_native.h:user/ui/menu_native.h src/ui/menu_new_themes_render.h:user/ui/menu_new_themes_render.h src/ui/menu_symbols.h:user/ui/menu_symbols.h src/include/lv_conf.h:user/include/lv_conf.h src/include/lvgl_port.h:user/include/lvgl_port.h tests/ui_preview_test.c:tests/ui_preview_test.c"
           for pair in $files; do git show "$base:${pair%%:*}" > "${pair#*:}"; done
           sed -i 's|"\.\./src/ui/|"../user/ui/|' tests/ui_preview_test.c
           git show c1a80a45fd577dbb859e78404458477f98ab5d72:src/ui/lvgl_port.c > user/ui/lvgl_port.c

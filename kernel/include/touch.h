@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/* Touch event types are public (kshim_input_touch_*); this is the tracker. */
+#include <kshim/input.h>
+
 #define KSHIM_TOUCH_MAX_CONTACTS 10U
 #define KSHIM_TOUCH_NO_PRIMARY UINT8_MAX
 
@@ -19,24 +22,6 @@ typedef enum kshim_touch_contact_action {
     KSHIM_TOUCH_CONTACT_MOVE,
     KSHIM_TOUCH_CONTACT_LEAVE,
 } kshim_touch_contact_action_t;
-
-typedef enum kshim_touch_event_type {
-    KSHIM_TOUCH_EVENT_PRESS = 0,
-    KSHIM_TOUCH_EVENT_MOVE,
-    KSHIM_TOUCH_EVENT_RELEASE,
-    /* Discard a contact after an error/shutdown without completing a click. */
-    KSHIM_TOUCH_EVENT_CANCEL,
-} kshim_touch_event_type_t;
-
-typedef struct kshim_touch_event {
-    kshim_touch_event_type_t type;
-    uint8_t contact_id;
-    uint32_t x;
-    uint32_t y;
-} kshim_touch_event_t;
-
-typedef void (*kshim_touch_event_fn)(void *context,
-                                     const kshim_touch_event_t *event);
 
 typedef struct kshim_touch_config {
     uint32_t source_width;
