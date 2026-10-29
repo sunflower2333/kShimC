@@ -55,7 +55,9 @@ parts should go in `include/kshim/`:
 | `user.h` | **Upcalls**: entry points userspace implements and the kernel calls (`kshim_user_select()`, `kshim_user_main()`, `kshim_user_prepare_handoff()`, `kshim_user_smp_selftest()`) |
 
 The generated `config.h` (Kconfig) is shared by both sides. libc (picolibc) is
-available to both sides.
+available to both sides. LVGL itself (`third_party/lvgl`) is a userspace library
+and is built with `user/include`, because `lv_conf.h` and `kshim_lvgl_os.h`
+configure it.
 
 ## Rules
 
