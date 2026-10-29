@@ -1,0 +1,51 @@
+/dts-v1/;
+/* Focused SM8250 storage binding fixture, not a board DT. Shape follows the
+ * Android kona UFS/SDCC2 bindings (ufshc + qmp-v4 PHY + GDSC + RPMh VRM
+ * supplies, sdhci-msm-v5 with cd-gpios); addresses and supply resources
+ * match CrDK Target/Sm8250 CrUfsTarget.c / CrSdTarget.c. Supply ranges are
+ * chosen to exercise CrUfsPowerResolve, not copied from a board. */
+/ {
+    compatible = "qcom,kona-hdk", "qcom,kona";
+    #address-cells = <1>; #size-cells = <1>;
+    aliases { sdhc2 = "/sdhci@8804000"; ufshc1 = "/ufshc@1d84000"; };
+    reserved-memory {
+        #address-cells = <1>; #size-cells = <1>; ranges;
+        cmd-db@80860000 { compatible = "qcom,cmd-db"; reg = <0x80860000 0x20000>; no-map; };
+    };
+    tlmm: pinctrl@f000000 {
+        compatible = "qcom,kona-pinctrl"; reg = <0xf000000 0x1000000>;
+        gpio-controller; #gpio-cells = <2>;
+    };
+    rsc@18200000 {
+        compatible = "qcom,rpmh-rsc"; label = "apps_rsc";
+        reg = <0x18200000 0x10000>, <0x18210000 0x10000>, <0x18220000 0x10000>;
+        reg-names = "drv-0", "drv-1", "drv-2";
+        qcom,drv-id = <2>; qcom,tcs-offset = <0xd00>; qcom,tcs-config = <2 2 0 3 1 3 3 1>;
+    };
+    regulators {
+        ldoa5 { compatible = "qcom,rpmh-vrm-regulator"; qcom,resource-name = "ldoa5";
+            l5: regulator-l5 { regulator-min-microvolt = <880000>; regulator-max-microvolt = <880000>; qcom,set = <3>; }; };
+        ldoa6 { compatible = "qcom,rpmh-vrm-regulator"; qcom,resource-name = "ldoa6";
+            l6: regulator-l6 { regulator-min-microvolt = <1200000>; regulator-max-microvolt = <1200000>; qcom,set = <3>; }; };
+        ldoa9 { compatible = "qcom,rpmh-vrm-regulator"; qcom,resource-name = "ldoa9";
+            l9: regulator-l9 { regulator-min-microvolt = <1200000>; regulator-max-microvolt = <1200000>; qcom,set = <3>; }; };
+        ldoa17 { compatible = "qcom,rpmh-vrm-regulator"; qcom,resource-name = "ldoa17";
+            l17: regulator-l17 { regulator-min-microvolt = <2504000>; regulator-max-microvolt = <2952000>; qcom,set = <3>; }; };
+        smpa4 { compatible = "qcom,rpmh-vrm-regulator"; qcom,resource-name = "smpa4";
+            s4: regulator-s4 { regulator-min-microvolt = <1800000>; regulator-max-microvolt = <1800000>; qcom,set = <3>; }; };
+    };
+    ufs_gdsc: qcom,gdsc@177004 { compatible = "qcom,gdsc"; reg = <0x177004 0x4>; regulator-name = "ufs_phy_gdsc"; };
+    ufsphy: ufsphy_mem@1d87000 {
+        compatible = "qcom,ufs-phy-qmp-v4"; reg = <0x1d87000 0xe10>; reg-names = "phy_mem";
+        #phy-cells = <0>; vdda-phy-supply = <&l5>; vdda-pll-supply = <&l9>;
+    };
+    ufshc@1d84000 {
+        compatible = "qcom,ufshc"; reg = <0x1d84000 0x3000>;
+        phys = <&ufsphy>; phy-names = "ufsphy";
+        vdd-hba-supply = <&ufs_gdsc>; vcc-supply = <&l17>; vccq-supply = <&l6>; vccq2-supply = <&s4>;
+    };
+    sdhci@8804000 {
+        compatible = "qcom,sdhci-msm-v5"; reg = <0x8804000 0x1000>; reg-names = "hc_mem";
+        cd-gpios = <&tlmm 77 1>;
+    };
+};
