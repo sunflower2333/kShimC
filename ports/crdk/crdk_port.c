@@ -72,3 +72,9 @@ CR_STATUS CrUnregisterInterrupt(CR_INTERRUPT_CONFIG *Config)
   (void)Config;
   return CR_UNSUPPORTED;
 }
+
+BOOLEAN CrInterruptIsRegistered(CR_INTERRUPT_CONFIG *Config)
+{
+  (void)Config;
+  return FALSE;
+}

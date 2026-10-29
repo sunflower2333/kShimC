@@ -4,8 +4,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(CRDK_ROOT "${CMAKE_CURRENT_BINARY_DIR}/source" CACHE INTERNAL "Patched CrDK build copy")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${KSHIM_CRDK_PORT}/UPSTREAM.json"
-    "${KSHIM_CRDK_PORT}/patches/0001-cranepkg-driver-fixes.patch"
-    "${KSHIM_CRDK_PORT}/patches/0002-freestanding-resources.patch"
+    "${KSHIM_CRDK_PORT}/patches/0001-freestanding-resources.patch"
     "${KSHIM_CRDK_PORT}/prepare.py")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${KSHIM_CRDK_PORT}/prepare.py"
     --source "${KSHIM_CRDK_PROJECT}/lib/CrDK" --output "${CRDK_ROOT}"

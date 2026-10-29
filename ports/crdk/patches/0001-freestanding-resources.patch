@@ -1,10 +1,10 @@
 diff --git a/Crane.dsc.inc b/Crane.dsc.inc
-index 0526ddd..6954850 100644
+index fe5684b..109c3c2 100644
 --- a/Crane.dsc.inc
 +++ b/Crane.dsc.inc
-@@ -8,6 +8,10 @@
-   CrDalLib|CranePkg/Library/CrDalLib/CrDalLib.inf
-   CrDalRegistryLib|CranePkg/Library/CrDalRegistryLib/CrDalRegistryLib.inf
+@@ -43,6 +43,10 @@
+   UfsPowerPolicyCrLib|CranePkg/Library/UfsPowerPolicyCrLib/UfsPowerPolicyCrLib.inf
+   UfsPowerFdtCrLib|CranePkg/Library/UfsPowerFdtCrLib/UfsPowerFdtCrLib.inf
  
 +  GeniSeLib|CranePkg/Library/GeniSeLib/GeniSeLib.inf
 +  QupResourceLib|CranePkg/Library/GeniSeLib/QupResourceLib.inf
@@ -14,10 +14,10 @@ index 0526ddd..6954850 100644
    CmdDBLib|CranePkg/Library/CmdDBLib/cmddb.inf
    ClockLib|CranePkg/Library/ClockLib/clock.inf
 diff --git a/CranePkg.dec b/CranePkg.dec
-index 4955d33..da77076 100644
+index dd88d1f..e3274d1 100644
 --- a/CranePkg.dec
 +++ b/CranePkg.dec
-@@ -43,3 +43,8 @@
+@@ -198,3 +198,8 @@
    # Uint16 Array
    gCranePkgTokenSpaceGuid.PcdLt9611GpioHigh|{ 0x0 }|VOID*|0x000000001
    gCranePkgTokenSpaceGuid.PcdLt9611GpioInt|0|UINT16|0x000000002
@@ -26,424 +26,6 @@ index 4955d33..da77076 100644
 +  GeniSeLib|Include/Library/cr_geni.h
 +  QupResourceLib|Include/Library/cr_resources.h
 +  SplashLib|Include/Library/cr_splash.h
-diff --git a/Driver/I2CCrDxe/I2CCrDxe.c b/Driver/I2CCrDxe/I2CCrDxe.c
-index 11a2be3..09433e7 100644
---- a/Driver/I2CCrDxe/I2CCrDxe.c
-+++ b/Driver/I2CCrDxe/I2CCrDxe.c
-@@ -23,6 +23,7 @@
- #include <Protocol/EFIGpioCrProtocol.h>
- #include <Protocol/EFII2cCrProtocol.h>
- #include <Protocol/EFIQupCrProtocol.h>
-+#include <Library/cr_geni.h>
- 
- #ifndef BIT
- #define BIT(_N)  (1U << (_N))
-@@ -51,8 +52,6 @@ STATIC EFI_GUID mHostGpioCrProtocolGuid =
- #define I2C_CR_MAX_TRANSFER_BYTES     0x00FFFFFFU
- 
- /* Linux sm8450 i2c9 / GENI SE1 register contract. */
--#define I2C_FIFO_INSTANCE             10U
--#define I2C_FIFO_SE_BASE              0x00A84000ULL
- #define SE_GENI_STATUS                0x040U
- #define SE_GENI_IF_DISABLE_RO         0x064U
- #define SE_GENI_FW_REVISION_RO        0x068U
-@@ -118,16 +117,18 @@ typedef struct {
-   EFI_HANDLE             AliasHandle;
-   EFI_I2C_CR_PROTOCOL     Protocol;
-   volatile UINT32        Busy;
-+  CONST CR_TARGET_QUP_FIFO_I2C *FifoTarget;
-+  BOOLEAN FifoResourcesReady;
-+  struct CrGeni           Fifo;
-+  struct CrGeniConfig     FifoConfig;
-   BOOLEAN                 QcomOpenAttempted;
-   EFI_STATUS              QcomOpenStatus;
- } I2C_CR_INSTANCE;
- 
--STATIC BOOLEAN mFifoResourcesReady;
--STATIC UINT32 mFifoDepth;
- STATIC EFI_QUP_CR_PROTOCOL *mFifoQup;
- 
- STATIC EFI_STATUS
--I2cCrConfigurePins (VOID)
-+I2cCrConfigurePins (I2C_CR_INSTANCE *Instance)
- {
-   EFI_GPIO_CR_PROTOCOL *Gpio;
-   EFI_STATUS            Status;
-@@ -139,15 +140,13 @@ I2cCrConfigurePins (VOID)
-     DEBUG ((DEBUG_WARN, "I2CCr: GPIO pinmux protocol unavailable: %r\n", Status));
-     return EFI_ERROR (Status) ? Status : EFI_NOT_READY;
-   }
--  /* Linux pinctrl-sm8450.c puts qup9 in PINGROUP f1 for GPIO32/33;
--     the function's table index is the TLMM mux selector (1). */
-   for (Index = 0; Index < 2; ++Index) {
-     GpioConfigParams Config;
-     ZeroMem (&Config, sizeof (Config));
--    Config.PinNumber = (UINT16)(32U + Index);
-+    Config.PinNumber = Instance->FifoTarget->Pins[Index];
-     Config.OutputEnable = FALSE;
--    Config.FunctionSel = GPIO_FUNC_1;
--    Config.Pull = GPIO_PULL_UP;
-+    Config.FunctionSel = Instance->FifoTarget->Mux;
-+    Config.Pull = Instance->FifoTarget->Pull;
-     Config.DriveStrength = GPIO_DRIVE_STRENGTH_UNCHANGE;
-     Config.OutputValue = GPIO_VALUE_UNCHANGE;
-     Status = Gpio->ConfigGpio (Gpio, &Config);
-@@ -227,212 +226,39 @@ I2cCrFifoPrepare (
- {
-   EFI_STATUS             Status;
-   EFI_CLOCK_CR_PROTOCOL *Clock;
--  UINTN                  Base;
--  UINT32 Divider;
--  UINT32 Low;
--  UINT32 High;
--  UINT32 Cycle;
- 
--  if ((Instance == NULL) || (Instance->Protocol.Instance != I2C_FIFO_INSTANCE)) {
-+  if ((Instance == NULL) || (Instance->FifoTarget == NULL)) {
-     return EFI_UNSUPPORTED;
-   }
-   /* Clocks are shared with the GPI backend.  Enable them once, but select
-      FIFO mode on every transaction so a preceding GPI transfer cannot leave
-      GENI in DMA mode. */
--  if (!mFifoResourcesReady) {
-+  if (!Instance->FifoResourcesReady) {
-     Clock = NULL;
-     Status = gBS->LocateProtocol (&gEfiClockCrProtocolGuid, NULL, (VOID **)&Clock);
-     if (EFI_ERROR (Status) || (Clock == NULL) || (Clock->SetClock == NULL)) {
-       return EFI_NOT_READY;
-     }
--    Status = Clock->SetClock (Clock, "gcc", "gcc_qupv3_wrap_1_m_ahb_clk", 0, TRUE);
-+    Status = Clock->SetClock (Clock, (CHAR8 *)Instance->FifoTarget->ClockProvider, (CHAR8 *)Instance->FifoTarget->Clocks[0], 0, TRUE);
-     if (EFI_ERROR (Status)) return Status;
--    Status = Clock->SetClock (Clock, "gcc", "gcc_qupv3_wrap_1_s_ahb_clk", 0, TRUE);
-+    Status = Clock->SetClock (Clock, (CHAR8 *)Instance->FifoTarget->ClockProvider, (CHAR8 *)Instance->FifoTarget->Clocks[1], 0, TRUE);
-     if (EFI_ERROR (Status)) return Status;
--    Status = Clock->SetClock (Clock, "gcc", "gcc_qupv3_wrap1_s1_clk", 19200000, TRUE);
-+    Status = Clock->SetClock (Clock, (CHAR8 *)Instance->FifoTarget->ClockProvider, (CHAR8 *)Instance->FifoTarget->Clocks[2], 19200000, TRUE);
-     if (EFI_ERROR (Status)) return Status;
-   }
- 
--  Base = (UINTN)I2C_FIFO_SE_BASE;
--  if ((MmioRead32 (Base + SE_GENI_STATUS) & BIT (0)) != 0) {
--    return EFI_NOT_READY;
--  }
--  /* Linux geni_i2c_init() requires I2C sequencer firmware and rejects
--     FIFO mode when the hardware disables that interface.  Clock/pinmux
--     setup cannot turn a SPI/UART or unloaded sequencer into I2C. */
--  if (((MmioRead32 (Base + SE_GENI_FW_REVISION_RO) >> 8) & 0xFFU) != 3U) {
--    DEBUG ((DEBUG_ERROR, "I2CCr: SE1 has no I2C firmware (FW=0x%x)\n",
--            MmioRead32 (Base + SE_GENI_FW_REVISION_RO)));
--    return EFI_UNSUPPORTED;
--  }
--  if ((MmioRead32 (Base + SE_GENI_IF_DISABLE_RO) & BIT (0)) != 0) {
--    DEBUG ((DEBUG_ERROR, "I2CCr: SE1 FIFO interface disabled; GPI required\n"));
--    return EFI_UNSUPPORTED;
--  }
--  mFifoDepth = (MmioRead32 (Base + SE_HW_PARAM_0) >> 16) & 0x3FU;
--  if (mFifoDepth < 2) return EFI_UNSUPPORTED;
--  Status = I2cCrConfigurePins ();
-+  /* Target discovery supplies the mapped SE resource. No physical address or
-+   * FIFO implementation is embedded in the transfer path. */
-+  Status = I2cCrConfigurePins (Instance);
-   if (EFI_ERROR (Status)) return Status;
--  /* Linux geni_se_init()/geni_se_select_fifo_mode(): initialize common
--     GENI and DMA gates before selecting FIFO mode.  The MU endpoint can be
--     present without a device-config handle, so it may never run this path. */
--  MmioWrite32 (Base + SE_CGC_CTRL,
--      MmioRead32 (Base + SE_CGC_CTRL) | 0x7FU);
--  MmioWrite32 (Base + SE_DMA_GENERAL_CFG,
--      MmioRead32 (Base + SE_DMA_GENERAL_CFG) | 0x0FU);
--  MmioWrite32 (Base + SE_OUTPUT_CTRL, 0x7FU);
--  MmioWrite32 (Base + SE_FORCE_DEFAULT, BIT (0));
--  /* Linux geni_se_select_fifo_mode() quiesces GPI and clears stale IRQs. */
--  MmioWrite32 (Base + SE_GSI_EVENT_EN, 0);
--  MmioWrite32 (Base + SE_IRQ_EN, BIT (0) | BIT (1) | BIT (2) | BIT (3));
--  MmioWrite32 (Base + SE_M_IRQ_CLEAR, MAX_UINT32);
--  MmioWrite32 (Base + SE_S_IRQ_CLEAR, MAX_UINT32);
--  MmioWrite32 (Base + SE_DMA_TX_IRQ_CLEAR, MAX_UINT32);
--  MmioWrite32 (Base + SE_DMA_RX_IRQ_CLEAR, MAX_UINT32);
--  MmioWrite32 (Base + SE_DMA_MODE_EN, 0);
--  MmioWrite32 (Base + SE_TX_WATERMARK, 0);
--  MmioWrite32 (Base + SE_RX_WATERMARK, mFifoDepth - 1U);
--  MmioWrite32 (Base + SE_RX_RFR_WATERMARK, mFifoDepth);
--
--  /* geni_se_config_packing(8, 4, true, true, true). */
--  MmioWrite32 (Base + SE_TX_PACKING_CFG0, 0x0007F8FEU);
--  MmioWrite32 (Base + SE_TX_PACKING_CFG1, 0x000FFEFEU);
--  MmioWrite32 (Base + SE_RX_PACKING_CFG0, 0x0007F8FEU);
--  MmioWrite32 (Base + SE_RX_PACKING_CFG1, 0x000FFEFEU);
--  MmioWrite32 (Base + SE_BYTE_GRAN, 0);
--  /* Linux geni_i2c_clk_map_19p2mhz. */
--  if (FrequencyKHz == 100) {
--    Divider = 7; Cycle = 26; Low = 12; High = 10;
--  } else if (FrequencyKHz == 400) {
--    Divider = 2; Cycle = 22; Low = 11; High = 5;
--  } else {
--    Divider = 1; Cycle = 18; Low = 8; High = 2;
--  }
--  MmioWrite32 (Base + SE_CLK_SEL, 0);
--  MmioWrite32 (Base + 0x048U, (Divider << 4) | BIT (0));
--  MmioWrite32 (Base + 0x278U, Cycle | (Low << 10) | (High << 20));
--  MmioWrite32 (Base + SE_M_IRQ_EN,
--      SE_M_CMD_DONE | SE_M_CMD_OVERRUN | SE_M_ILLEGAL_CMD |
--      SE_M_CMD_FAILURE | SE_M_CMD_ABORT | SE_M_GP_IRQ_0 | SE_M_GP_IRQ_1 |
--      SE_M_GP_IRQ_3 | SE_M_GP_IRQ_4 |
--      SE_M_RX_FIFO_WATERMARK | SE_M_RX_FIFO_LAST | SE_M_TX_FIFO_WATERMARK);
--  mFifoResourcesReady = TRUE;
--  return EFI_SUCCESS;
--}
--
--STATIC EFI_STATUS
--I2cCrFifoTransaction (
--  IN  UINT32       SlaveAddress,
--  IN  UINT32       Command,
--  IN  UINT32       Parameters,
--  IN  CONST UINT8 *TxBuffer OPTIONAL,
--  IN  UINT32       TxLength,
--  OUT UINT8       *RxBuffer OPTIONAL,
--  IN  UINT32       RxLength
--  )
--{
--  UINTN  Base;
--  UINT32 TxWords;
--  UINT32 TxWord;
--  UINT32 TxIndex;
--  UINT32 RxIndex;
--  UINT32 Elapsed;
--  UINT32 Status;
--  UINT32 ErrorStatus;
--
--  if ((SlaveAddress > 0x7FU) || (TxLength > I2C_CR_MAX_TRANSFER_BYTES) ||
--      (RxLength > I2C_CR_MAX_TRANSFER_BYTES) ||
--      ((TxLength != 0) && (TxBuffer == NULL)) ||
--      ((RxLength != 0) && (RxBuffer == NULL))) {
--    return EFI_INVALID_PARAMETER;
--  }
--  Base = (UINTN)I2C_FIFO_SE_BASE;
--  TxWords = (TxLength + 3U) / 4U;
--  TxIndex = 0;
--  RxIndex = 0;
--
--  MmioWrite32 (Base + SE_M_IRQ_CLEAR, MAX_UINT32);
--  MmioWrite32 (Base + SE_I2C_TX_LEN, TxLength);
--  MmioWrite32 (Base + SE_I2C_RX_LEN, RxLength);
--
--  MmioWrite32 (Base + SE_M_CMD0,
--      (Command << 27) | Parameters |
--      ((SlaveAddress & 0x7FU) << I2C_SLAVE_ADDR_SHIFT));
--
--  for (Elapsed = 0; Elapsed < I2C_FIFO_TIMEOUT_US; Elapsed += 10U) {
--    Status = MmioRead32 (Base + SE_M_IRQ_STATUS);
--    ErrorStatus = Status & SE_M_I2C_ERROR_MASK;
--    /* Linux geni_i2c_check_addr_data_nack(): GP_LENGTH zero is an address
--       NACK; nonzero is a data NACK, which is an error only for writes.
--       CMD_FAILURE is the summary for that GP cause, so discard it together
--       with GP_IRQ1 for a read data NACK, retaining every independent error. */
--    if ((Command == I2C_CMD_READ) && ((Status & SE_M_GP_IRQ_1) != 0) &&
--        (MmioRead32 (Base + SE_M_GP_LENGTH) != 0)) {
--      ErrorStatus &= ~(SE_M_GP_IRQ_1 | SE_M_CMD_FAILURE);
--    }
--    if (ErrorStatus != 0) {
--      DEBUG ((DEBUG_ERROR, "I2CCr FIFO: command 0x%x IRQ=0x%x GENI=0x%x\n",
--              Command, Status, MmioRead32 (Base + SE_GENI_STATUS)));
--      return EFI_DEVICE_ERROR;
--    }
--    if (TxIndex < TxWords) {
--      UINT32 Used = MmioRead32 (Base + SE_TX_FIFO_STATUS) & SE_TX_FIFO_WC_MASK;
--      if (Used > mFifoDepth) return EFI_DEVICE_ERROR;
--      while ((Used < mFifoDepth) && (TxIndex < TxWords)) {
--        UINT32 Byte;
--        TxWord = 0;
--        for (Byte = 0; (Byte < 4) && (TxIndex * 4U + Byte < TxLength); ++Byte)
--          TxWord |= (UINT32)TxBuffer[TxIndex * 4U + Byte] << (Byte * 8U);
--        MmioWrite32 (Base + SE_TX_FIFO, TxWord);
--        ++TxIndex;
--        ++Used;
--      }
--    }
--    if (RxIndex < RxLength) {
--      UINT32 RxWords = MmioRead32 (Base + SE_RX_FIFO_STATUS) & SE_RX_FIFO_WC_MASK;
--      while ((RxWords != 0) && (RxIndex < RxLength)) {
--        UINT32 Word = MmioRead32 (Base + SE_RX_FIFO);
--        UINT32 Byte;
--        for (Byte = 0; (Byte < 4U) && (RxIndex < RxLength); ++Byte) {
--          RxBuffer[RxIndex++] = (UINT8)(Word >> (Byte * 8U));
--        }
--        RxWords--;
--      }
--    }
--    if ((Status & SE_M_CMD_DONE) != 0) {
--      MmioWrite32 (Base + SE_M_IRQ_CLEAR, Status);
--      if ((RxIndex != RxLength) || (TxIndex != TxWords)) {
--        DEBUG ((DEBUG_ERROR, "I2CCr FIFO: short command 0x%x TX=%u/%u RX=%u/%u\n",
--                Command, TxIndex, TxWords, RxIndex, RxLength));
--      }
--      return ((RxIndex == RxLength) && (TxIndex == TxWords)) ?
--          EFI_SUCCESS : EFI_DEVICE_ERROR;
--    }
--    MicroSecondDelay (10);
--  }
--  DEBUG ((DEBUG_ERROR, "I2CCr FIFO: command 0x%x timed out IRQ=0x%x GENI=0x%x\n",
--          Command, Status, MmioRead32 (Base + SE_GENI_STATUS)));
--  return EFI_TIMEOUT;
--}
--
--STATIC EFI_STATUS
--I2cCrFifoQuiesce (IN BOOLEAN Failed)
--{
--  UINTN Base = (UINTN)I2C_FIFO_SE_BASE;
--  UINT32 Elapsed;
--  /* An error after STOP_STRETCH may hold SCL even when CMD_ACTIVE cleared.
--     Always issue abort on an error, and wait for its acknowledgement. */
--  if (Failed || ((MmioRead32 (Base + SE_GENI_STATUS) & BIT (0)) != 0)) {
--    MmioWrite32 (Base + SE_M_IRQ_CLEAR, SE_M_CMD_ABORT);
--    MmioWrite32 (Base + SE_M_CMD_CTRL, SE_M_GENI_CMD_ABORT);
--    for (Elapsed = 0; Elapsed < I2C_FIFO_TIMEOUT_US; Elapsed += 10) {
--      if (((MmioRead32 (Base + SE_M_IRQ_STATUS) & SE_M_CMD_ABORT) != 0) &&
--          ((MmioRead32 (Base + SE_GENI_STATUS) & BIT (0)) == 0)) break;
--      MicroSecondDelay (10);
--    }
--    if (Elapsed == I2C_FIFO_TIMEOUT_US) return EFI_TIMEOUT;
--  }
--  MmioWrite32 (Base + SE_M_IRQ_CLEAR, MAX_UINT32);
-+  Instance->FifoConfig.protocol = CR_GENI_I2C;
-+  Instance->FifoConfig.source_hz = 19200000;
-+  Instance->FifoConfig.speed_hz = FrequencyKHz * 1000;
-+  int Result = CrGeniInit (&Instance->Fifo, &Instance->FifoConfig, NULL);
-+  if (Result == CR_BUS_UNSUPPORTED) return EFI_UNSUPPORTED;
-+  if (Result == CR_BUS_BUSY) return EFI_NOT_READY;
-+  if (Result) return EFI_DEVICE_ERROR;
-+  Instance->FifoResourcesReady = TRUE;
-   return EFI_SUCCESS;
- }
- 
-@@ -458,7 +284,7 @@ I2cCrFifoMuTransfer (
-       (Config->Mode != MU_I2C_MODE_I2C) ||
-       ((Config->BusFrequencyKHz != 100) && (Config->BusFrequencyKHz != 400) &&
-        (Config->BusFrequencyKHz != 1000))) return EFI_UNSUPPORTED;
--  if (Instance->Protocol.Instance != I2C_FIFO_INSTANCE) return EFI_UNSUPPORTED;
-+  if (Instance->FifoTarget == NULL) return EFI_UNSUPPORTED;
-   for (Index = 0; Index < DescriptorCount; ++Index) {
-     UINT32 Flags = Descriptors[Index].Flags;
-     if ((Descriptors[Index].Buffer == NULL) || (Descriptors[Index].Length == 0) ||
-@@ -480,23 +306,21 @@ I2cCrFifoMuTransfer (
-     Status = EFI_NOT_READY;
-     goto Done;
-   }
--  Status = mFifoQup->AcquireSe (mFifoQup, 1, 1, Instance, QupCrSeFifo);
-+  Status = mFifoQup->AcquireSe (mFifoQup, Instance->FifoTarget->Wrapper, Instance->FifoTarget->Engine, Instance, QupCrSeFifo);
-   if (EFI_ERROR (Status)) goto Done;
-   Status = I2cCrFifoPrepare (Instance, Config->BusFrequencyKHz);
-   Prepared = !EFI_ERROR (Status);
-   for (Index = 0; !EFI_ERROR (Status) && (Index < DescriptorCount); ++Index) {
-     BOOLEAN Read = (Descriptors[Index].Flags & MU_I2C_FLAG_READ) != 0;
--    Status = I2cCrFifoTransaction (
--        Config->SlaveAddress, Read ? I2C_CMD_READ : I2C_CMD_WRITE,
--        (Descriptors[Index].Flags & MU_I2C_FLAG_STOP) == 0 ? I2C_STOP_STRETCH : 0,
--        Read ? NULL : Descriptors[Index].Buffer,
--        Read ? 0 : Descriptors[Index].Length,
--        Read ? Descriptors[Index].Buffer : NULL,
--        Read ? Descriptors[Index].Length : 0);
-+    struct CrI2cMessage Message = {Config->SlaveAddress, Read,
-+                                    Descriptors[Index].Buffer, Descriptors[Index].Length};
-+    int Result = CrGeniI2cStep (&Instance->Fifo, &Message,
-+                  (Descriptors[Index].Flags & MU_I2C_FLAG_STOP) != 0, I2C_FIFO_TIMEOUT_US);
-+    Status = Result == 0 ? EFI_SUCCESS : Result == CR_BUS_TIMEOUT ? EFI_TIMEOUT : EFI_DEVICE_ERROR;
-     if (!EFI_ERROR (Status)) Total += Descriptors[Index].Length;
-   }
--  Cleanup = Prepared ? I2cCrFifoQuiesce (EFI_ERROR (Status)) : EFI_SUCCESS;
--  mFifoQup->ReleaseSe (mFifoQup, 1, 1, Instance, !EFI_ERROR (Cleanup));
-+  Cleanup = Prepared && CrGeniQuiesce (&Instance->Fifo) ? EFI_DEVICE_ERROR : EFI_SUCCESS;
-+  mFifoQup->ReleaseSe (mFifoQup, Instance->FifoTarget->Wrapper, Instance->FifoTarget->Engine, Instance, !EFI_ERROR (Cleanup));
-   if (EFI_ERROR (Cleanup)) {
-     DEBUG ((DEBUG_ERROR, "I2CCr: quiesce failed %r; SE fenced\n", Cleanup));
-     if (!EFI_ERROR (Status)) Status = Cleanup;
-@@ -722,7 +546,7 @@ I2cCrMuTransfer (
-   Instance = I2cCrInstanceFromProtocol (This);
-   /* Linux i2c9 is explicitly switched into GENI FIFO mode here. */
-   if ((Instance != NULL) && (Instance->Protocol.FifoTransfer != NULL) &&
--      (Instance->Protocol.Instance == I2C_FIFO_INSTANCE)) {
-+      (Instance->FifoTarget != NULL)) {
-     return Instance->Protocol.FifoTransfer (
-         This, Config, Descriptors, DescriptorCount,
-         Callback, Context, Delay, Transferred);
-@@ -872,7 +696,7 @@ I2cCrStartRequest (
-   }
-   if (!EFI_ERROR (Status)) {
-     if ((Instance->Protocol.FifoTransfer != NULL) &&
--        (Instance->Protocol.Instance == I2C_FIFO_INSTANCE)) {
-+        (Instance->FifoTarget != NULL)) {
-       UINT32 Transferred;
-       Transferred = 0;
-       Status = (Event != NULL) ? EFI_UNSUPPORTED : Instance->Protocol.FifoTransfer (
-@@ -994,17 +818,22 @@ I2CCrEntryPoint (
-   {
-     EFI_QUP_CR_PROTOCOL *Qup = NULL;
-     CONST CR_TARGET_QUP_WRAPPER *Wrapper = NULL;
-+    CONST CR_TARGET_QUP_CONTEXT *Resources = NULL;
-+    CONST CR_TARGET_QUP_FIFO_I2C *Target = NULL;
-     Status = gBS->LocateProtocol (&gEfiQupCrProtocolGuid, NULL, (VOID **)&Qup);
--    if (!EFI_ERROR (Status) && (Qup != NULL) &&
--        (Qup->Revision >= EFI_QUP_CR_PROTOCOL_REVISION) &&
--        (Qup->GetWrapper != NULL) &&
--        !EFI_ERROR (Qup->GetWrapper (Qup, 1, &Wrapper)) && (Wrapper != NULL) &&
--        (Wrapper->SerialEngineCount > 1) &&
--        (Wrapper->SerialEngineBase[1] == I2C_FIFO_SE_BASE)) {
-+    if (!EFI_ERROR (Status) && Qup && Qup->Revision >= EFI_QUP_CR_PROTOCOL_REVISION &&
-+        Qup->GetContext && !EFI_ERROR (Qup->GetContext (Qup, &Resources)) && Resources &&
-+        (Target = Resources->FifoI2c) && Qup->GetWrapper &&
-+        !EFI_ERROR (Qup->GetWrapper (Qup, Target->Wrapper, &Wrapper)) && Wrapper &&
-+        Target->Engine < Wrapper->SerialEngineCount &&
-+        Wrapper->SerialEngineSize >= 0xe34 && Wrapper->SerialEngineBase[Target->Engine]) {
-       mInstances = AllocateZeroPool (sizeof (*mInstances));
-       if (mInstances == NULL) return EFI_OUT_OF_RESOURCES;
-+      mInstances->FifoTarget = Target;
-+      mInstances->FifoConfig.base = Wrapper->SerialEngineBase[Target->Engine];
-+      mInstances->FifoConfig.size = Wrapper->SerialEngineSize;
-       I2cCrInitializeProtocol (&mInstances->Protocol);
--      mInstances->Protocol.Instance = I2C_FIFO_INSTANCE;
-+      mInstances->Protocol.Instance = Target->Instance;
-       mInstances->Protocol.BusFrequencyKHz = I2C_CR_DEFAULT_FREQUENCY_KHZ;
-       mInstances->Protocol.I2cControllerCapabilities = &mI2cCapabilities;
-       Status = gBS->InstallMultipleProtocolInterfaces (
-diff --git a/Driver/I2CCrDxe/I2CCrDxe.inf b/Driver/I2CCrDxe/I2CCrDxe.inf
-index 673e72e..6edf1eb 100644
---- a/Driver/I2CCrDxe/I2CCrDxe.inf
-+++ b/Driver/I2CCrDxe/I2CCrDxe.inf
-@@ -14,6 +14,7 @@
-   CranePkg/CranePkg.dec
- 
- [LibraryClasses]
-+  GeniSeLib
-   BaseLib
-   BaseMemoryLib
-   DebugLib
-diff --git a/Include/Library/CrTargetQupLib.h b/Include/Library/CrTargetQupLib.h
-index ca7fae0..39f6f82 100644
---- a/Include/Library/CrTargetQupLib.h
-+++ b/Include/Library/CrTargetQupLib.h
-@@ -34,11 +34,21 @@ typedef struct {
-   UINT32 Interrupts[CR_TARGET_GPI_MAX_INTERRUPTS];
- } CR_TARGET_GPI_CONTROLLER;
- 
-+typedef struct {
-+  UINT32 Instance;
-+  UINT8 Wrapper, Engine;
-+  UINT16 Pins[2];
-+  UINT8 Mux, Pull;
-+  CONST CHAR8 *ClockProvider;
-+  CONST CHAR8 *Clocks[3]; /* master AHB, slave AHB, serial clock */
-+} CR_TARGET_QUP_FIFO_I2C;
-+
- typedef struct {
-   CONST CR_TARGET_QUP_WRAPPER *Qup;
-   UINT8                       QupCount;
-   CONST CR_TARGET_GPI_CONTROLLER *Gpi;
-   UINT8                       GpiCount;
-+  CONST CR_TARGET_QUP_FIFO_I2C *FifoI2c;
- } CR_TARGET_QUP_CONTEXT;
- 
- CR_TARGET_QUP_CONTEXT *
 diff --git a/Include/Library/cr_android.h b/Include/Library/cr_android.h
 new file mode 100644
 index 0000000..2a78c49
@@ -936,7 +518,7 @@ index 0000000..7f5f36d
 +int CrSplashRead(const struct CrSplashResources *resources, const struct CrIo *io,
 +                  struct CrSplash *splash);
 diff --git a/Include/Library/gpio.h b/Include/Library/gpio.h
-index 6f66fdf..49e7212 100644
+index a389685..125ca97 100644
 --- a/Include/Library/gpio.h
 +++ b/Include/Library/gpio.h
 @@ -4,6 +4,7 @@
@@ -947,7 +529,7 @@ index 6f66fdf..49e7212 100644
  
  #include "pdc.h"
  #include <oskal/common.h>
-@@ -180,6 +181,7 @@ typedef struct {
+@@ -182,6 +183,7 @@ typedef struct {
  // Context
  #define GPIO_MAX_REG_CFG 16
  typedef struct {
@@ -1011,7 +593,7 @@ index a2f9443..6f41bb0 100644
 +
 +#endif /* CR_FREESTANDING */
 diff --git a/Include/oskal/cr_debug.h b/Include/oskal/cr_debug.h
-index ececcb3..0627010 100644
+index 6afdc51..0aa36bd 100644
 --- a/Include/oskal/cr_debug.h
 +++ b/Include/oskal/cr_debug.h
 @@ -5,6 +5,10 @@
@@ -1025,10 +607,10 @@ index ececcb3..0627010 100644
  // OS Independent debug print lib
  #ifdef _KERNEL_MODE
  #include <ntddk.h>
-@@ -78,3 +82,5 @@
-       ##__VA_ARGS__, __FILE__, __LINE__)
- 
- #endif // _KERNEL_MODE
+@@ -98,3 +102,5 @@
+ #define CR_LOG_HEX64_FMT "%Lx"
+ #define CR_LOG_UINT64_FMT "%Lu"
+ #endif
 +
 +#endif /* CR_FREESTANDING */
 diff --git a/Include/oskal/cr_freestanding.h b/Include/oskal/cr_freestanding.h
@@ -1065,43 +647,46 @@ index 43af47d..e0a91e3 100644
 +
 +#endif /* CR_FREESTANDING */
 diff --git a/Include/oskal/cr_memory.h b/Include/oskal/cr_memory.h
-index 92f5a33..b7b3feb 100644
+index 94fe8b1..83a9167 100644
 --- a/Include/oskal/cr_memory.h
 +++ b/Include/oskal/cr_memory.h
-@@ -5,6 +5,10 @@
+@@ -5,6 +5,9 @@
   */
  
  #pragma once
 +#if defined(CR_FREESTANDING)
 +#include <oskal/cr_freestanding.h>
 +#else
-+
  
  //#define CR_OSKAL_TRACE_MMIO 1
  
-@@ -26,10 +30,8 @@ UINT32 CrMmioAnd32(UINTN Address, UINT32 DataToAnd);
- #else
- #include <Library/IoLib.h>
- 
--#define CR_MEM_BARRIER_DATA_SYN_BARRIAR()                                        \
--  do {                                                                         \
--    asm volatile("dsb sy" ::: "memory");                                       \
--  } while (0)
-+#include <Library/BaseLib.h>
-+#define CR_MEM_BARRIER_DATA_SYN_BARRIAR() MemoryFence()
- 
- /**
-  * CrMmioRead32 - Read a 32-bit value from a MMIO address
-@@ -109,4 +111,5 @@ STATIC inline UINT32 CrMmioAnd32(UINTN Address, UINT32 DataToAnd) {
-   return MmioAnd32(Address, DataToAnd);
+@@ -113,3 +116,4 @@ STATIC inline UINT32 CrMmioAnd32(UINTN Address, UINT32 DataToAnd) {
  }
  
--#endif // _KERNEL_MODE
-\ No newline at end of file
-+#endif // _KERNEL_MODE
+ #endif // _KERNEL_MODE
++#endif /* CR_FREESTANDING */
+diff --git a/Include/oskal/cr_mutex.h b/Include/oskal/cr_mutex.h
+index d74e83a..57798bb 100644
+--- a/Include/oskal/cr_mutex.h
++++ b/Include/oskal/cr_mutex.h
+@@ -2,6 +2,9 @@
+  *  SPDX-License-Identifier: MIT
+  */
+ #pragma once
++#if defined(CR_FREESTANDING)
++#include <oskal/cr_freestanding.h>
++#else
+ #include <oskal/cr_status.h>
+ #include <oskal/cr_types.h>
+ 
+@@ -35,3 +38,5 @@ STATIC inline CR_STATUS CrMutexAcquire(IN OUT CR_MUTEX *Mutex) {
+ }
+ STATIC inline VOID CrMutexRelease(IN OUT CR_MUTEX *Mutex) { ReleaseSpinLock(Mutex); }
+ #endif
++
 +#endif /* CR_FREESTANDING */
 diff --git a/Include/oskal/cr_status.h b/Include/oskal/cr_status.h
-index 51aeb55..4143205 100644
+index 04edf9f..e033c20 100644
 --- a/Include/oskal/cr_status.h
 +++ b/Include/oskal/cr_status.h
 @@ -5,6 +5,10 @@
@@ -1115,8 +700,8 @@ index 51aeb55..4143205 100644
  // OS Independent status code definitions
  #ifdef _KERNEL_MODE
  #include <ntddk.h>
-@@ -43,3 +47,5 @@ typedef EFI_STATUS CR_STATUS;
- #define CR_BUFFER_TOO_SMALL EFI_BUFFER_TOO_SMALL
+@@ -51,3 +55,5 @@ typedef EFI_STATUS CR_STATUS;
+ #define CR_ALREADY_STARTED EFI_ALREADY_STARTED
  #define CR_ERROR(x) EFI_ERROR(x)
  #endif // _KERNEL_MODE
 +
@@ -1152,7 +737,7 @@ index 0000000..2aa9b7f
 +#define SIZE_MAX MAX_UINTN
 +#endif
 diff --git a/Include/oskal/cr_string.h b/Include/oskal/cr_string.h
-index cccac0d..a4f3a40 100644
+index 41163d6..884fc17 100644
 --- a/Include/oskal/cr_string.h
 +++ b/Include/oskal/cr_string.h
 @@ -5,6 +5,10 @@
@@ -1204,10 +789,10 @@ index bde8eea..1c61a85 100644
 +#endif
 +#endif /* CR_FREESTANDING */
 diff --git a/Include/oskal/cr_types.h b/Include/oskal/cr_types.h
-index 6f822a9..3cbd0ed 100644
+index 88f1e31..e1034a3 100644
 --- a/Include/oskal/cr_types.h
 +++ b/Include/oskal/cr_types.h
-@@ -5,8 +5,10 @@
+@@ -5,6 +5,9 @@
   */
  
  #pragma once
@@ -1215,20 +800,9 @@ index 6f822a9..3cbd0ed 100644
 +#include <oskal/cr_freestanding.h>
 +#else
  
--#include "cr_assert.h"
- 
  #define TO_BOOL(x) ((x) ? TRUE : FALSE)
  
-@@ -20,6 +22,8 @@ typedef CHAR CHAR8;
- #include <Uefi.h>
- #endif
- 
-+#include "cr_assert.h"
-+
- CR_STATIC_ASSERT(sizeof(INTN) == sizeof(void *),
-                  "INTN must be same size as pointer");
- CR_STATIC_ASSERT(sizeof(UINTN) == sizeof(void *),
-@@ -31,3 +35,5 @@ CR_STATIC_ASSERT(sizeof(INT32) == 4, "INT32 must be 4 bytes");
+@@ -36,3 +39,5 @@ CR_STATIC_ASSERT(sizeof(INT32) == 4, "INT32 must be 4 bytes");
  CR_STATIC_ASSERT(sizeof(UINT32) == 4, "UINT32 must be 4 bytes");
  CR_STATIC_ASSERT(sizeof(INT64) == 8, "INT64 must be 8 bytes");
  CR_STATIC_ASSERT(sizeof(UINT64) == 8, "UINT64 must be 8 bytes");
@@ -1684,57 +1258,8 @@ index 0000000..1d3c437
 +    for (size_t i = 0; i < count; ++i) if (table[i].id == id) return table + i;
 +    return NULL;
 +}
-diff --git a/Library/ClockLib/clock.c b/Library/ClockLib/clock.c
-index 57a1284..f43736d 100644
---- a/Library/ClockLib/clock.c
-+++ b/Library/ClockLib/clock.c
-@@ -130,7 +130,7 @@ ClockRcg2UpdateConfig(
-           CLOCK_NODE_RCG_CMD_REGISTER_CMD_UPDATE_MSK)) {
-       return CR_SUCCESS;
-     }
--    MicroSecondDelay(1);
-+    cr_sleep(1);
-   }
- 
-   log_err("Timeout waiting for RCG2 clock " CR_LOG_CHAR8_STR_FMT " update", TargetClockNode->Name);
-@@ -341,7 +341,7 @@ ClockEnableInternal(
-           TargetClockNode->MuxRegister,
-         TargetClockNode->MuxMask,
-         Value);
--    MemoryFence();
-+    CR_MEM_BARRIER_DATA_SYN_BARRIAR();
-     TargetClockNode->ReferenceCount = Enable ? 1U : 0U;
-     TargetClockNode->ActiveRateHz = Enable ? RateHz : 0;
-     if (!Enable) {
-@@ -364,7 +364,7 @@ ClockEnableInternal(
-           CommandAddress, CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK,
-           TargetClockNode->RestoreControlEnabled ?
-             CLOCK_NODE_RCG_CMD_REGISTER_CMD_ROOT_EN_MSK : 0);
--      MemoryFence();
-+      CR_MEM_BARRIER_DATA_SYN_BARRIAR();
-       TargetClockNode->ReferenceCount = 0;
-       TargetClockNode->ActiveRateHz = 0;
-       TargetClockNode->RestoreControlEnabled = FALSE;
-@@ -380,7 +380,7 @@ ClockEnableInternal(
-         if (ClockRcg2CheckEnable(ClockContext, TargetClockNode)) {
-           break;
-         }
--        MicroSecondDelay(1);
-+        cr_sleep(1);
-       }
-       if (Index == CLOCK_RCG2_UPDATE_TIMEOUT_US) {
-         CrMmioUpdateBits32(
-@@ -501,7 +501,7 @@ ClockEnableInternal(
-           Status = CR_SUCCESS;
-           break;
-         }
--        MicroSecondDelay(1);
-+        cr_sleep(1);
-       }
-       if (CR_ERROR(Status)) {
-         log_err(
 diff --git a/Library/ClockLib/clock.inf b/Library/ClockLib/clock.inf
-index 810cb18..dac5de1 100644
+index 0b743cf..09800ef 100644
 --- a/Library/ClockLib/clock.inf
 +++ b/Library/ClockLib/clock.inf
 @@ -19,6 +19,7 @@
@@ -1745,8 +1270,8 @@ index 810cb18..dac5de1 100644
    ArmLib
    DebugLib
    IoLib
-@@ -29,3 +30,4 @@
-   clock.c
+@@ -33,3 +34,4 @@
+   fixed_pll.c
    gdsc.c
    debugcc.c
 +  clock_poll.c
@@ -1839,27 +1364,8 @@ index 0000000..42db5a0
 +    }
 +    return 0;
 +}
-diff --git a/Library/ClockLib/gdsc.c b/Library/ClockLib/gdsc.c
-index 3e36969..23a4f33 100644
---- a/Library/ClockLib/gdsc.c
-+++ b/Library/ClockLib/gdsc.c
-@@ -1,4 +1,4 @@
--#include <clock_internal.h>
-+#include "clock_internal.h"
- 
- #define CLOCK_GDSC_REG_PWR_ON_MSK BIT(31)
- #define CLOCK_GDSC_REG_EN_REST_WAIT_MSK GEN_MSK(23, 20)
-@@ -97,7 +97,7 @@ ClockGdscToggleEnable(
-         return CR_SUCCESS;
-       }
- 
--      MicroSecondDelay(1);
-+      cr_sleep(1);
-     }
-   }
-   log_err(
 diff --git a/Library/CmdDBLib/cmddb.inf b/Library/CmdDBLib/cmddb.inf
-index 5ab43d8..7971f5b 100644
+index bf30f63..db8fc8c 100644
 --- a/Library/CmdDBLib/cmddb.inf
 +++ b/Library/CmdDBLib/cmddb.inf
 @@ -17,6 +17,7 @@
@@ -1870,7 +1376,7 @@ index 5ab43d8..7971f5b 100644
    ArmLib
    DebugLib
    IoLib
-@@ -26,3 +27,4 @@
+@@ -25,3 +26,4 @@
  
  [Sources.common]
    cmddb.c
@@ -3024,107 +2530,59 @@ index 0000000..a23a6a7
 +    return CR_BUS_TIMEOUT;
 +}
 diff --git a/Library/GpioLib/gpio.c b/Library/GpioLib/gpio.c
-index 54d0817..c7c335b 100644
+index d98761e..63d9a1d 100644
 --- a/Library/GpioLib/gpio.c
 +++ b/Library/GpioLib/gpio.c
-@@ -40,9 +40,9 @@ VOID GpioReadConfig(
+@@ -47,13 +47,13 @@ VOID GpioReadConfig(
    }
  
    // Read current control register
 -  UINT32 GpioCtlRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
 +  UINT32 GpioCtlRegVal = GpioIoRead(GpioContext, GpioGetCfgRegByIndex(
        GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber));
--  UINT32 GpioIoRegVal  = CrMmioRead32(GpioGetCfgRegByIndex(
-+  UINT32 GpioIoRegVal  = GpioIoRead(GpioContext, GpioGetCfgRegByIndex(
-       GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
- 
    GpioConfigRegInfo *PinRegCfg =
-@@ -85,9 +85,9 @@ VOID GpioSetConfig(
-       ConfigParams->DriveStrength, ConfigParams->OutputValue);
+       GpioContext->GpioPins[ConfigParams->PinNumber].pRegCfg;
+   UINT32 GpioIoRegVal = 0;
+   if (PinRegCfg->InputMsk != 0 || PinRegCfg->OutputMsk != 0)
+-    GpioIoRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
++    GpioIoRegVal = GpioIoRead(GpioContext, GpioGetCfgRegByIndex(
+         GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
+ 
+   ConfigParams->Pull = PinRegCfg->PullMsk != 0 ?
+@@ -98,7 +98,7 @@ VOID GpioSetConfig(
+   }
  
    // Read current control register
 -  UINT32 GpioCtlRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
 +  UINT32 GpioCtlRegVal = GpioIoRead(GpioContext, GpioGetCfgRegByIndex(
        GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber));
--  UINT32 GpioIoRegVal  = CrMmioRead32(GpioGetCfgRegByIndex(
-+  UINT32 GpioIoRegVal  = GpioIoRead(GpioContext, GpioGetCfgRegByIndex(
-       GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
- 
+   UINT32 OriginalCtlRegVal = GpioCtlRegVal;
    GpioConfigRegInfo *PinRegCfg =
-@@ -105,52 +105,27 @@ VOID GpioSetConfig(
-       (CLR_BITS(GpioCtlRegVal, PinRegCfg->OutputEnableMsk) |
-        SET_FIELD(ConfigParams->OutputEnable, PinRegCfg->OutputEnableMsk));
+@@ -108,7 +108,7 @@ VOID GpioSetConfig(
+       ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE &&
+       PinRegCfg->OutputMsk != 0;
+   if (WriteOutput)
+-    GpioIoRegVal = CrMmioRead32(GpioGetCfgRegByIndex(
++    GpioIoRegVal = GpioIoRead(GpioContext, GpioGetCfgRegByIndex(
+         GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber));
  
--  // Set output value if output
--  if (ConfigParams->OutputEnable) {
--    // Set value if output(io reg)
--    if (ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE)
--      GpioIoRegVal =
--          (CLR_BITS(GpioIoRegVal, PinRegCfg->OutputMsk) |
--           SET_FIELD(ConfigParams->OutputValue & 1, PinRegCfg->OutputMsk));
--
--    // Clean up pull type for output
--    GpioCtlRegVal =
--        (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
--         SET_FIELD(GPIO_PULL_NONE, PinRegCfg->PullMsk));
--    // Set drive strength for output
--    if (ConfigParams->DriveStrength != GPIO_DRIVE_STRENGTH_UNCHANGE)
--      GpioCtlRegVal =
--          (CLR_BITS(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk) |
--           SET_FIELD(ConfigParams->DriveStrength, PinRegCfg->DriveStrengthMsk));
-+  /* TLMM bias and drive strength also apply when an alternate function owns
-+   * the pad. Preserve caller policy for both input and output GPIOs. */
-+  if (ConfigParams->DriveStrength != GPIO_DRIVE_STRENGTH_UNCHANGE)
-+    GpioCtlRegVal = CLR_BITS(GpioCtlRegVal, PinRegCfg->DriveStrengthMsk) |
-+        SET_FIELD(ConfigParams->DriveStrength, PinRegCfg->DriveStrengthMsk);
-+  if (ConfigParams->Pull != GPIO_PULL_UNCHANGE) {
-+    UINT32 Pull = ConfigParams->Pull;
-+    if (GpioContext->PullUpNoKeeper && Pull == GPIO_PULL_UP)
-+      Pull = GPIO_PULL_UP_NO_KEEPER;
-+    GpioCtlRegVal = CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
-+        SET_FIELD(Pull, PinRegCfg->PullMsk);
-   }
--  else {
--    // Set pull type if input(ctl reg)
--    if (ConfigParams->Pull != GPIO_PULL_UNCHANGE) {
--      if (GpioContext->PullUpNoKeeper && ConfigParams->Pull == GPIO_PULL_UP) {
--        GpioCtlRegVal =
--            (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
--             SET_FIELD(GPIO_PULL_UP_NO_KEEPER, PinRegCfg->PullMsk));
--      }
--      else {
--        GpioCtlRegVal =
--            (CLR_BITS(GpioCtlRegVal, PinRegCfg->PullMsk) |
--             SET_FIELD(ConfigParams->Pull, PinRegCfg->PullMsk));
--      }
--    }
--  }
--
--  // Write back to registers
--  CrMmioWrite32(
--      GpioGetCfgRegByIndex(
--          GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber),
--      GpioCtlRegVal);
--  // Only write io reg when output mode or output value changed
--  if (ConfigParams->OutputEnable &&
--      ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE)
+   // Set mux sel if changed
+@@ -175,12 +175,12 @@ VOID GpioSetConfig(
+     GpioIoRegVal =
+         (CLR_BITS(GpioIoRegVal, PinRegCfg->OutputMsk) |
+          SET_FIELD(ConfigParams->OutputValue & 1, PinRegCfg->OutputMsk));
 -    CrMmioWrite32(
--        GpioGetCfgRegByIndex(
--            GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber),
--        GpioIoRegVal);
-+  if (ConfigParams->OutputEnable && ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE)
-+    GpioIoRegVal = CLR_BITS(GpioIoRegVal, PinRegCfg->OutputMsk) |
-+        SET_FIELD(ConfigParams->OutputValue & 1, PinRegCfg->OutputMsk);
-+
-+  if (ConfigParams->OutputEnable && ConfigParams->OutputValue != GPIO_VALUE_UNCHANGE)
-+    GpioIoWrite(GpioContext, GpioGetCfgRegByIndex(GpioContext, GPIO_CFG_REG_TYPE_IO_REG,
-+                ConfigParams->PinNumber), GpioIoRegVal);
-+  GpioIoWrite(GpioContext, GpioGetCfgRegByIndex(GpioContext, GPIO_CFG_REG_TYPE_CTL_REG,
-+              ConfigParams->PinNumber), GpioCtlRegVal);
- }
- 
- GpioValueType
-@@ -165,7 +140,7 @@ GpioReadInputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
++    GpioIoWrite(GpioContext,
+         GpioGetCfgRegByIndex(
+             GpioContext, GPIO_CFG_REG_TYPE_IO_REG, ConfigParams->PinNumber),
+         GpioIoRegVal);
+   }
+-  CrMmioWrite32(
++  GpioIoWrite(GpioContext,
+       GpioGetCfgRegByIndex(
+           GpioContext, GPIO_CFG_REG_TYPE_CTL_REG, ConfigParams->PinNumber),
+       GpioCtlRegVal);
+@@ -201,7 +201,7 @@ GpioReadInputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
    }
  
    // Ignore io mode and only read current io register
@@ -3133,7 +2591,7 @@ index 54d0817..c7c335b 100644
        GpioGetCfgRegByIndex(GpioContext, GPIO_CFG_REG_TYPE_IO_REG, GpioIndex));
    return (GET_FIELD(
               GpioIoRegVal, GpioContext->GpioPins[GpioIndex].pRegCfg->InputMsk))
-@@ -185,7 +160,7 @@ GpioReadOutputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
+@@ -224,7 +224,7 @@ GpioReadOutputVal(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
    }
  
    // Ignore io mode and only read current io register
@@ -3142,7 +2600,18 @@ index 54d0817..c7c335b 100644
        GpioGetCfgRegByIndex(GpioContext, GPIO_CFG_REG_TYPE_IO_REG, GpioIndex));
    return (GET_FIELD(
               GpioIoRegVal, GpioContext->GpioPins[GpioIndex].pRegCfg->OutputMsk))
-@@ -203,7 +178,7 @@ GpioReadIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
+@@ -245,8 +245,8 @@ CR_STATUS GpioApplyConfigChecked(GpioDeviceContext *Context,CONST GpioConfigPara
+    * output temporarily to achieve this would create an unwanted pad pulse. */
+   if(!Config->OutputEnable) {
+     UINTN Io=GpioGetCfgRegByIndex(Context,GPIO_CFG_REG_TYPE_IO_REG,Config->PinNumber);
+-    UINT32 Value=CrMmioRead32(Io);Value=(Value&~Reg->OutputMsk)|SET_FIELD(Config->OutputValue,Reg->OutputMsk);
+-    CrMmioWrite32(Io,Value);
++    UINT32 Value=GpioIoRead(Context,Io);Value=(Value&~Reg->OutputMsk)|SET_FIELD(Config->OutputValue,Reg->OutputMsk);
++    GpioIoWrite(Context,Io,Value);
+   }
+   GpioConfigParams Desired=*Config;GpioSetConfig(Context,&Desired);
+   GpioConfigParams Actual;GpioInitConfigParams(&Actual,Config->PinNumber);GpioReadConfig(Context,&Actual);
+@@ -277,7 +277,7 @@ GpioReadIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
      return FALSE;
    }
  
@@ -3151,7 +2620,7 @@ index 54d0817..c7c335b 100644
        GpioContext, GPIO_CFG_REG_TYPE_INT_STATUS_REG, GpioIndex));
  
    return (IntStatusRegVal &
-@@ -223,14 +198,14 @@ VOID GpioCleanIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
+@@ -300,14 +300,14 @@ VOID GpioCleanIrqStatus(IN GpioDeviceContext *GpioContext, IN UINT16 GpioIndex)
    }
  
    // Clear interrupt status
@@ -3168,7 +2637,7 @@ index 54d0817..c7c335b 100644
        GpioGetCfgRegByIndex(
            GpioContext, GPIO_CFG_REG_TYPE_INT_STATUS_REG, GpioIndex),
        IntStatusRegVal);
-@@ -253,7 +228,7 @@ GpioCheckInterruptEnabled(
+@@ -334,7 +334,7 @@ GpioCheckInterruptEnabled(
      return CR_SUCCESS;
    }
  
@@ -3177,7 +2646,7 @@ index 54d0817..c7c335b 100644
        GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex));
  
    *Enabled =
-@@ -279,7 +254,7 @@ GpioEnableInterrupt(
+@@ -364,7 +364,7 @@ GpioEnableInterrupt(
      return CR_SUCCESS;
    }
  
@@ -3186,7 +2655,7 @@ index 54d0817..c7c335b 100644
        GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex));
  
    if (Enable) {
-@@ -303,7 +278,7 @@ GpioEnableInterrupt(
+@@ -388,7 +388,7 @@ GpioEnableInterrupt(
      // Read back and check if currenly level triggered
      BOOLEAN IsLevelTrigger =
          GET_FIELD(
@@ -3195,7 +2664,7 @@ index 54d0817..c7c335b 100644
                  GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex)),
              GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptDetectionMsk) ==
          0;
-@@ -316,7 +291,7 @@ GpioEnableInterrupt(
+@@ -401,7 +401,7 @@ GpioEnableInterrupt(
    }
  
    // Write back to register
@@ -3204,7 +2673,7 @@ index 54d0817..c7c335b 100644
        GpioGetCfgRegByIndex(
            GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex),
        RegVal);
-@@ -339,7 +314,7 @@ CR_STATUS GpioMaskInterrupt(
+@@ -428,7 +428,7 @@ CR_STATUS GpioMaskInterrupt(
      return CR_SUCCESS;
    }
  
@@ -3213,7 +2682,7 @@ index 54d0817..c7c335b 100644
        GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex));
    if (Mask) {
      // Read back and check if currenly level triggered
-@@ -372,7 +347,7 @@ CR_STATUS GpioMaskInterrupt(
+@@ -461,7 +461,7 @@ CR_STATUS GpioMaskInterrupt(
               1, GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptEnMsk));
    }
    // Write back to register
@@ -3222,7 +2691,7 @@ index 54d0817..c7c335b 100644
        GpioGetCfgRegByIndex(
            GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex),
        RegVal);
-@@ -406,7 +381,7 @@ CR_STATUS GpioSetInterruptCfg(
+@@ -503,7 +503,7 @@ CR_STATUS GpioSetInterruptCfg(
    }
  
    // Route interrupt to apps processor
@@ -3231,7 +2700,7 @@ index 54d0817..c7c335b 100644
        GpioContext, GPIO_CFG_REG_TYPE_INT_TARGET_REG, GpioIndex));
  
    // Use kpss val
-@@ -417,13 +392,13 @@ CR_STATUS GpioSetInterruptCfg(
+@@ -514,13 +514,13 @@ CR_STATUS GpioSetInterruptCfg(
         SET_FIELD(
             GpioContext->GpioPins[GpioIndex].pRegCfg->TargetKpssVal,
             GpioContext->GpioPins[GpioIndex].pRegCfg->InterruptTargetMsk));
@@ -3247,7 +2716,7 @@ index 54d0817..c7c335b 100644
        GpioContext, GPIO_CFG_REG_TYPE_INT_CFG_REG, GpioIndex));
    IrqEnabled =
        GET_FIELD(
-@@ -595,7 +570,7 @@ CR_STATUS GpioSetInterruptCfg(
+@@ -692,7 +692,7 @@ CR_STATUS GpioSetInterruptCfg(
      GpioCleanIrqStatus(GpioContext, GpioIndex);
  
    // Write back to register
@@ -3296,8 +2765,30 @@ index 297f974..ddec180 100644
 +      (PeripheralAddress & 0xff) != 0) return CR_INVALID_PARAMETER;
 +  return Bus->Read(Bus->Context, Sid, PeripheralAddress + 0x10, Status, 1);
 +}
+diff --git a/Library/RpmhLib/rpmh.c b/Library/RpmhLib/rpmh.c
+index 14afbe6..3bb2b15 100644
+--- a/Library/RpmhLib/rpmh.c
++++ b/Library/RpmhLib/rpmh.c
+@@ -118,6 +118,8 @@ CR_STATUS TcsSetTrigger(RpmhDeviceContext *RpmhContext, UINT32 TcsIndex,
+ STATIC UINT32 ChangeState(volatile UINT32 *State, UINT32 Old, UINT32 New) {
+ #ifdef _KERNEL_MODE
+   return (UINT32)InterlockedCompareExchange((volatile LONG *)State,(LONG)New,(LONG)Old);
++#elif defined(CR_FREESTANDING)
++  return CrAtomicCompareExchange32(State,Old,New);
+ #else
+   return InterlockedCompareExchange32(State,Old,New);
+ #endif
+@@ -376,7 +378,7 @@ ClaimFreeTcs(IN RpmhDeviceContext *RpmhContext, IN RpmhDrvTcsData *TcsData,
+ #ifdef _KERNEL_MODE
+   log_info(CR_LOG_CHAR8_STR_FMT ": Claimed TCS %d", __FUNCTION__,
+            *FreeTcsIndex);
+-#else
++#elif !defined(CR_FREESTANDING)
+   DebugPrint(DEBUG_VERBOSE, "%a: Claimed TCS %u\n", __FUNCTION__, *FreeTcsIndex);
+ #endif
+ exit:
 diff --git a/Library/RpmhLib/rpmh.inf b/Library/RpmhLib/rpmh.inf
-index a658dca..dc2679d 100644
+index 19d417b..0a84d00 100644
 --- a/Library/RpmhLib/rpmh.inf
 +++ b/Library/RpmhLib/rpmh.inf
 @@ -19,6 +19,7 @@
@@ -3306,12 +2797,12 @@ index a658dca..dc2679d 100644
  [LibraryClasses]
 +  GeniSeLib
    ArmLib
-   DebugLib
-   IoLib
-@@ -27,3 +28,4 @@
- 
- [Sources.common]
-   rpmh.c
+   BaseLib
+   BaseMemoryLib
+@@ -32,3 +33,4 @@
+   rpmh_rail.c
+   rpmh_rail_votes.c
+   rpmh_rail_observe.c
 +  rpmh_poll.c
 diff --git a/Library/RpmhLib/rpmh_poll.c b/Library/RpmhLib/rpmh_poll.c
 new file mode 100644
@@ -3475,139 +2966,8 @@ index 0000000..dfb9ac6
 +    wr(p, base + control, TCS_ENABLE | TCS_TRIGGER);
 +    return CrRpmhPollComplete(p);
 +}
-diff --git a/Target/Sm8450/CrQupTarget.c b/Target/Sm8450/CrQupTarget.c
-index b7cdf80..ba6de5b 100644
---- a/Target/Sm8450/CrQupTarget.c
-+++ b/Target/Sm8450/CrQupTarget.c
-@@ -88,7 +88,14 @@ STATIC CONST CR_TARGET_GPI_CONTROLLER mSm8450Gpi[] = {
-   },
- };
- 
-+/* HDK8450 LT9611: Linux i2c9, qup9 mux on GPIO32/33. */
-+STATIC CONST CR_TARGET_QUP_FIFO_I2C mSm8450FifoI2c = {
-+  .Instance = 10, .Wrapper = 1, .Engine = 1, .Pins = {32, 33}, .Mux = 1, .Pull = 3,
-+  .ClockProvider = "gcc", .Clocks = {"gcc_qupv3_wrap_1_m_ahb_clk",
-+      "gcc_qupv3_wrap_1_s_ahb_clk", "gcc_qupv3_wrap1_s1_clk"},
-+};
- STATIC CR_TARGET_QUP_CONTEXT mSm8450QupContext = {
-+  .FifoI2c = &mSm8450FifoI2c,
-   .Qup      = mSm8450Qup,
-   .QupCount = sizeof (mSm8450Qup) / sizeof (mSm8450Qup[0]),
-   .Gpi      = mSm8450Gpi,
-diff --git a/Tests/I2cCrTest.c b/Tests/I2cCrTest.c
-index bb43c3c..1a09d53 100644
---- a/Tests/I2cCrTest.c
-+++ b/Tests/I2cCrTest.c
-@@ -5,9 +5,18 @@
- #include "MuBusTestCommon.h"
- #include "../Driver/I2CCrDxe/I2CCrDxe.c"
- 
--#define TEST_CONFIGURE_PINS I2cCrConfigurePins
-+static const CR_TARGET_QUP_FIFO_I2C PinTarget = {.Pins = {32, 33}, .Mux = 1, .Pull = 3};
-+static I2C_CR_INSTANCE PinInstance = {.FifoTarget = &PinTarget};
-+#define TEST_CONFIGURE_PINS() I2cCrConfigurePins(&PinInstance)
- #include "GeniPinmuxTest.h"
- 
-+/* This suite covers the protocol adapter. FIFO behavior is exercised by
-+ * I2cFifoTransportTest; reaching hardware here is an unexpected fallback. */
-+const struct CrIo *CrIoDefault(void) { return NULL; }
-+bool CrIoValid(const struct CrIo *io) {
-+  return io && io->read32 && io->write32 && io->now_us && io->delay_us;
-+}
-+
- EFI_GUID gQcomI2CProtocolGuid;
- EFI_GUID gEfiQupCrProtocolGuid;
- EFI_GUID gEfiI2cMasterProtocolGuid;
-diff --git a/Tests/I2cFifoTransportTest.c b/Tests/I2cFifoTransportTest.c
-index a4034ec..8c89069 100644
---- a/Tests/I2cFifoTransportTest.c
-+++ b/Tests/I2cFifoTransportTest.c
-@@ -2,8 +2,10 @@
- #include "GeniTestCommon.h"
- #include "../Driver/I2CCrDxe/I2CCrDxe.c"
- 
-+#define I2C_FIFO_SE_BASE 0xa84000U
- static UINT32 Registers[0x1000 / 4];
--static UINT32 CommandCount;
-+static UINT32 CommandCount, RxWatermark, RxReadyWatermark;
-+static UINT64 Ticks;
- static UINT32 InjectIrq, InjectCommand, AbortCount;
- static BOOLEAN DropReadData, DropDone;
- static EFI_STATUS EFIAPI Pins (EFI_GPIO_CR_PROTOCOL *This, GpioConfigParams *Config) {
-@@ -33,24 +35,40 @@ UINT32 EFIAPI MmioWrite32 (UINTN Address, UINT32 Value) {
-   if (Offset == SE_M_IRQ_CLEAR) Registers[SE_M_IRQ_STATUS / 4] &= ~Value;
-   else Registers[Offset / 4] = Value;
-   if (Offset == SE_M_CMD0) {
--    ++CommandCount;
-+    if ((Value >> 27) <= I2C_CMD_WRITE_READ) ++CommandCount;
-     if ((Value >> 27) == I2C_CMD_READ) {
-       /* A zero ready-for-receive threshold backpressures even an empty
-          FIFO. A short chip-ID read must remain receivable below RX_WM. */
-       if (Registers[SE_RX_RFR_WATERMARK / 4] != 0) {
--        Registers[SE_RX_FIFO_STATUS / 4] = DropReadData ? 0 : 1;
-+        Registers[SE_RX_FIFO_STATUS / 4] = DropReadData ? 0 : (1U<<31) | (1U<<28) | 1;
-         Registers[SE_M_IRQ_STATUS / 4] = SE_M_CMD_DONE | SE_M_RX_FIFO_LAST;
-       }
--    } else Registers[SE_M_IRQ_STATUS / 4] = SE_M_CMD_DONE;
-+    } else if ((Value >> 27) == I2C_CMD_WRITE) Registers[SE_M_IRQ_STATUS / 4] = SE_M_TX_FIFO_WATERMARK;
-+    else { ++AbortCount; Registers[SE_M_IRQ_STATUS / 4] = SE_M_CMD_DONE; }
-     if ((Value >> 27) == InjectCommand) {
-       Registers[SE_M_IRQ_STATUS / 4] |= InjectIrq;
-       if (DropDone) Registers[SE_M_IRQ_STATUS / 4] &= ~SE_M_CMD_DONE;
-     }
-   }
-+  if (Offset == SE_TX_FIFO) Registers[SE_M_IRQ_STATUS / 4] = SE_M_CMD_DONE |
-+      (InjectCommand == I2C_CMD_WRITE ? InjectIrq : 0);
-+  if (Offset == SE_RX_WATERMARK && Value) RxWatermark = Value;
-+  if (Offset == SE_RX_RFR_WATERMARK && Value) RxReadyWatermark = Value;
-   if (Offset == SE_M_CMD_CTRL) { ++AbortCount; Registers[SE_M_IRQ_STATUS / 4] = SE_M_CMD_ABORT; }
-   return Value;
- }
--UINTN EFIAPI MicroSecondDelay (UINTN Delay) { return Delay; }
-+UINTN EFIAPI MicroSecondDelay (UINTN Delay) { Ticks += Delay; return Delay; }
-+static uint32_t io_read(void *c, uintptr_t a) { (void)c; return MmioRead32(a); }
-+static void io_write(void *c, uintptr_t a, uint32_t v) { (void)c; MmioWrite32(a,v); }
-+static uint64_t io_time(void *c) { (void)c; return Ticks; }
-+static void io_delay(void *c, uint32_t us) { (void)c; MicroSecondDelay(us); }
-+const struct CrIo *CrIoDefault(void) {
-+  static const struct CrIo io = {0, io_read, io_write, io_time, io_delay}; return &io;
-+}
-+bool CrIoValid(const struct CrIo *io) { return io && io->read32 && io->write32 && io->now_us && io->delay_us; }
-+static const CR_TARGET_QUP_FIFO_I2C FifoTarget = {
-+ .Instance=10, .Wrapper=1, .Engine=1, .Pins={32,33}, .Mux=1, .Pull=3
-+};
- int main (void) {
-   I2C_CR_INSTANCE Instance = {0};
-   MU_I2C_SLAVE_CONFIG Config = {.SlaveAddress = 0x2b, .BusFrequencyKHz = 400,
-@@ -63,9 +81,12 @@ int main (void) {
-   UINT32 Transferred;
-   TestOwnership ();
-   BootServices.LocateProtocol = Locate;
--  Instance.Protocol.Instance = I2C_FIFO_INSTANCE;
--  mFifoResourcesReady = TRUE;
--  Registers[SE_HW_PARAM_0 / 4] = 16U << 16;
-+  Instance.Protocol.Instance = 10;
-+  Instance.FifoTarget = &FifoTarget;
-+  Instance.FifoConfig.base = I2C_FIFO_SE_BASE;
-+  Instance.FifoConfig.size = sizeof(Registers);
-+  Instance.FifoResourcesReady = TRUE;
-+  Registers[SE_HW_PARAM_0 / 4] = Registers[0xe28 / 4] = (16U << 16) | (32U << 24);
-   for (UINT32 Protocol = 0; Protocol < 3; ++Protocol) {
-     Registers[SE_GENI_FW_REVISION_RO / 4] = Protocol << 8;
-     assert (I2cCrFifoMuTransfer (&Instance.Protocol, &Config, Descriptors, 2,
-@@ -81,8 +102,8 @@ int main (void) {
-   assert (I2cCrFifoMuTransfer (&Instance.Protocol, &Config, Descriptors, 2,
-       NULL, NULL, 0, &Transferred) == EFI_SUCCESS);
-   assert (Id == 0x11 && Transferred == 2 && CommandCount == 2);
--  assert (Registers[SE_RX_WATERMARK / 4] == 15);
--  assert (Registers[SE_RX_RFR_WATERMARK / 4] == 16);
-+  assert (RxWatermark > 0 && RxWatermark < RxReadyWatermark);
-+  assert (RxReadyWatermark <= 16);
-   assert (mSeOwners[1][1].Busy == 0);
-   /* Exercise the real repeated-start adapter and error cleanup: terminal
-      read NACK is valid, address/write NACK and independent GP errors are not. */
 diff --git a/Tests/run_clock_tests.py b/Tests/run_clock_tests.py
-index 16afe7c..06a0adb 100644
+index 4df6dd2..4145034 100644
 --- a/Tests/run_clock_tests.py
 +++ b/Tests/run_clock_tests.py
 @@ -12,7 +12,7 @@ parser.add_argument("--cc", default="clang")
@@ -3620,65 +2980,31 @@ index 16afe7c..06a0adb 100644
          "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
          "-I" + str(crane / "Include"),
 diff --git a/Tests/run_geni_transport_tests.py b/Tests/run_geni_transport_tests.py
-index 7fd0474..34a39bf 100644
+index b7d96cc..93e36b0 100644
 --- a/Tests/run_geni_transport_tests.py
 +++ b/Tests/run_geni_transport_tests.py
-@@ -3,9 +3,13 @@
+@@ -1,12 +1,15 @@
+ #!/usr/bin/env python3
+ """Run native FIFO/GPI behavior against fake hardware with ASan/UBSan."""
++import argparse
  from pathlib import Path
+ import re
  import subprocess
  import tempfile
-+import argparse
  
  crane = Path(__file__).resolve().parents[1]
 -edk2 = crane.parents[1] / "MU_BASECORE"
 +parser = argparse.ArgumentParser()
-+parser.add_argument("--edk2", required=True, type=Path)
-+args = parser.parse_args()
-+edk2 = args.edk2
++parser.add_argument("--edk2", type=Path, default=crane.parents[1] / "MU_BASECORE")
++edk2 = parser.parse_args().edk2
  with tempfile.TemporaryDirectory(prefix="crane-geni-test-") as tmp:
      common = ["clang", "-std=c11", "-fshort-wchar", "-g", "-O1",
                "-Wall", "-Wextra", "-Werror", "-DCRANE_HOST_TEST", "-DCRANE_MMIO_TEST",
-@@ -17,5 +21,6 @@ with tempfile.TemporaryDirectory(prefix="crane-geni-test-") as tmp:
-               "-I" + str(edk2 / "MdeModulePkg/Include")]
-     for source in ["GpiTransportTest.c", "I2cFifoTransportTest.c"]:
-         exe = Path(tmp) / Path(source).stem
--        subprocess.run(common + [str(crane / "Tests" / source), "-o", str(exe)], check=True)
-+        extra = [str(crane / "Library/GeniSeLib/geni_fifo.c")] if source == "I2cFifoTransportTest.c" else []
-+        subprocess.run(common + [str(crane / "Tests" / source)] + extra + ["-o", str(exe)], check=True)
-         subprocess.run([str(exe)], check=True)
-diff --git a/Tests/run_mu_bus_tests.py b/Tests/run_mu_bus_tests.py
-index 5101912..7ed051b 100644
---- a/Tests/run_mu_bus_tests.py
-+++ b/Tests/run_mu_bus_tests.py
-@@ -9,6 +9,8 @@ crane = Path(__file__).resolve().parents[1]
- parser = argparse.ArgumentParser()
- parser.add_argument("--edk2", type=Path, default=crane.parents[1] / "MU_BASECORE")
- parser.add_argument("--cc", default="clang")
-+parser.add_argument("--lt9611", action="store_true",
-+                    help="Also run optional LT9611 driver tests when that driver extension is present")
- args = parser.parse_args()
- with tempfile.TemporaryDirectory(prefix="crane-mu-bus-test-") as tmp:
-     common = [
-@@ -19,8 +21,12 @@ with tempfile.TemporaryDirectory(prefix="crane-mu-bus-test-") as tmp:
-         "-I" + str(args.edk2 / "MdePkg/Include"),
-         "-I" + str(args.edk2 / "MdePkg/Include/X64"),
-     ]
--    for source in ["I2cCrTest.c", "SpiCrTest.c", "Lt9611I2cTest.c"]:
-+    sources = ["I2cCrTest.c", "SpiCrTest.c"]
-+    if args.lt9611:
-+        sources.append("Lt9611I2cTest.c")
-+    for source in sources:
-         exe = Path(tmp) / Path(source).stem
--        subprocess.run(common + [str(crane / "Tests" / source), "-o", str(exe)],
-+        extra = [str(crane / "Library/GeniSeLib/geni_fifo.c")] if source == "I2cCrTest.c" else []
-+        subprocess.run(common + [str(crane / "Tests" / source)] + extra + ["-o", str(exe)],
-                        check=True)
-         subprocess.run([str(exe)], check=True)
 diff --git a/Tests/run_rpmh_tests.py b/Tests/run_rpmh_tests.py
-index 6897db0..116cc96 100644
+index 94bc2d6..b6a474e 100644
 --- a/Tests/run_rpmh_tests.py
 +++ b/Tests/run_rpmh_tests.py
-@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
+@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
      exe = Path(tmp) / "rpmh-test"
      subprocess.run([
          args.cc,
@@ -3687,7 +3013,7 @@ index 6897db0..116cc96 100644
          "-fshort-wchar",
          "-g",
          "-O1",
-@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
+@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix="crane-rpmh-test-") as tmp:
      subprocess.run([str(exe)], check=True)
      subprocess.run([
          args.cc,
