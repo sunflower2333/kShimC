@@ -2,6 +2,40 @@
 
 # CrDK / DT migration validation
 
+## CrDK feature/2610 update (2026-10-29)
+
+The submodule moved from `b6c3335` (`backup/2610`) to `feature/2610` at
+`f23922d9f044fc4c32748da821d6ee1084df9d3f`. Upstream now contains the work
+that the old `0001-cranepkg-driver-fixes.patch` carried (GENI/GPI, clock and
+RPMh driver changes, PCIe branch flags and the RPMh `AcquireVreg` API, now in
+`Library/Sm8450ClockLib` and the rewritten drivers). It also contains the
+deferred SPI open/retry and PCIe failure-status commits (`bafd996`,
+`38101ba`). The deferred I2C open commit (`b6c3335`) is superseded: upstream
+`I2CCrDxe` is a native GENI driver that only publishes protocols from its
+entry point and touches hardware on use. That patch was retired, and the
+former patch 0002 was rebased as the single
+`0001-freestanding-resources.patch`
+(`d5bb73e9f7e3a0edd1a9bea511f3283e06488de7a2be00aeb91e56947fcbfb6e`).
+The rebased patch no longer touches `I2CCrDxe`, `CrTargetQupLib.h`,
+`CrQupTarget.c` or the I2C UEFI tests, and it drops clock/GDSC hunks that
+upstream already contains.
+
+| Check | Result |
+| --- | --- |
+| Host tests (`cmake -S tests`, ASan/UBSan, GCC) | 19/19 passed |
+| `tests/run_qcom_bus_tests.sh` | 3/3 passed |
+| `tools/test_crdk_upstream.py` with MU_BASECORE headers | geni_transport, clock, rpmh and mu_bus suites passed; 10 AArch64 UEFI syntax units passed |
+| CI `platform-build` matrix (hdk8150, hdk8250, qemu_manifest_serial) | built, no undefined symbols |
+| CI `arm64-build` sample (qemu_manifest_ui + CLASSIC) | built |
+| andromeda, hdk8450, qemu_smp | built |
+| `tools/test_qemu_smp.py --repeat 1` | 8/8 EL1/EL2 cases passed |
+
+The Manifest QEMU and board packaging checks below were not repeated: they
+need the sibling MultiBootKernelPatcher and board UEFI images outside this
+checkout. As before, nothing ran on hardware.
+
+## Original b6c3335 migration
+
 Validation date: 2026-09-26. This is an uncommitted worktree change.
 The original dirty tree was backed up under `build/crdk-migration-backup`.
 No commits, pushes, flashing or changes to the mu_aloha workspace were made.

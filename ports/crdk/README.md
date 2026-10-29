@@ -1,14 +1,17 @@
 # CrDK integration
 
 The complete `lib/CrDK` submodule is pinned to Project-Aloha/CrDK
-`b6c3335136b7f6b28271917de11e8f11982975fc`. Firmware and host tests compile a
-build-local materialization, never a private selection of copied drivers.
+`feature/2610` at `f23922d9f044fc4c32748da821d6ee1084df9d3f`. Firmware and
+host tests compile a build-local materialization, never a private selection
+of copied drivers.
 
-`UPSTREAM.json` records the baseline, reference-file SHA256 values and both
-patch hashes. Patch 0001 captures the required uncommitted GENI, clock and
-RPMh work from the read-only CranePkg reference. Patch 0002 contains the
-freestanding OSKAL, shared resource APIs, Android binding tables and adapter
-test changes. The reference workspace is not required to apply either patch.
+`UPSTREAM.json` records the baseline and the hash of the single patch,
+`0001-freestanding-resources.patch`. It contains the freestanding OSKAL
+selection, shared resource and polling APIs, Android binding tables, the
+injectable TLMM register path, `PmicGpioReadStatus`, their UEFI INF/DSC/DEC
+mappings and the three native test-runner options they need. Upstream
+`feature/2610` already carries the former GENI/GPI, clock, RPMh and
+I2C/SPI deferred-open driver work, so that patch was retired.
 
 ```sh
 python3 ports/crdk/prepare.py --source lib/CrDK --output build/crdk-source
@@ -16,10 +19,11 @@ python3 ports/crdk/prepare.py --source lib/CrDK --output build/crdk-source
 
 Preparation checks the submodule HEAD and patch hashes, archives the pinned
 commit, checks each patch and applies them in order. Its cache key includes
-the manifest and preparation script. Change the patches, not generated source
+the manifest and preparation script. Change the patch, not generated source
 under a normal build directory. `tools/export_crdk_patch.py` is a development
-helper for an isolated clone whose index contains patch 0001 and whose work
-tree contains patch 0002. No commit or push is part of that workflow.
+helper for an isolated clone based on the pinned revision: it exports every
+committed, staged and work-tree edit relative to that revision as the patch
+and refreshes its manifest hash. No push is part of that workflow.
 
 ## Library and port boundaries
 
@@ -36,14 +40,19 @@ tree contains patch 0002. No commit or push is part of that workflow.
 `CR_FREESTANDING` makes CrDK OSKAL include the explicit `crdk_os.h` port
 contract. `crdk_port.c` supplies allocation/string adapters, native MMIO
 barriers, monotonic time, bounded polling support, locks, atomics and logging.
-The interrupt entry points return unsupported: these boot paths use polling.
-Injectable `CrIo` separates the same shared code from native MMIO for tests.
+The interrupt entry points return unsupported and `CrInterruptIsRegistered`
+reports no owner: these boot paths use polling. The contract also supplies
+the newer upstream OSKAL names (`CR_NOT_READY`, `CR_ALREADY_STARTED`,
+`CR_BAD_BUFFER_SIZE`, `CR_COMPROMISED_DATA`, `CR_MAX_UINT32/64`, the
+`CR_LOG_*_FMT` formats, `CrMemoryFence`, `CR_MUTEX` and
+`CrAtomicCompareExchange32`). Injectable `CrIo` separates the same shared
+code from native MMIO for tests.
 
-The GENI FIFO core is also used by the patched UEFI `I2CCrDxe`; fixed FIFO
-port/pin data lives in its target resource descriptor. Repeated START,
-descriptor STOP boundaries, terminal read NACK, abort recovery and SPI chip
-select continuity are implemented in the shared core. The existing UEFI
-protocol/GPI tests remain separate from the freestanding register models.
+Repeated START, descriptor STOP boundaries, terminal read NACK, abort
+recovery and SPI chip select continuity are implemented in the shared GENI
+FIFO core used by kShimC. Upstream `I2CCrDxe` now has its own native,
+target-described GENI FIFO/GPI transport, so the patch no longer modifies
+that driver, its target tables or its UEFI tests.
 
 Clock/RPMh have explicit polling resource APIs alongside their existing
 interrupt-oriented APIs. kShimC uses the polling APIs on its boot CPU, never
@@ -107,11 +116,11 @@ ctest --test-dir build/host --output-on-failure
 python3 tools/test_crdk_upstream.py --edk2 /path/to/edk2
 ```
 
-The second command group tests a fresh materialization: native GENI, Clock,
-RPMh and MU I2C/SPI suites, plus AArch64 UEFI syntax checks for the new APIs
-and modified I2C target/driver. The optional LT9611 extension is outside this
-patch set; its upstream runner option requires that separate driver extension.
-EDK2 headers are an explicit test input, not a firmware-build dependency.
+The second command group tests a fresh materialization: upstream GENI
+transport/SPI, Clock, RPMh and MU I2C/SPI/LT9611 suites, plus AArch64 UEFI
+syntax checks for the new APIs and the patched TLMM and RPMh sources. EDK2
+(MU_BASECORE) headers are an explicit test input, not a firmware-build
+dependency.
 
 Host models and UEFI syntax checks do not prove a full UEFI/WDK build,
 electrical behavior, display scanout, touch input or hardware handoff. See the
