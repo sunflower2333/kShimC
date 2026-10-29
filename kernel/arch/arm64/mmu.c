@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <kshim_mmu.h>
 
 #include <config.h>

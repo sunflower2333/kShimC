@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Exercise the real LVGL renderer and both physical-key and touch paths. */
 #include <assert.h>
 #include <stdint.h>

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Host regression tests; link this file with kernel/drivers/touch.c. */
 #include <touch.h>
 

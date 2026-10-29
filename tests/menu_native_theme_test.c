@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Native theme must be real, not a table of imitation colors. */
 #include <assert.h>
 #include <stdio.h>

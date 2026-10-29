@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <arm64/elf.h>
 #include <ld/arm64_ld.h>
 #define LD_START_ADDRESS_ULL (LD_START_ADDRESS + 0ULL)

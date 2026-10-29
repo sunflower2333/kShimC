@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #pragma once
 
 #define EXCEPTION_TYPE_SYNCHRONOUS  0

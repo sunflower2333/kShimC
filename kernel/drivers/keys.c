@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * Qualcomm key input backend.
  *

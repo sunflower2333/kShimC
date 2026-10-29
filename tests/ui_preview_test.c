@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Render reviewable full-resolution menu keyframes as binary PPM. */
 #include <assert.h>
 #include <inttypes.h>

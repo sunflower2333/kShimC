@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #pragma once
 #include <stdint.h>
 #include <arm64_sysreg.h>

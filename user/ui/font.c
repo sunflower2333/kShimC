@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <ui_font.h>
 
 #include <string.h>

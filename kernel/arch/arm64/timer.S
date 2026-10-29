@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <asm/asm_macro.h>
 
 ASM_FUNC(arm64_read_cntfrq)

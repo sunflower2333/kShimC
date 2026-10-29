@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* HARMONYOS：独立样式预设；沿用共享启动与输入逻辑。 */
 static const kshim_menu_style_t mMenuStyle = {
     .Name = "HARMONYOS",

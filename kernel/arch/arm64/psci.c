@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <psci.h>
 
 #include <libfdt.h>

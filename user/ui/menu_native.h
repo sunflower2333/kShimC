@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_NATIVE_H
 #define KSHIM_MENU_NATIVE_H
 /* Native LVGL presentation only. Entry order, inputs and boot ownership remain

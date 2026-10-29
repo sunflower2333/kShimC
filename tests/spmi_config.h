@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_TEST_SPMI_CONFIG_H
 #define KSHIM_TEST_SPMI_CONFIG_H
 

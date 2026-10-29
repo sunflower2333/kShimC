@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_DESIGN_LAYOUT_H
 #define KSHIM_MENU_DESIGN_LAYOUT_H
 /* Pure geometry, no LVGL or framebuffer allocation. Units are not physical dp/pt. */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #pragma once
 #include <stdint.h>
 extern void arm64_install_exception_vector(void);

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_POWER_H
 #define KSHIM_MENU_POWER_H
 /* Presentation only: callbacks enqueue intentions; firmware calls are owned by

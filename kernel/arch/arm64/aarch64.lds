@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <ld/arm64_ld.h>
 
 ENTRY(_start)

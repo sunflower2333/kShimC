@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include "spmi_config.h"
 /* PMIC Arbiter v1/v2/v3/v5/v7/v8/v8.5 host tests. Compile both translation units with
  * -include tests/spmi_config.h; no physical MMIO mappings are created. */

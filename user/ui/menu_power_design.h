@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_POWER_DESIGN_H
 #define KSHIM_MENU_POWER_DESIGN_H
 /* Reviewed presentation adapters. They never execute power operations or change the

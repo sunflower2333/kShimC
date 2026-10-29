@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <stdint.h>
 
 typedef uint64_t Elf64_Addr;

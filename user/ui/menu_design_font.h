@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_DESIGN_FONT_H
 #define KSHIM_MENU_DESIGN_FONT_H
 /* Fixed-advance ASCII adapter over the repository font. CJK falls back unchanged.

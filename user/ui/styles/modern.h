@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* 仅编入一个现代风格，运行时不分配主题表。 */
 #if defined(CONFIG_KSHIM_MENU_STYLE_FLUENT) && CONFIG_KSHIM_MENU_STYLE_FLUENT
 #include "fluent.h"

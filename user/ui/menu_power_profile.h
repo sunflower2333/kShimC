@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_POWER_PROFILE_H
 #define KSHIM_MENU_POWER_PROFILE_H
 /* Explicit presentation contract for every design family, including FLAT.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <smp_selftest.h>
 
 #include <config.h>

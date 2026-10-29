@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #if !defined(KSHIM_HOST_TEST)
 #include <config.h>
 #endif

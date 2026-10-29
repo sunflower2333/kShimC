@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Private layout dispatch; the FLAT fallback remains the baseline implementation. */
 /* 应用当前行外观；Bento 保留第一个子对象为标题，兼容焦点动画与测试。 */
 static int KshimStyleEntry(lv_obj_t *Button, size_t Index)

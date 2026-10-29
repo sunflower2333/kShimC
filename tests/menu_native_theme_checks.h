@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_NATIVE_THEME_CHECKS_H
 #define KSHIM_NATIVE_THEME_CHECKS_H
 /* Compare with newly-created untouched widgets, never a copied palette. */

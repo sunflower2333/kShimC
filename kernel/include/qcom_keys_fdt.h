@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * libfdt adapter for the transport-neutral Qualcomm key backend.
  *

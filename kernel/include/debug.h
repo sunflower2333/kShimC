@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #pragma once
 #include <lib/stdport.h>
 #include <config.h>

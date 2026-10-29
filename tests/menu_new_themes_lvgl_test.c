@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Real-pixel and fixed-chrome regression for the four additional themes. */
 #include <assert.h>
 #include <stdint.h>

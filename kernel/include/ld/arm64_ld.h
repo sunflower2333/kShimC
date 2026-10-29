@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #if defined(__LD_SCRIPT__) || defined(__ASSEMBLER__)
 #define ULL_NUM(x) x
 #else

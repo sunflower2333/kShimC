@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Preserve the original mark reservation when a dense icon card has little room. */
 #include <assert.h>
 #include <stdio.h>

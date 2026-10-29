@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <kshim.h>
 #include <pl011_uart.h>
 #include <kshim_console.h>

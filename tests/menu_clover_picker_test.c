@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Clover's boot entries are the activation targets; utilities form row two. */
 #include <assert.h>
 #include <stdio.h>

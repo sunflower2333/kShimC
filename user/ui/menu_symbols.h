@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_SYMBOLS_H
 #define KSHIM_MENU_SYMBOLS_H
 /* Procedural generic media and selection marks: no trademark assets or click targets. */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_POWER_EXTENDED_H
 #define KSHIM_MENU_POWER_EXTENDED_H
 /* Remaining presentations. Entry placement is relative to the boot chrome;

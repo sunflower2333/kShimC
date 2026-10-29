@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #pragma once
 // PSCI definitions
 // Refer to DEN0022F.b_Power_State_Coordination_Interface.pdf

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_STYLE_RENDER_H
 #define KSHIM_MENU_STYLE_RENDER_H
 

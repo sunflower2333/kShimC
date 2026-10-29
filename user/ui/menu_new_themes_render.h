@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_NEW_THEMES_RENDER_H
 #define KSHIM_MENU_NEW_THEMES_RENDER_H
 /* Presentation-only hooks. No input, selection ownership or fabricated actions. */

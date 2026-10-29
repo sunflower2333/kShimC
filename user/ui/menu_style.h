@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_UI_MENU_STYLE_H
 #define KSHIM_UI_MENU_STYLE_H
 #include <stdint.h>

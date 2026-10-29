@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <framebuffer.h>
 
 /* The framebuffer is often MMIO or uncached memory, so every write is volatile. */

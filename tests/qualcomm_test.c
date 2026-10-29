@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Host regressions for Qualcomm key events and the libfdt adapter. */
 #include <assert.h>
 #include <stdint.h>

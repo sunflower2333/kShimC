@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #pragma once
 #define BIT(x)          (0x1ULL << x)
 // Generates bits from position y to position (x-1). Note: x must be greater than y.

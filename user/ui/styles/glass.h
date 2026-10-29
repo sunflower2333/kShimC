@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* GLASS：独立视觉预设；由 menu_style.h 选择，勿单独包含。 */
 static const kshim_menu_style_t mMenuStyle = {
     .Name = "GLASS",

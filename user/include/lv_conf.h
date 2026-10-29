@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef LV_CONF_H
 #define LV_CONF_H
 

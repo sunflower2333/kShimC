@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_DESIGN_LVGL_CHECKS_H
 #define KSHIM_MENU_DESIGN_LVGL_CHECKS_H
 /* Real LVGL assertions used by the existing host regression executables. */

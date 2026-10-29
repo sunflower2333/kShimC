@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* METRO inspired roles; opaque, bounded and no external assets. */
 static const kshim_menu_style_t mMenuStyle = {
     .Name = "METRO",

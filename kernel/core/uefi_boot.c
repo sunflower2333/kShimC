@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <uefi_boot.h>
 #include <kshim/boot.h>
 #include <config.h>

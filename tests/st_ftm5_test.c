@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Host regression tests; link with kernel/drivers/st_ftm5.c and kernel/drivers/touch.c. */
 #include <st_ftm5.h>
 

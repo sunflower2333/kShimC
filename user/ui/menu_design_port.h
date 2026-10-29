@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_DESIGN_PORT_H
 #define KSHIM_MENU_DESIGN_PORT_H
 /* Include in lvgl_port.c after the shared animation helpers and globals.

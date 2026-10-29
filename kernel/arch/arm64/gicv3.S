@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <asm/asm_macro.h>
 // Enable GIC cpu interface
 ASM_FUNC(arm64_gicv3_enable_gicc)

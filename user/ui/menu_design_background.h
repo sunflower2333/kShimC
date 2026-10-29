@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #ifndef KSHIM_MENU_DESIGN_BACKGROUND_H
 #define KSHIM_MENU_DESIGN_BACKGROUND_H
 /* Selected-only, one-time cached background. 57,600+480 bytes <= 64 KiB. */

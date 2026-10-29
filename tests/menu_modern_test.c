@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* 现代主题的布局和交互专项；使用真实 LVGL，不模拟绘制 API。 */
 #include <assert.h>
 #include <stdint.h>

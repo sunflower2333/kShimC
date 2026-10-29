@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * Qualcomm key device-tree adapter.
  *

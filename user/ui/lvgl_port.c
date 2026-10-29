@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <lvgl_port.h>
 
 #include <limits.h>

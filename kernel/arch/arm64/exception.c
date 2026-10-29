@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <arm64_exception.h>
 #include <asm/arm64_exception.h>
 #include <arm64_sysreg.h>

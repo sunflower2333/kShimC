@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* HOLO inspired roles; opaque, bounded and no external assets. */
 static const kshim_menu_style_t mMenuStyle = {
     .Name = "HOLO",

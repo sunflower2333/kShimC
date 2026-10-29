@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include "pl011_uart.h"
 #include <bitops.h>
 #include <memops.h>

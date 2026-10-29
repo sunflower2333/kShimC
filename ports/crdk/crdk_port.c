@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <oskal/cr_interrupt.h>
 #include <crdk_os.h>
 #include <stdarg.h>

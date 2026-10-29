@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /* Host regression tests; link this file with user/ui/framebuffer.c. */
 #include <framebuffer.h>
 

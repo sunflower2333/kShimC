@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 #include <asm/asm_macro.h>
 #include <arm64_sysreg.h>
 

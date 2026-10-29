@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 // Arm64 Generic Timer
 #include <timer.h>
 #include <gicv3.h>

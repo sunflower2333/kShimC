@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
  * Qualcomm early-boot key input.
  *
