@@ -34,6 +34,7 @@ set(LV_CONF_BUILD_DISABLE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
 add_subdirectory("${KSHIM_ROOT}/third_party/lvgl" lvgl)
+set(CRDK_GPIO_TARGETS ON CACHE BOOL "" FORCE) # TLMM layout checks (irqchip_test)
 add_subdirectory("${KSHIM_ROOT}/ports/crdk" crdk)
 set(KSHIM_UI_FONT_BLOB "${KSHIM_ROOT}/user/ui/fonts/noto_sans_cjk_sc.ksf")
 configure_file("${KSHIM_ROOT}/user/ui/fonts/ui_font_blob.S.in"
@@ -100,6 +101,26 @@ add_link_options(-Wl,--gc-sections)
 kshim_test(dt_test dt_test.c "${KSHIM_ROOT}/kernel/dt/keys.c" "${KSHIM_ROOT}/kernel/drivers/keys.c")
 target_compile_definitions(dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\"")
 target_link_libraries(dt_test PRIVATE kshim_dt)
+# Qualcomm interrupt cascades and interrupt-driven input over a fake GIC core
+# and register models, resolved from the real andromeda/hdk8150 DTs.
+set(KSHIM_IRQCHIP_SOURCES irq_fake.c "${KSHIM_ROOT}/kernel/dt/irq.c"
+    "${KSHIM_ROOT}/kernel/drivers/irqchip/resolve.c" "${KSHIM_ROOT}/kernel/drivers/irqchip/tlmm.c"
+    "${KSHIM_ROOT}/kernel/drivers/irqchip/pdc.c" "${KSHIM_ROOT}/kernel/drivers/irqchip/spmi_pmic.c"
+    "${KSHIM_ROOT}/kernel/drivers/irqchip/handoff.c")
+kshim_test(irqchip_test irqchip_test.c ${KSHIM_IRQCHIP_SOURCES})
+kshim_test(input_irq_test input_irq_test.c ${KSHIM_IRQCHIP_SOURCES}
+    "${KSHIM_ROOT}/kernel/drivers/input_irq.c" "${KSHIM_ROOT}/kernel/drivers/geni_rx_irq.c"
+    "${KSHIM_ROOT}/kernel/drivers/keys.c" "${KSHIM_ROOT}/kernel/dt/keys.c"
+    "${KSHIM_ROOT}/kernel/drivers/st_ftm5.c" "${KSHIM_ROOT}/kernel/drivers/touch.c")
+target_compile_definitions(input_irq_test PRIVATE CONFIG_KSHIM_INPUT_IRQ=1)
+foreach(target irqchip_test input_irq_test)
+    target_compile_definitions(${target} PRIVATE CONFIG_QCOM_IRQCHIP=1
+        "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\"")
+    target_link_libraries(${target} PRIVATE kshim_dt)
+endforeach()
+kshim_test(spmi_grant_test spmi_grant_test.c "${KSHIM_ROOT}/kernel/drivers/qcom_keys.c")
+target_compile_definitions(spmi_grant_test PRIVATE CONFIG_QCOM_IRQCHIP=1)
+target_link_libraries(spmi_grant_test PRIVATE crdk_spmi)
 kshim_test(crdk_poll_test crdk_poll_test.c)
 target_link_libraries(crdk_poll_test PRIVATE crdk)
 find_program(DTC_EXECUTABLE dtc REQUIRED)
