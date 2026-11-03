@@ -162,6 +162,7 @@ typedef struct {
     uint32_t state;
     uint32_t enabled;        // SGI/PPI bits kShimC enabled
     uint32_t touched;        // SGI/PPI bits kShimC ever configured
+    uint32_t restored;       // `touched` at the CPU's own frame restore
     GICV3_SAVED_FRAME frame;
     GICV3_SAVED_CPUIF cpuif;
     /* Statistics for the QEMU self-test. */

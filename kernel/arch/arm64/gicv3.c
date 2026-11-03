@@ -275,6 +275,7 @@ static int frame_restore(GICV3_CPU *cpu)
     REG32_IN(sgi + ARM_GICR_ISENABLER, frame->isenabler);
     if (frame_set_sleep(cpu->rd, (frame->waker & BIT_ARM_GICR_WAKER_PROCESSOR_SLEEP) != 0) && !status)
         status = ERROR_TIMEOUT;
+    cpu->restored = cpu->touched;
     cpu->enabled = cpu->touched = 0;
     cpu->state = GICV3_CPU_RESTORED;
     return status;
@@ -583,8 +584,22 @@ static int restore_all(GICV3_CPU *self)
     for (size_t i = 0; i < GICV3_MAX_CPUS; i++)
     {
         GICV3_CPU *cpu = &mGic.cpus[i];
-        if (cpu->state == GICV3_CPU_UP && cpu->rd && frame_restore(cpu) && !status)
-            status = ERROR_TIMEOUT;
+        if (!cpu->rd)
+            continue;
+        if (cpu->state == GICV3_CPU_UP)
+        {
+            if (frame_restore(cpu) && !status)
+                status = ERROR_TIMEOUT;
+        }
+        // A worker restores its frame before CPU_OFF, but a wake SGI sent
+        // from a stale idle mask can still land after that. Only this CPU
+        // is left running now: drop whatever kShimC's bits left behind.
+        else if (cpu->state == GICV3_CPU_RESTORED && cpu->restored)
+        {
+            REG32_IN(SGI_BASE(cpu->rd) + ARM_GICR_ICPENDR, cpu->restored);
+            REG32_IN(SGI_BASE(cpu->rd) + ARM_GICR_ICACTIVER, cpu->restored);
+            cpu->restored = 0;
+        }
     }
     if (self)
         cpuif_restore(self);
