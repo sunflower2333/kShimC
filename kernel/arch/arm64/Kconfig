@@ -14,3 +14,12 @@ choice
     config ARM64_PAGE_SIZE_64K
         bool "64KiB"
 endchoice
+config KSHIM_IRQ
+    bool "Interrupt-driven runtime (GICv3 and generic timer)"
+    default n
+    help
+        Discover the GICv3 and the generic timer from the runtime device
+        tree, take device and timer interrupts on the boot CPU, and sleep in
+        WFI instead of busy-waiting. Interrupt state is restored before
+        payload handoff. See docs/interrupts.md. Default n until the core
+        implementation lands; drivers keep polling as a fallback.
