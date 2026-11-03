@@ -16,10 +16,10 @@ ASM_FUNC(arm64_read_mmfr0_el1)
     ret
 
 
-// Enable interrupts
+// Enable IRQs. SError, Debug and FIQ keep the masks they were entered with.
 // void arm64_enable_interrupts(void)
 ASM_FUNC(arm64_enable_interrupts)
-    msr   daifclr, #DAIF_WR_ALL_BIT
+    msr   daifclr, #2
     isb
     ret
 
@@ -157,6 +157,14 @@ ASM_FUNC(arm64_install_exception_vector)
     isb
     ret
 
+// The same table built on the EL2 exception registers, for runs at EL2.
+// void arm64_install_exception_vector_el2(void)
+ASM_FUNC(arm64_install_exception_vector_el2)
+    adr x0, ARM64_EXCEPTION_VEC_TABLE_EL2
+    msr VBAR_EL2, x0
+    isb
+    ret
+
 
 /* Save contents
     GP registers
@@ -188,7 +196,7 @@ ASM_FUNC(arm64_install_exception_vector)
 * ARM64 Exception table supports 128bytes (32 instructions) per entry
 * As a common head here, it will jump to continuous handler once reach 32 instructions
 */
-.macro ExceptionCommonSaveContext ExceptionType
+.macro ExceptionCommonSaveContext ExceptionType, el=el1
     /* Pre allocate conext size in stack */
     sub sp, sp, #EXCEPTION_CONTEXT_SIZE
     // Current SP position:
@@ -233,17 +241,15 @@ ASM_FUNC(arm64_install_exception_vector)
     //  | GP_CONTEXT  |
     //  |-------------|
     
-    // Save sys registers
-    // The program is expected to be run on EL1
-    // mrs x0, CurrentEL
-    mrs x0, elr_el1         // Exception Link register
-    mrs x1, spsr_el1        // Saved program status register
+    // Save sys registers of the exception level this table serves
+    mrs x0, elr_\el         // Exception Link register
+    mrs x1, spsr_\el        // Saved program status register
     stp x0, x1, [sp, #-EXCEPTION_SYS_CONTEXT_SIZE]! //  Save to stack
     mrs x0, fpsr            // Float point status register
-    mrs x1, esr_el1         // Exception syndrome register
+    mrs x1, esr_\el         // Exception syndrome register
     stp x0, x1, [sp, #0x10] //  Save to stack
-    mrs x1, far_el1         // Fault address register
-    stp x0, xzr, [sp, #0x20]//  Save to stack
+    mrs x1, far_\el         // Fault address register
+    stp x1, xzr, [sp, #0x20]//  Save to stack
 
     // Current SP position:
     //  |-------------| <- Context top
@@ -256,13 +262,14 @@ ASM_FUNC(arm64_install_exception_vector)
 
     // Jump to rest of our handler(no return)
     mov x1, \ExceptionType
-    b ExceptioncontinuousSaveContext
+    b ExceptioncontinuousSaveContext_\el
 .endm
 
 /* ExceptioncontinuousSaveContext
 *   Arg1: ExceptionType
 */
-ExceptioncontinuousSaveContext:
+.macro ExceptionContinuous el
+ExceptioncontinuousSaveContext_\el:
     /* Save all FP registers to stack */
     stp q0, q1, [sp, #-EXCEPTION_FP_CONTEXT_SIZE]!
     stp q2, q3, [sp, #0x20]
@@ -377,15 +384,12 @@ ExceptioncontinuousSaveContext:
     ldp q30, q31, [sp, #0x1E0]
     ldp q0, q1, [sp], #EXCEPTION_FP_CONTEXT_SIZE
     
-    // Restore sys registers from stack
-    ldp x2, x3, [sp, #0x10] // Float point status register
+    // Restore sys registers from stack (ESR/FAR are status, not state)
+    ldr x2, [sp, #0x10]     // Float point status register
     msr fpsr, x2            // Float point status register
-    msr esr_el1, x3         // Exception syndrome register
-    ldr x2, [sp, #0x20]     // Fault address register
-    msr far_el1, x2         // Fault address register
     ldp x2, x3, [sp], #EXCEPTION_SYS_CONTEXT_SIZE
-    msr elr_el1, x2         // Exception Link register
-    msr spsr_el1, x3        // Saved program status register
+    msr elr_\el, x2         // Exception Link register
+    msr spsr_\el, x3        // Saved program status register
 
     // Restore x2 x3
     sub sp, sp, #EXCEPTION_CONTEXT_SIZE
@@ -403,11 +407,16 @@ ExceptioncontinuousSaveContext:
     
     // Exception Finished
     eret
+.endm
+
+ExceptionContinuous el1
+ExceptionContinuous el2
 
 /*
  *
  * ARM64 Exception vector table for ELx to ELx with SPx
- *   Here only consider EL1 to EL1 with SP_EL1, other cases are not supported
+ *   One table per exception level kShimC runs at (EL1, or EL2 in QEMU); both
+ *   route every vector through the same save/restore and C dispatcher.
  *
 */
 
@@ -425,41 +434,49 @@ ExceptioncontinuousSaveContext:
     .org 0x800; \
     .previous
 
-VECTOR_START(ARM64_EXCEPTION_VEC_TABLE)
+.macro ExceptionVectorEntries el
     /* Current Exception Level with SP_EL0 */
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SP0_SYNCHRONOUS) // 0x000: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS    // 0x200: Synchronous exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS, \el    // 0x200: Synchronous exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SP0_IRQ)  // 0x080: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ    // 0x280: IRQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ, \el    // 0x280: IRQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SP0_FIQ)  // 0x100: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ    // 0x300: FIQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ, \el    // 0x300: FIQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SP0_SERROR)  // 0x180: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR // 0x380: SError exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR, \el // 0x380: SError exception
     /* Current Exception Level with SP_ELx */
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SPX_SYNCHRONOUS) 
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS    // 0x200: Synchronous exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS, \el    // 0x200: Synchronous exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SPX_IRQ) 
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ    // 0x280: IRQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ, \el    // 0x280: IRQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SPX_FIQ) 
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ    // 0x300: FIQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ, \el    // 0x300: FIQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_CURRENT_EL_SPX_SERROR) 
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR // 0x380: SError exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR, \el // 0x380: SError exception
     /* Lower EL running aarch64 */
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH64_SYNCHRONOUS)  // 0x400: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS    // 0x200: Synchronous exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS, \el    // 0x200: Synchronous exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH64_IRQ)  // 0x480: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ    // 0x280: IRQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ, \el    // 0x280: IRQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH64_FIQ)  // 0x500: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ    // 0x300: FIQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ, \el    // 0x300: FIQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH64_SERROR)  // 0x580: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR // 0x380: SError exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR, \el // 0x380: SError exception
     /* Lower EL running aarch32 */
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH32_SYNCHRONOUS)  // 0x600: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS    // 0x200: Synchronous exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SYNCHRONOUS, \el    // 0x200: Synchronous exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH32_IRQ)  // 0x680: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ    // 0x280: IRQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_IRQ, \el    // 0x280: IRQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH32_FIQ)  // 0x700: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ    // 0x300: FIQ exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_FIQ, \el    // 0x300: FIQ exception
     VECTOR_ENTRY(EXCEPTION_OFFSET_LOWER_EL_AARCH32_SERROR)  // 0x780: Reserved
-        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR // 0x380: SError exception
+        ExceptionCommonSaveContext    EXCEPTION_TYPE_SERROR, \el // 0x380: SError exception
+.endm
+
+VECTOR_START(ARM64_EXCEPTION_VEC_TABLE)
+    ExceptionVectorEntries el1
 VECTOR_END(ARM64_EXCEPTION_VEC_TABLE)
+
+VECTOR_START(ARM64_EXCEPTION_VEC_TABLE_EL2)
+    ExceptionVectorEntries el2
+VECTOR_END(ARM64_EXCEPTION_VEC_TABLE_EL2)

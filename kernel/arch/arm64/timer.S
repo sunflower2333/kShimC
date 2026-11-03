@@ -34,3 +34,44 @@ ASM_FUNC(arm64_write_cntptval)
     msr cntp_tval_el0, x0
     ret
 
+/* Virtual timer: kShimC's timer at EL1 (the EL1 physical timer may belong
+ * to the hypervisor). */
+ASM_FUNC(arm64_read_cntvct)
+    isb
+    mrs x0, cntvct_el0
+    ret
+
+ASM_FUNC(arm64_read_cntvctl)
+    mrs x0, cntv_ctl_el0
+    ret
+
+ASM_FUNC(arm64_write_cntvctl)
+    msr cntv_ctl_el0, x0
+    isb
+    ret
+
+ASM_FUNC(arm64_read_cntvcval)
+    mrs x0, cntv_cval_el0
+    ret
+
+ASM_FUNC(arm64_write_cntvcval)
+    msr cntv_cval_el0, x0
+    ret
+
+/* EL2 physical timer: kShimC's timer at EL2. */
+ASM_FUNC(arm64_read_cnthpctl)
+    mrs x0, cnthp_ctl_el2
+    ret
+
+ASM_FUNC(arm64_write_cnthpctl)
+    msr cnthp_ctl_el2, x0
+    isb
+    ret
+
+ASM_FUNC(arm64_read_cnthpcval)
+    mrs x0, cnthp_cval_el2
+    ret
+
+ASM_FUNC(arm64_write_cnthpcval)
+    msr cnthp_cval_el2, x0
+    ret

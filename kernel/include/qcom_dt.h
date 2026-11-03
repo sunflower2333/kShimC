@@ -5,6 +5,7 @@
 #include <Library/cr_resources.h>
 #include <kshim/display.h>
 #include <kshim_mmu.h>
+#include <kshim_irq_dt.h>
 #define KSHIM_SPMI_MAX 4
 #define KSHIM_RESOURCE_MAX 96
 struct kshim_spmi_resource { int node; SpmiDeviceContext controller; };
@@ -28,7 +29,9 @@ struct kshim_resources {
     struct dt_range ui_scratch;
     kshim_mmu_region_t mappings[KSHIM_RESOURCE_MAX];
     size_t mapping_count;
-    int spmi_status, touch_status, splash_status;
+    /* GICv3 distributor and redistributors (CONFIG_KSHIM_IRQ). */
+    struct kshim_gic_desc gic;
+    int spmi_status, touch_status, splash_status, gic_status;
 };
 int kshim_resources_init(const void *fdt, size_t available);
 struct kshim_resources *kshim_resources_get(void);

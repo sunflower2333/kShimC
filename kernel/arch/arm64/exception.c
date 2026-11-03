@@ -9,8 +9,10 @@ void arm64_synchronous_exception_handler(
     ARM64_EXCEPTION_CONTEXT *context,
     uint64_t exception_type)
 {
+    static const char *const names[] = {"Synchronous exception", "IRQ", "FIQ", "SError"};
     // Print registers
-    printf_e("Synchronous exception occurred\n");
+    printf_e("%s occurred at EL%lu\n", exception_type < 4 ? names[exception_type] : "Exception",
+             (unsigned long)arm64_current_el());
     // GP registers
     for (int i = 0; i < 32; i += 2)
     {
@@ -56,10 +58,11 @@ void arm64_expetion_handler(
         arm64_synchronous_exception_handler(context, exception_type);
         break;
     case EXCEPTION_TYPE_IRQ:
-        // Irq handler
+        // Irq handler: acknowledge, dispatch by INTID, EOI
         gicv3_irq_handler(context, exception_type);
         break;
     case EXCEPTION_TYPE_FIQ:
+        // kShimC only uses Group 1; a FIQ is unexpected
         arm64_synchronous_exception_handler(context, exception_type);
         break;
     case EXCEPTION_TYPE_SERROR:

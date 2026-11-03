@@ -128,7 +128,7 @@ set(KERNEL_SOURCES
     kernel/core/power.c kernel/drivers/power.c kernel/dt/power.c kernel/dt/spmi.c
     kernel/core/main.c kernel/core/platform.c kernel/core/uefi_boot.c kernel/lib/picoport.c
     kernel/core/input.c kernel/core/display.c
-    kernel/dt/dt.c kernel/dt/console.c kernel/dt/resources.c kernel/dt/irq.c
+    kernel/dt/dt.c kernel/dt/console.c kernel/dt/resources.c kernel/dt/irq.c kernel/irq/irq.c
     kernel/drivers/console.c kernel/drivers/pl011.c kernel/drivers/keys.c
     kernel/arch/arm64/exception.c kernel/arch/arm64/relocation.c kernel/arch/arm64/mmu.c
     kernel/arch/arm64/psci.c kernel/arch/arm64/timer.c kernel/arch/arm64/smp.c kernel/arch/arm64/smp_selftest.c kernel/arch/arm64/gicv3.c
