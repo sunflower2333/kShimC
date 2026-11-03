@@ -19,6 +19,7 @@
 #include <uefi_boot.h>
 #include <kshim/irq.h>
 #include <kshim_console.h>
+#include <kshim/io.h>
 #if CONFIG_QCOM_IRQCHIP
 #include <qcom_irq.h>
 #endif
@@ -58,9 +59,12 @@ int kshim_platform_quiesce(void)
         if (kshim_smp_shutdown(KSHIM_SMP_DEFAULT_TIMEOUT_US)) return -2;
         SmpInitialized = 0;
     }
+    /* 3a. I/O stack (docs/io-stack.md): USB -> xHCI -> PCI -> touch/I2C/SPI
+     *     -> QUP -> clocks/regulators/GPIO restore. No-op when not configured. */
+    if (kshim_io_quiesce()) return -5;
 #if CONFIG_QCOM_IRQCHIP
-    /* 3. Secondary controllers: TLMM pins, SPMI arbiter, PDC routes, before
-     *    kshim_irq_teardown() (4) restores the GIC. */
+    /* 3b. Secondary controllers: TLMM pins, SPMI arbiter, PDC routes, before
+     *     kshim_irq_teardown() (4) restores the GIC. */
     if (kshim_irqchip_restore()) return -4;
 #endif
     return 0;

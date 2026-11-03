@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MIT
+# Owner: touch-goodix (docs/io-stack.md).
+
+config KSHIM_TOUCH_GT911
+    bool "Goodix GT911 (I2C)"
+    depends on KSHIM_TOUCH && KSHIM_I2C && KSHIM_REGULATOR
+    default n
+
+config KSHIM_TOUCH_GT9916
+    bool "Goodix GT9916 Berlin (SPI)"
+    depends on KSHIM_TOUCH && KSHIM_SPI && KSHIM_REGULATOR
+    default n

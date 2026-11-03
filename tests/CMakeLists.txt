@@ -235,3 +235,5 @@ endif()
 # Block layer, filesystems and firmware loader (MIT variants; EROFS opt-in).
 add_subdirectory(storage)
 include("${CMAKE_CURRENT_LIST_DIR}/storage_drivers.cmake")
+# I/O stack: QUP/I2C/SPI, GPIO/regulators, PCI, USB, HID, touch.
+include("${CMAKE_CURRENT_LIST_DIR}/io.cmake")

@@ -25,6 +25,10 @@ static inline void QcomKeysUnlock(unsigned long Flags) { kshim_irq_restore(Flags
 static inline unsigned long QcomKeysLock(void) { return 0; }
 static inline void QcomKeysUnlock(unsigned long Flags) { (void)Flags; }
 #endif
+/* Injected keys (USB HID, ...; docs/io-stack.md) reach the same consumers. */
+#if CONFIG_KSHIM_INPUT_INJECT
+#include <kshim/input_inject.h>
+#endif
 
 uint32_t QcomKeyReadMmio32(void *Context, uint64_t Address)
 {
@@ -732,6 +736,13 @@ int kshim_key_source_poll(kshim_key_source_t *Source, kshim_key_event_t *Event)
 
   if (Event == NULL)
     return QCOM_KEYS_EINVAL;
+#if CONFIG_KSHIM_INPUT_INJECT
+  /* Pump the injected sources (USB enumeration, polling fallback), then
+   * deliver their events before the platform keys. */
+  kshim_input_service();
+  if (kshim_input_inject_poll_key(Event))
+    return KSHIM_KEYS_EVENT;
+#endif
   Status = QcomKeysPoll((QcomKeys *)(void *)Source, &Raw);
   if (Status == QCOM_KEYS_EVENT)
     *Event = (kshim_key_event_t){

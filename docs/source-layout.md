@@ -40,6 +40,18 @@ user/
   `super` logical partitions.
 - `kernel/firmware/`: the firmware loader and Android boot-slot capture.
 
+### I/O stack
+
+QUP/GENI, I2C, SPI, UART, GPIO/pinctrl, clocks, regulators, PCI, USB, HID,
+input injection and the touch framework have kernel-internal headers in
+`kernel/include/kshim/` (`io.h`, `qup.h`, `i2c.h`, `spi.h`, `uart.h`,
+`gpio.h`, `pinctrl.h`, `clk.h`, `regulator.h`, `pci.h`, `usb.h`,
+`usb_hcd.h`, `usb_class.h`, `dma.h`, `hid.h`, `input_inject.h`,
+`touch_driver.h`). `kernel/core/io.c` orders their boot and handoff hooks;
+build glue is in `cmake/io.cmake`. See `docs/io-stack.md`.
+
+### Storage headers
+
 Their headers (`blkdev.h`, `block.h`, `storage.h`, `fs.h`, `firmware.h`) are
 kernel-internal and live in `kernel/include/kshim/`, because they depend on
 `error_no.h`. Promote a header to `include/kshim/` only once userspace needs it

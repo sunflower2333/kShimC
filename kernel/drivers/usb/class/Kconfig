@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+# Owner: usbhid (docs/io-stack.md).
+
+config KSHIM_INPUT_INJECT
+    bool
+    help
+        Kernel input injection (kshim/input_inject.h): injected menu keys
+        and pointer events reach kshim_key_source_poll() and
+        kshim_input_touch_poll() consumers.
+
+config KSHIM_USB_HUB
+    bool "USB hub class driver"
+    depends on KSHIM_USB
+    default n
+
+config KSHIM_USB_HID
+    bool "USB HID keyboards, mice, tablets and gamepads as menu input"
+    depends on KSHIM_USB
+    select KSHIM_INPUT_INJECT
+    default n
+    help
+        Map HID keyboards (arrows, Enter, Escape), gamepads and joysticks
+        (hat/D-pad, stick, buttons), consumer volume keys, mice and tablets
+        to the boot menu's UP/DOWN/SELECT/BACK actions and pointer. Pointer
+        events are delivered through the touch service (KSHIM_TOUCH).

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+# Owner: sm8650 (docs/io-stack.md). GPIO consumers, pinctrl and clock leaf
+# facts; selected by their users, no prompt.
+
+config KSHIM_GPIO
+    bool
+    help
+        GPIO consumer API (kshim/gpio.h) and DT pinctrl states
+        (kshim/pinctrl.h) for TLMM and SPMI PMIC GPIOs. Every pin kShimC
+        writes is snapshot first and restored before payload handoff.
+
+config KSHIM_CLK
+    bool
+    help
+        Qualcomm clock-controller leaf facts (kshim/clk.h): branch and vote
+        clocks, RCG CXO selection, GDSCs and BCR resets from per-SoC tables.
+        Inherited running clocks are used as they are; kShimC's own changes
+        are restored before payload handoff.

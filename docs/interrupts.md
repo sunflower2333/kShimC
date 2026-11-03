@@ -113,10 +113,12 @@ Polling stays only as a per-driver fallback.
 ## Handoff contract
 
 `prepare_boot()` order:
-1. Input and touch quiesce.
+1. Input and touch quiesce (and input injection, docs/io-stack.md).
 2. LVGL deinit and worker shutdown.
-3. Drivers restore their secondary controllers (TLMM pins, SPMI arbiter
-   channels, then PDC routes; DWC3, UFS/SDHCI).
+3. Drivers restore their secondary controllers: first the I/O stack
+   (`kshim_io_quiesce()`: USB, xHCI, PCI, touch/I2C/SPI, QUP, clocks,
+   regulators, GPIO; docs/io-stack.md), then TLMM pins, SPMI arbiter
+   channels and PDC routes; DWC3, UFS/SDHCI.
 4. `kshim_irq_teardown()`: stop the timer, disable and clear everything
    kShimC enabled, restore the saved GICD/GICR/ICC state, mask IRQs.
 5. SMP/MMU teardown and the jump.

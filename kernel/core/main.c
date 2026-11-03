@@ -11,6 +11,7 @@
 #include <dt.h>
 #include <qcom_dt.h>
 #include <kshim/irq.h>
+#include <kshim/io.h>
 #if CONFIG_KSHIM_IRQ_SELFTEST
 #include <irq_selftest.h>
 #endif
@@ -309,6 +310,10 @@ int kshim_main(
 #ifdef CONFIG_BLOCK
     (void)kshim_storage_init(runtime_fdt);
 #endif
+    /* I/O stack (docs/io-stack.md): GPIO/clocks/regulators, QUP, USB class
+     * drivers, then PCI -> xHCI -> USB enumeration. After storage, which
+     * supplies the Renesas xHCI firmware. No-op when not configured. */
+    (void)kshim_io_init(runtime_fdt);
 #if KSHIM_STANDALONE
     return kshim_platform_main(device_tree_address, kernel_arg1, kernel_arg2, kernel_arg3);
 #endif

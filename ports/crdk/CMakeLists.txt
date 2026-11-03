@@ -62,6 +62,11 @@ endif()
 if(CRDK_USB_ACM)
     list(APPEND CRDK_SOURCES Library/UsbAcmCrLib/UsbAcm.c)
 endif()
+# I/O stack selections (docs/io-stack.md): one fragment per owner, each with
+# its own CRDK_* option, appending CrDK-relative paths to CRDK_SOURCES.
+foreach(fragment pci platform qup)
+    include("${KSHIM_CRDK_PORT}/io/${fragment}.cmake")
+endforeach()
 list(TRANSFORM CRDK_SOURCES PREPEND "${CRDK_ROOT}/")
 foreach(soc ${CRDK_GPIO_TARGET_SOCS})
     set_source_files_properties("${CRDK_ROOT}/Target/${soc}/CrGpioTarget.c" PROPERTIES

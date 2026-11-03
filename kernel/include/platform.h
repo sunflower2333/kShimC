@@ -11,7 +11,9 @@
 int kshim_platform_main(uint64_t fdt, uint64_t arg1, uint64_t arg2, uint64_t arg3);
 
 /* Handoff steps 1-3: quiesce input/touch/console RX interrupts, tear down
- * userspace (LVGL), stop the SMP workers and restore the Qualcomm cascades
+ * userspace (LVGL), stop the SMP workers, quiesce the I/O stack
+ * (kshim_io_quiesce: USB, xHCI, PCI, touch/I2C/SPI, QUP, clocks,
+ * regulators, GPIO; docs/io-stack.md) and restore the Qualcomm cascades
  * (TLMM, SPMI, PDC). kshim_platform_prepare_handoff() runs this, then
  * restores the interrupt state and turns the MMU off. Idempotent. */
 int kshim_platform_quiesce(void);

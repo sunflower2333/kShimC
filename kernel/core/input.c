@@ -19,10 +19,13 @@
 #include <qcom_irq.h>
 #include <kshim/time.h>
 #endif
+#if CONFIG_KSHIM_INPUT_INJECT
+#include <kshim/input_inject.h>
+#endif
 
 static QcomKeys Keys;
 
-int kshim_input_keys_init(const void *fdt)
+static int platform_keys_init(const void *fdt)
 {
 #if CONFIG_QCOM_KEYS
     QcomKeyDescriptor descriptors[QCOM_KEYS_MAX];
@@ -50,11 +53,24 @@ int kshim_input_keys_init(const void *fdt)
 #endif
 }
 
+int kshim_input_keys_init(const void *fdt)
+{
+    int status = platform_keys_init(fdt);
+#if CONFIG_KSHIM_INPUT_INJECT
+    /* Injected keys (USB HID) are a key source of their own. */
+    if (status && kshim_input_inject_has(KSHIM_INPUT_CAP_KEYS)) status = 0;
+#endif
+    return status;
+}
+
 /* docs/interrupts.md handoff step 1: input interrupts stop before the UI
  * and the secondary controllers are torn down. */
 int kshim_input_quiesce(void)
 {
     int status = 0;
+#if CONFIG_KSHIM_INPUT_INJECT
+    kshim_input_inject_quiesce();
+#endif
 #if CONFIG_KSHIM_TOUCH
     status = kshim_input_touch_stop();
 #endif
@@ -154,6 +170,12 @@ int kshim_input_touch_start(uint32_t output_width, uint32_t output_height,
                             kshim_touch_event_fn emit, void *context)
 {
     struct kshim_resources *r = kshim_resources_get();
+    /* Injected pointer events (docs/io-stack.md) use the same emit callback
+     * and surface, with or without a touch controller. */
+    TouchEmit = emit; TouchEmitContext = context;
+#if CONFIG_KSHIM_INPUT_INJECT
+    kshim_input_inject_set_surface(output_width, output_height);
+#endif
     if (r->touch_status) return 1;
     /* Only the FTM5 generation has a runtime driver; unsupported generations
      * fall back to the volume-key menu without touching MMIO. */
@@ -163,7 +185,6 @@ int kshim_input_touch_start(uint32_t output_width, uint32_t output_height,
         .output_width = output_width, .output_height = output_height,
         .flip_x = r->touch.flip_x, .flip_y = r->touch.flip_y,
         .emit = touch_deliver, .emit_context = NULL};
-    TouchEmit = emit; TouchEmitContext = context;
     int status = kshim_touch_init(&Touch, &cfg);
     if (!status) status = CrQupInit(&TouchPlatform, NULL, &r->touch.qup);
     TouchAttempted = 1;
@@ -182,6 +203,12 @@ int kshim_input_touch_start(uint32_t output_width, uint32_t output_height,
 }
 int kshim_input_touch_poll(void)
 {
+#if CONFIG_KSHIM_INPUT_INJECT
+    kshim_touch_event_t injected;
+    kshim_input_service();
+    while (kshim_input_inject_poll_touch(&injected))
+        if (TouchEmit) TouchEmit(TouchEmitContext, &injected);
+#endif
     if (!TouchReady) return 0;
 #if CONFIG_KSHIM_INPUT_IRQ
     if (TouchIrq) {

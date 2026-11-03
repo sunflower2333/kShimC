@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Owner: xhci (docs/io-stack.md). Class drivers: usb/class/Kconfig (usbhid).
+
+config KSHIM_USB
+    bool "USB host core"
+    default n
+    help
+        USB device model, enumeration, control/bulk/interrupt transfers with
+        completion callbacks and a class-driver registry (kshim/usb.h,
+        kshim/usb_hcd.h). Host controllers are stopped and reset before
+        payload handoff.
+
+config KSHIM_USB_XHCI
+    bool "xHCI host controllers on PCI"
+    depends on KSHIM_USB && KSHIM_PCI
+    default n
+    help
+        xHCI 1.x driver for PCI class 0x0c0330 functions (QEMU qemu-xhci and
+        nec-usb-xhci, Renesas uPD720201/uPD720202). Interrupt-driven through
+        the PCI core (INTx/MSI) with event-ring polling as the fallback.
+        A controller left running by the previous firmware is taken over
+        after a clean halt and reset.
+
+config KSHIM_USB_XHCI_RENESAS
+    bool "Renesas uPD720201/uPD720202 firmware download"
+    depends on KSHIM_USB_XHCI
+    default n
+    help
+        Download the controller firmware unless an external ROM is present
+        or the firmware already runs. The image is read with the Android
+        firmware loader (CONFIG_FIRMWARE_LOADER); without the loader only
+        the ROM and already-running cases work.
+
+config KSHIM_USB_XHCI_RENESAS_FW
+    string "Renesas firmware file name"
+    depends on KSHIM_USB_XHCI_RENESAS
+    default "renesas_usb_fw.mem"

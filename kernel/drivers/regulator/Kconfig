@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Owner: sm8650 (docs/io-stack.md).
+
+config KSHIM_REGULATOR
+    bool "Regulators from DT supplies (fixed GPIO and RPMh)"
+    default n
+    select KSHIM_GPIO
+    help
+        Resolve "<name>-supply" phandles to regulator-fixed rails with a GPIO
+        enable and to RPMh VRM/XOB rails (CrDK CmdDBLib and RpmhLib polling
+        API), with enable/disable reference counting. Fixed rails return to
+        their inherited GPIO level before payload handoff; RPMh votes follow
+        the policy in kshim/regulator.h.

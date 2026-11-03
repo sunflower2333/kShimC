@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Owner: qup (docs/io-stack.md).
+
+config KSHIM_QUP
+    bool "Qualcomm QUPv3/GENI serial engines"
+    default n
+    select KSHIM_GPIO
+    select KSHIM_CLK
+    help
+        Discover QUPv3 wrappers and GENI serial engines from the runtime DT
+        (mainline and Android bindings), arbitrate serial-engine ownership
+        (console, I2C, SPI, UART) and bring up engine clocks and pins when the
+        boot chain left them off. SE firmware is never loaded: the protocol
+        already loaded must match. Everything is restored before handoff.
+
+config KSHIM_I2C
+    bool "I2C bus"
+    default n
+    help
+        I2C core with DT child enumeration and multi-message transfers with
+        repeated START (kshim/i2c.h). With KSHIM_QUP, GENI I2C controllers are
+        probed on demand; completion is interrupt-driven with a polling
+        fallback.
+
+config KSHIM_I2C_GENI
+    def_bool KSHIM_I2C && KSHIM_QUP
+
+config KSHIM_SPI
+    bool "SPI bus"
+    default n
+    help
+        SPI core with DT child enumeration (chip select, mode, maximum
+        frequency) and full-duplex transfers (kshim/spi.h). With KSHIM_QUP,
+        GENI SPI controllers are probed on demand.
+
+config KSHIM_SPI_GENI
+    def_bool KSHIM_SPI && KSHIM_QUP

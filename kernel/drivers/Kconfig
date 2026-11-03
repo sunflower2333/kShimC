@@ -15,3 +15,13 @@ config KSHIM_CONSOLE_USB_ACM
 
 source "$srctree/kernel/drivers/block/Kconfig"
 source "$srctree/kernel/drivers/irqchip/Kconfig"
+
+# I/O stack (docs/io-stack.md). One fragment per owner; all symbols default n.
+menu "I/O stack"
+source "$srctree/kernel/drivers/gpio/Kconfig"
+source "$srctree/kernel/drivers/regulator/Kconfig"
+source "$srctree/kernel/drivers/qup/Kconfig"
+source "$srctree/kernel/drivers/pci/Kconfig"
+source "$srctree/kernel/drivers/usb/Kconfig"
+source "$srctree/kernel/drivers/usb/class/Kconfig"
+endmenu

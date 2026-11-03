@@ -10,6 +10,7 @@
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
 #include <kshim/storage_probe.h>
 #endif
+#include <kshim/io.h>
 #if CONFIG_QCOM_IRQCHIP
 #include <qcom_irq.h>
 /* The TLMM cascade writes INTR_CFG/INTR_STATUS on the key pin's page. */
@@ -201,6 +202,9 @@ int kshim_resources_init(const void *f, size_t available)
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     (void)kshim_storage_map_resources(&resources); /* optional; restores on failure */
 #endif
+    /* I/O stack windows (docs/io-stack.md); each subsystem is optional and
+     * rolled back on its own failure. No-op when not configured. */
+    (void)kshim_io_map_resources(&resources);
 #if CONFIG_KSHIM_IRQ
     /* Last, so a full table costs interrupts, never a mandatory region. */
     kshim_mmu_region_t saved[KSHIM_RESOURCE_MAX];

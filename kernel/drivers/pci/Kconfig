@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+# Owner: pci (docs/io-stack.md).
+
+config KSHIM_PCI
+    bool "PCI core"
+    default n
+    help
+        PCI host-bridge registry, config access, bus enumeration, BAR
+        assignment from DT "ranges" (inherited assignments are kept),
+        INTx resolution through "interrupt-map" (MSI where the host offers
+        it), a vendor/device/class driver registry and a config-write journal
+        replayed before payload handoff.
+
+config KSHIM_PCI_ECAM
+    bool "Generic ECAM host bridge (pci-host-ecam-generic, QEMU virt)"
+    depends on KSHIM_PCI
+    default n
+
+config KSHIM_PCI_QCOM
+    bool "Qualcomm PCIe root complex"
+    depends on KSHIM_PCI && KSHIM_REGULATOR
+    select KSHIM_GPIO
+    select KSHIM_CLK
+    default n
+    help
+        DesignWare-based Qualcomm root complexes. A link the previous
+        bootloader left up is inherited (only an iATU config window is
+        owned and restored); otherwise the port is cold-initialised with
+        CrDK PcieLib and per-SoC target data, and shut down again before
+        handoff.

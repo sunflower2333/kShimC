@@ -217,6 +217,8 @@ set(CRDK_IRQCHIP ${CONFIG_QCOM_IRQCHIP} CACHE BOOL "" FORCE)
 set(CRDK_USB_ACM ${CONFIG_KSHIM_CONSOLE_USB_ACM} CACHE BOOL "" FORCE)
 # Console type is selected from DT, so UART support remains a capability in every profile.
 set(CRDK_UART ON CACHE BOOL "" FORCE)
+# I/O stack (docs/io-stack.md): per-owner source lists and CRDK_* switches.
+include(${CMAKE_SOURCE_DIR}/cmake/io.cmake)
 
 if(CONFIG_KSHIM_LVGL)
 set(LV_CONF_BUILD_DISABLE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
