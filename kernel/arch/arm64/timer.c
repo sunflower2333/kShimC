@@ -6,6 +6,8 @@
 #include <memops.h>
 #include "pl011_uart.h"
 #include <lib/stdport.h>
+#include <config.h>
+#include <kshim_console.h>
 
 typedef struct ARM64_ARCH_TIMER_CONTEXT
 {
@@ -23,8 +25,34 @@ typedef struct ARM64_ARCH_TIMER_CONTEXT
 // Driver context
 ARM64_ARCH_TIMER_CONTEXT *timer_context = NULL;
 
+#if CONFIG_KSHIM_CONSOLE_USB_ACM
+/*
+ * Idle waits (the menus' 5 ms frames, fatal-error loops) keep the polled
+ * USB console answering the host, about once per millisecond. Shorter
+ * delays are hardware timing and stay exact.
+ */
+static uint64_t serviced_delay(uint64_t micro_seconds)
+{
+    uint64_t frequency = arm64_read_cntfrq();
+    uint64_t start = arm64_read_cntpct();
+    uint64_t target = start + frequency * micro_seconds / 1000000;
+    uint64_t step = frequency / 1000;
+    uint64_t next = start;
+    for (uint64_t now = start; now < target; now = arm64_read_cntpct()) {
+        if (now >= next) {
+            kshim_console_service();
+            next = now + step;
+        }
+    }
+    return arm64_read_cntpct() - start;
+}
+#endif
+
 uint64_t delay(uint64_t micro_seconds)
 {
+#if CONFIG_KSHIM_CONSOLE_USB_ACM
+    if (micro_seconds >= 1000) return serviced_delay(micro_seconds);
+#endif
     uint64_t target_time = arm64_read_cntpct() + (arm64_read_cntfrq() * (micro_seconds) / 1000000);
     uint64_t start = arm64_read_cntpct();
     while (arm64_read_cntpct() < target_time)

@@ -4,6 +4,7 @@
 #include <config.h>
 #include <qcom_keys_fdt.h>
 #include <qcom_key_platform.h>
+#include <kshim_console.h>
 #include <string.h>
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
 #include <kshim/storage_probe.h>
@@ -177,6 +178,9 @@ int kshim_resources_init(const void *f, size_t available)
     kshim_irqchip_map_resources(&resources); /* optional PDC routes */
 #endif
     if (kshim_power_map_resources(&resources)) return -1;
+#if CONFIG_KSHIM_CONSOLE_USB_ACM
+    (void)kshim_console_map_resources(&resources); /* optional; stops the USB console on failure */
+#endif
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     (void)kshim_storage_map_resources(&resources); /* optional; restores on failure */
 #endif
