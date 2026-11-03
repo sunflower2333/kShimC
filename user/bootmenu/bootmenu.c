@@ -22,10 +22,19 @@
 #include <kshim_lvgl_os.h>
 #endif
 
+/* Input that has no interrupt is polled at least this often; the menus
+ * sleep in kshim_wait_event() until then, an interrupt, or their deadline. */
+#define MENU_POLL_MS 5U
+/* Upper bound on one LVGL-loop sleep, should LVGL report no pending timer. */
+#define MENU_MAX_SLEEP_MS 100U
+
+static uint64_t earlier(uint64_t a, uint64_t b) { return a < b ? a : b; }
+
 #if CONFIG_KSHIM_FRAMEBUFFER && CONFIG_KSHIM_LVGL
 static kshim_framebuffer_t Framebuffer;
 static kshim_lvgl_t Lvgl;
-static uint64_t LastTime;
+static uint64_t LastTime, SleptMs;
+static int TouchPolled;
 static int start_menu(const void *fdt)
 {
     kshim_framebuffer_config_t config;
@@ -40,22 +49,31 @@ static int start_menu(const void *fdt)
            kshim_lvgl_has_cjk_font(&Lvgl) ? "Noto Sans CJK" : "fallback Latin",
            (unsigned long long)scratch_base, (unsigned long long)scratch_size);
     if (keys) kshim_lvgl_set_status(&Lvgl, "Volume keys unavailable");
+    TouchPolled = 0;
 #if CONFIG_KSHIM_TOUCH
     if (kshim_input_touch_start(Framebuffer.width, Framebuffer.height, kshim_lvgl_touch, &Lvgl) < 0)
         kshim_lvgl_set_status(&Lvgl, "Use volume keys to choose");
+    else TouchPolled = 1;
 #endif
     LastTime = get_current_time();
+    SleptMs = 0;
     return 0;
 }
-static void menu_frame(void)
+/* One frame; returns the milliseconds until LVGL next needs one. */
+static uint32_t menu_frame(void)
 {
 #if CONFIG_KSHIM_TOUCH
     if (kshim_input_touch_poll() < 0)
         kshim_lvgl_set_status(&Lvgl, "Use volume keys to choose");
 #endif
     uint64_t now = get_current_time(), elapsed = now - LastTime;
+    /* The old loop slept MENU_POLL_MS between frames; only waiting beyond
+     * that is idle time for the slow-frame heuristic. */
+    uint64_t idle = SleptMs > MENU_POLL_MS ? SleptMs - MENU_POLL_MS : 0;
     LastTime = now;
-    kshim_lvgl_frame(&Lvgl, elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed);
+    SleptMs = 0;
+    if (elapsed > UINT32_MAX) elapsed = UINT32_MAX;
+    return kshim_lvgl_frame_idle(&Lvgl, (uint32_t)elapsed, (uint32_t)earlier(idle, elapsed));
 }
 #endif
 int kshim_user_prepare_handoff(void)
@@ -102,8 +120,13 @@ static int serial_select(const void *fdt, const char *const *names, size_t count
                 printf("\n> %s\n", names[current]);
             }
         }
-        if (timeout && get_current_time() - start >= timeout) break;
-        (void)delay(5000);
+        uint64_t now = get_current_time();
+        if (timeout && now - start >= timeout) break;
+        /* Console and keys are polled: wake at the next poll at the latest;
+         * an input interrupt ends the wait sooner. */
+        uint64_t deadline = now + MENU_POLL_MS;
+        if (timeout) deadline = earlier(deadline, start + timeout);
+        kshim_wait_event(deadline);
     }
     printf("\n"); *selected = current;
     return 0;
@@ -121,7 +144,7 @@ int kshim_user_select(uint64_t fdt, const char *const *names, size_t count,
         kshim_lvgl_set_countdown(&Lvgl, timeout_ms);
         uint64_t start = get_current_time();
         for (;;) {
-            menu_frame();
+            uint32_t next_ms = menu_frame();
             kshim_power_action_t action = kshim_lvgl_take_power(&Lvgl);
             if (action != KSHIM_POWER_NONE) {
                 /* Never reset from an LVGL callback or leave active bus/render
@@ -134,8 +157,16 @@ int kshim_user_select(uint64_t fdt, const char *const *names, size_t count,
             }
             int index = kshim_lvgl_take_index(&Lvgl);
             if (index >= 0 && (size_t)index < count) { *selected = index; break; }
-            if (timeout_ms && !Lvgl.AutobootCancelled && get_current_time() - start >= timeout_ms) { *selected = initial; break; }
-            (void)delay(5000);
+            uint64_t now = get_current_time();
+            if (timeout_ms && !Lvgl.AutobootCancelled && now - start >= timeout_ms) { *selected = initial; break; }
+            /* Sleep until the next LVGL timer, the autoboot deadline, or the
+             * next touch poll; input interrupts wake the loop sooner. */
+            uint64_t deadline = now + earlier(next_ms, MENU_MAX_SLEEP_MS);
+            if (TouchPolled) deadline = earlier(deadline, now + MENU_POLL_MS);
+            if (timeout_ms && !Lvgl.AutobootCancelled) deadline = earlier(deadline, start + timeout_ms);
+            uint64_t before = get_current_time();
+            kshim_wait_event(deadline);
+            SleptMs = get_current_time() - before;
         }
         return kshim_platform_prepare_handoff() ? -2 : 0;
     }

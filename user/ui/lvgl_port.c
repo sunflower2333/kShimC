@@ -638,16 +638,23 @@ Failed:
   return -5;
 }
 
-void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs)
+uint32_t kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs)
 {
-  if (Context == NULL || Context != mContext || Context->Ready == 0U) return;
+  return kshim_lvgl_frame_idle(Context, ElapsedMs, 0U);
+}
+
+uint32_t kshim_lvgl_frame_idle(kshim_lvgl_t *Context, uint32_t ElapsedMs, uint32_t IdleMs)
+{
+  uint32_t NextMs;
+  if (Context == NULL || Context != mContext || Context->Ready == 0U) return UINT32_MAX;
   if (ElapsedMs != 0U) {
     lv_tick_inc(ElapsedMs);
     Context->ElapsedMs += ElapsedMs;
-    if (ElapsedMs > 40U) Context->ReducedQuality = 1U;
+    /* Slow frames reduce effects; time asleep between frames is not slowness. */
+    if (ElapsedMs - (IdleMs < ElapsedMs ? IdleMs : ElapsedMs) > 40U) Context->ReducedQuality = 1U;
   }
   KshimPowerProcess();
-  lv_timer_handler();
+  NextMs = lv_timer_handler();
   KshimPowerProcess();
   if (Context->CountdownEnabled != 0U && mStatus != NULL) {
     uint32_t remaining = Context->ElapsedMs < Context->CountdownMs ? Context->CountdownMs - Context->ElapsedMs : 0U;
@@ -658,18 +665,25 @@ void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs)
       lv_label_set_text(mStatus, countdown);
       Context->CountdownShown = seconds;
     }
+    /* The shown second changes when remaining drops to the next multiple of 1000. */
+    if (remaining != 0U && (remaining - 1U) % 1000U + 1U < NextMs) NextMs = (remaining - 1U) % 1000U + 1U;
   }
-  if (Context->ElapsedMs - mLastTextureUpdate >= KSHIM_BACKDROP_REFRESH_MS &&
-      mBackground != NULL && mBackdropTextures[0] != NULL) {
-    uint8_t Next = (uint8_t)(mActiveTexture ^ 1U);
-    lv_image_cache_drop(&mBackdropImages[Next]);
-    if (kshim_backdrop_render(mBackdropTextures[Next], CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS,
-        &mBackdropLayout, Context->ElapsedMs, Context->ReducedQuality != 0U) == 0) {
-      lv_image_set_src(mBackground, &mBackdropImages[Next]);
-      mActiveTexture = Next;
-      mLastTextureUpdate = Context->ElapsedMs;
+  if (mBackground != NULL && mBackdropTextures[0] != NULL) {
+    uint32_t Since = Context->ElapsedMs - mLastTextureUpdate;
+    if (Since >= KSHIM_BACKDROP_REFRESH_MS) {
+      uint8_t Next = (uint8_t)(mActiveTexture ^ 1U);
+      lv_image_cache_drop(&mBackdropImages[Next]);
+      if (kshim_backdrop_render(mBackdropTextures[Next], CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS,
+          &mBackdropLayout, Context->ElapsedMs, Context->ReducedQuality != 0U) == 0) {
+        lv_image_set_src(mBackground, &mBackdropImages[Next]);
+        mActiveTexture = Next;
+        mLastTextureUpdate = Context->ElapsedMs;
+      }
+      Since = 0U; /* rendered, or retried one refresh period later */
     }
+    if (KSHIM_BACKDROP_REFRESH_MS - Since < NextMs) NextMs = KSHIM_BACKDROP_REFRESH_MS - Since;
   }
+  return NextMs;
 }
 
 int kshim_lvgl_ready(const kshim_lvgl_t *Context)
