@@ -36,6 +36,7 @@ static uint64_t current_cpu(void)
 #endif
 }
 
+/* Short lock contention spins in WFE. */
 static void wait_for_event(void)
 {
 #if defined(__aarch64__)
@@ -43,7 +44,20 @@ static void wait_for_event(void)
 #endif
 }
 
+/* Work hand-off (draw tasks, completion): sleep in WFI until another CPU's
+ * send_event() raises the wake SGI, or WFE when interrupts are off. */
+static void wait_for_work(void)
+{
+    kshim_smp_wait_event();
+}
+
 static void send_event(void)
+{
+    kshim_smp_send_event();
+}
+
+/* Lock waiters spin in WFE, so a release only needs SEV. */
+static void send_lock_event(void)
 {
 #if defined(__aarch64__)
     __asm__ volatile("dsb ishst\nsev" ::: "memory");
@@ -245,7 +259,7 @@ lv_result_t lv_mutex_unlock(lv_mutex_t *mutex)
         __atomic_store_n(
             &mutex->owner, KSHIM_LVGL_NO_OWNER, __ATOMIC_RELAXED);
         __atomic_store_n(&mutex->locked, 0U, __ATOMIC_RELEASE);
-        send_event();
+        send_lock_event();
     }
     return LV_RESULT_OK;
 }
@@ -279,7 +293,7 @@ lv_result_t lv_thread_sync_wait(lv_thread_sync_t *sync)
             return LV_RESULT_OK;
         if (__atomic_load_n(&sync->initialized, __ATOMIC_ACQUIRE) == 0U)
             return LV_RESULT_INVALID;
-        wait_for_event();
+        wait_for_work();
     }
 }
 

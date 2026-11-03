@@ -2,6 +2,8 @@
 #include <smp.h>
 
 #include <config.h>
+#include <gicv3.h>
+#include <kshim/irq.h>
 #include <kshim_mmu.h>
 #include <libfdt.h>
 #include <psci.h>
@@ -66,6 +68,13 @@ typedef struct {
 static uint8_t mSmpStacks[KSHIM_SMP_MAX_CPUS][KSHIM_SMP_STACK_SIZE]
     __attribute__((aligned(64), section(".smp_stacks")));
 static kshim_smp_context_t mSmp;
+
+/* Event hand-off between CPUs (kshim_smp_wait_event/send_event): CPUs
+ * sleeping in WFI publish themselves in mIdleMask and are woken by the wake
+ * SGI; mEventSeq plays the role of the WFE event register. */
+static uint32_t mEventSeq;
+static uint32_t mIdleMask;
+static uint32_t mSeenSeq[KSHIM_SMP_MAX_CPUS];
 
 static uint64_t read_mpidr(void)
 {
@@ -170,11 +179,74 @@ static void cpu_relax(void)
 #endif
 }
 
-static void signal_workers(void)
+static int current_slot(void)
+{
+    uint64_t mpidr = read_mpidr();
+
+    if (__atomic_load_n(&mSmp.initialized, __ATOMIC_ACQUIRE) == 0U)
+        return -1;
+    for (size_t index = 0U; index < mSmp.cpu_count; index++) {
+        if (mSmp.cpus[index].mpidr == mpidr)
+            return (int)index;
+    }
+    return -1;
+}
+
+void kshim_smp_wait_event(void)
 {
 #if defined(__aarch64__)
-    __asm__ volatile("dsb ishst\nsev" ::: "memory");
+    int slot = current_slot();
+    uint32_t bit;
+    unsigned long flags;
+
+    if (slot < 0 || !kshim_irq_cpu_can_sleep()) {
+        __asm__ volatile("wfe" ::: "memory");
+        return;
+    }
+    bit = UINT32_C(1) << slot;
+    /* Masked: a wake SGI arriving after the check stays pending and ends
+     * the WFI; it is taken once the mask is restored. */
+    flags = kshim_irq_save();
+    (void)__atomic_fetch_or(&mIdleMask, bit, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&mEventSeq, __ATOMIC_SEQ_CST) == mSeenSeq[slot]) {
+        GICV3_CPU *cpu = gicv3_this_cpu();
+
+        arm64_wfi();
+        if (cpu != NULL)
+            cpu->wfi++;
+    }
+    mSeenSeq[slot] = __atomic_load_n(&mEventSeq, __ATOMIC_ACQUIRE);
+    (void)__atomic_fetch_and(&mIdleMask, ~bit, __ATOMIC_RELEASE);
+    kshim_irq_restore(flags);
+#else
+    cpu_relax();
 #endif
+}
+
+void kshim_smp_send_event(void)
+{
+#if defined(__aarch64__)
+    uint32_t idle;
+    int self;
+
+    /* WFE waiters: CPUs without interrupts, or interrupts not up */
+    __asm__ volatile("dsb ishst\nsev" ::: "memory");
+    if (__atomic_load_n(&mSmp.initialized, __ATOMIC_ACQUIRE) == 0U ||
+        !kshim_irq_ready())
+        return;
+    (void)__atomic_add_fetch(&mEventSeq, 1U, __ATOMIC_SEQ_CST);
+    idle = __atomic_load_n(&mIdleMask, __ATOMIC_SEQ_CST);
+    self = current_slot();
+    for (size_t index = 0U; idle != 0U && index < mSmp.cpu_count; index++) {
+        if ((idle & (UINT32_C(1) << index)) != 0U && (int)index != self)
+            (void)kshim_irq_send_sgi(KSHIM_SGI_WAKE, mSmp.cpus[index].mpidr);
+    }
+#endif
+}
+
+static void signal_workers(void)
+{
+    kshim_smp_send_event();
 }
 
 static void cache_clean_range(const void *base, size_t size)
@@ -587,7 +659,7 @@ int kshim_smp_prepare_handoff(uint64_t timeout_us)
 
     if (status != KSHIM_SMP_OK)
         return status;
-    return kshim_mmu_prepare_handoff() == 0 ?
+    return kshim_irq_teardown() == 0 && kshim_mmu_prepare_handoff() == 0 ?
         KSHIM_SMP_OK : KSHIM_SMP_CPU_ERROR;
 }
 
@@ -607,6 +679,8 @@ void kshim_smp_secondary_main(uintptr_t boot_context, uint64_t entry_el)
         signal_workers();
         goto CpuOff;
     }
+    /* Take the wake SGI; without it this worker idles in WFE. */
+    (void)kshim_irq_cpu_init();
 
     __atomic_store_n(&cpu->state, KSHIM_CPU_ONLINE, __ATOMIC_RELEASE);
     signal_workers();
@@ -656,15 +730,13 @@ void kshim_smp_secondary_main(uintptr_t boot_context, uint64_t entry_el)
             cpu_relax();
             continue;
         }
-#if defined(__aarch64__)
-        __asm__ volatile("wfe" ::: "memory");
-#else
-        cpu_relax();
-#endif
+        kshim_smp_wait_event();
     }
 
     __atomic_store_n(&cpu->state, KSHIM_CPU_STOPPING, __ATOMIC_RELEASE);
     signal_workers();
+    /* Hand this CPU interface and redistributor back before CPU_OFF. */
+    (void)kshim_irq_cpu_teardown();
     kshim_mmu_cpu_off_prepare();
 CpuOff:
     if (kshim_psci_cpu_off() != KSHIM_PSCI_SUCCESS && boot != NULL &&
