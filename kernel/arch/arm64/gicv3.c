@@ -8,7 +8,12 @@
 #include <bitops.h>
 #include <memops.h>
 #include <error_no.h>
+#include <config.h>
 #include <string.h>
+
+#ifndef CONFIG_KSHIM_IRQ
+#define CONFIG_KSHIM_IRQ 0
+#endif
 
 /*
  * Acknowledgements:
@@ -30,7 +35,9 @@
 
 extern void arm64_install_exception_vector_el2(void);
 
+#if CONFIG_KSHIM_IRQ
 static ARM64_GIC_V3_CONTEXT mGic;
+#endif
 PARM64_GIC_V3_CONTEXT gicv3_driver_context = NULL;
 
 #define GICD(offset) (mGic.gicd_base + (offset))
@@ -94,6 +101,8 @@ uint64_t arm64_current_el(void)
     __asm__ volatile("mrs %0, CurrentEL" : "=r"(value));
     return (value >> 2) & 3U;
 }
+
+#if CONFIG_KSHIM_IRQ
 
 static uint64_t read_vbar(void)
 {
@@ -731,6 +740,15 @@ int gicv3_teardown(void)
     gicv3_driver_context = NULL;
     return status;
 }
+
+#else /* !CONFIG_KSHIM_IRQ: polling runtime, no GIC state is touched */
+
+GICV3_CPU *gicv3_this_cpu(void)
+{
+    return NULL;
+}
+
+#endif
 
 // Mark interrupt is finished
 void gicv3_end_of_interrupt(

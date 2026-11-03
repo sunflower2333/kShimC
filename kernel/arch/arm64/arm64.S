@@ -2,6 +2,7 @@
 #include <asm/asm_macro.h>
 #include <asm/arm64_exception.h>
 #include <arm64_sysreg.h>
+#include <config.h>
 
 // Read mpidr
 // uint64_t arm64_read_mpidr(void)
@@ -157,6 +158,7 @@ ASM_FUNC(arm64_install_exception_vector)
     isb
     ret
 
+#if CONFIG_KSHIM_IRQ
 // The same table built on the EL2 exception registers, for runs at EL2.
 // void arm64_install_exception_vector_el2(void)
 ASM_FUNC(arm64_install_exception_vector_el2)
@@ -164,6 +166,7 @@ ASM_FUNC(arm64_install_exception_vector_el2)
     msr VBAR_EL2, x0
     isb
     ret
+#endif
 
 
 /* Save contents
@@ -410,7 +413,9 @@ ExceptioncontinuousSaveContext_\el:
 .endm
 
 ExceptionContinuous el1
+#if CONFIG_KSHIM_IRQ
 ExceptionContinuous el2
+#endif
 
 /*
  *
@@ -477,6 +482,8 @@ VECTOR_START(ARM64_EXCEPTION_VEC_TABLE)
     ExceptionVectorEntries el1
 VECTOR_END(ARM64_EXCEPTION_VEC_TABLE)
 
+#if CONFIG_KSHIM_IRQ
 VECTOR_START(ARM64_EXCEPTION_VEC_TABLE_EL2)
     ExceptionVectorEntries el2
 VECTOR_END(ARM64_EXCEPTION_VEC_TABLE_EL2)
+#endif

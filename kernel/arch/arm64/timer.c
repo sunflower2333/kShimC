@@ -37,6 +37,7 @@ typedef struct ARM64_ARCH_TIMER_CONTEXT
     uint64_t irqs;
 } ARM64_ARCH_TIMER_CONTEXT, *PARM64_ARCH_TIMER_CONTEXT;
 
+#if CONFIG_KSHIM_IRQ
 // Driver context
 static ARM64_ARCH_TIMER_CONTEXT timer_context;
 
@@ -89,13 +90,9 @@ static void timer_disarm(void)
 
 static bool timer_can_sleep(void)
 {
-#if CONFIG_KSHIM_IRQ
     return timer_context.ready &&
            (arm64_read_mpidr() & ARM_MPIDR_AFFINITY_MASK) == timer_context.mpidr &&
            kshim_irq_cpu_can_sleep();
-#else
-    return false;
-#endif
 }
 
 /* WFI until CNTPCT reaches deadline, or (wake_on_event) a device interrupt
@@ -119,18 +116,22 @@ static void sleep_until(uint64_t deadline, bool wake_on_event)
     kshim_irq_restore(flags);
 }
 
+#endif
+
 uint64_t delay(uint64_t micro_seconds)
 {
     uint64_t start = arm64_read_cntpct();
     uint64_t target_time = start + (arm64_read_cntfrq() * (micro_seconds) / 1000000);
 
+#if CONFIG_KSHIM_IRQ
     if (micro_seconds >= TIMER_SLEEP_MIN_US && timer_can_sleep())
-        sleep_until(target_time, false);
-    else
     {
-        while (arm64_read_cntpct() < target_time)
-        {
-        }
+        sleep_until(target_time, false);
+        return arm64_read_cntpct() - start;
+    }
+#endif
+    while (arm64_read_cntpct() < target_time)
+    {
     }
     return arm64_read_cntpct() - start;
 }
@@ -152,16 +153,19 @@ void kshim_wait_event(uint64_t deadline_ms)
     // First CNTPCT at which get_current_time() >= deadline_ms
     target = deadline_ms > (UINT64_MAX - 999U) / frequency ? UINT64_MAX :
              (deadline_ms * frequency + 999U) / 1000U;
+#if CONFIG_KSHIM_IRQ
     if (timer_can_sleep())
     {
         sleep_until(target, true);
         return;
     }
+#endif
     // Interrupts are not up: nothing can end the wait early
     while (arm64_read_cntpct() < target)
         __asm__ volatile("yield" ::: "memory");
 }
 
+#if CONFIG_KSHIM_IRQ
 // Timer interrupt handler: one-shot, so mask the output until re-armed.
 static void arm64_arch_timer_interrupt_handler(
     uint32_t intid,
@@ -229,3 +233,4 @@ void arm64_arch_timer_teardown(void)
     timer_set_cval(timer_context.saved_cval);
     timer_set_ctl(timer_context.saved_ctl);
 }
+#endif

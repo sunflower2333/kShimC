@@ -15,6 +15,9 @@
 #ifndef CONFIG_KSHIM_SMP_WORKERS
 #define CONFIG_KSHIM_SMP_WORKERS 3
 #endif
+#ifndef CONFIG_KSHIM_IRQ
+#define CONFIG_KSHIM_IRQ 0
+#endif
 
 #define KSHIM_SMP_STACK_SIZE UINT64_C(0x10000)
 #define KSHIM_MPIDR_AFFINITY_MASK UINT64_C(0x000000ff00ffffff)
@@ -69,12 +72,14 @@ static uint8_t mSmpStacks[KSHIM_SMP_MAX_CPUS][KSHIM_SMP_STACK_SIZE]
     __attribute__((aligned(64), section(".smp_stacks")));
 static kshim_smp_context_t mSmp;
 
+#if CONFIG_KSHIM_IRQ
 /* Event hand-off between CPUs (kshim_smp_wait_event/send_event): CPUs
  * sleeping in WFI publish themselves in mIdleMask and are woken by the wake
  * SGI; mEventSeq plays the role of the WFE event register. */
 static uint32_t mEventSeq;
 static uint32_t mIdleMask;
 static uint32_t mSeenSeq[KSHIM_SMP_MAX_CPUS];
+#endif
 
 static uint64_t read_mpidr(void)
 {
@@ -179,6 +184,7 @@ static void cpu_relax(void)
 #endif
 }
 
+#if CONFIG_KSHIM_IRQ
 static int current_slot(void)
 {
     uint64_t mpidr = read_mpidr();
@@ -191,10 +197,11 @@ static int current_slot(void)
     }
     return -1;
 }
+#endif
 
 void kshim_smp_wait_event(void)
 {
-#if defined(__aarch64__)
+#if defined(__aarch64__) && CONFIG_KSHIM_IRQ
     int slot = current_slot();
     uint32_t bit;
     unsigned long flags;
@@ -218,6 +225,8 @@ void kshim_smp_wait_event(void)
     mSeenSeq[slot] = __atomic_load_n(&mEventSeq, __ATOMIC_ACQUIRE);
     (void)__atomic_fetch_and(&mIdleMask, ~bit, __ATOMIC_RELEASE);
     kshim_irq_restore(flags);
+#elif defined(__aarch64__)
+    __asm__ volatile("wfe" ::: "memory");
 #else
     cpu_relax();
 #endif
@@ -226,11 +235,13 @@ void kshim_smp_wait_event(void)
 void kshim_smp_send_event(void)
 {
 #if defined(__aarch64__)
+    /* WFE waiters: CPUs without interrupts, or interrupts not up */
+    __asm__ volatile("dsb ishst\nsev" ::: "memory");
+#endif
+#if defined(__aarch64__) && CONFIG_KSHIM_IRQ
     uint32_t idle;
     int self;
 
-    /* WFE waiters: CPUs without interrupts, or interrupts not up */
-    __asm__ volatile("dsb ishst\nsev" ::: "memory");
     if (__atomic_load_n(&mSmp.initialized, __ATOMIC_ACQUIRE) == 0U ||
         !kshim_irq_ready())
         return;
