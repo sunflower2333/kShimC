@@ -121,35 +121,45 @@ static void sleep_until(uint64_t deadline, bool wake_on_event)
 
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
 /*
- * Idle waits (the menus' 5 ms frames, fatal-error loops) keep the polled
- * USB console answering the host, about once per millisecond. Shorter
- * delays are hardware timing and stay exact.
+ * Idle waits (delays of 1 ms or more, kshim_wait_event()) keep the polled
+ * USB console answering the host, about once per millisecond, sleeping in
+ * WFI between services when interrupts are up. Shorter delays are hardware
+ * timing and stay exact. Returns true when a device interrupt ended the wait.
  */
-static uint64_t serviced_delay(uint64_t micro_seconds)
+static bool serviced_wait(uint64_t target, bool wake_on_event)
 {
-    uint64_t frequency = arm64_read_cntfrq();
-    uint64_t start = arm64_read_cntpct();
-    uint64_t target = start + frequency * micro_seconds / 1000000;
-    uint64_t step = frequency / 1000;
-    uint64_t next = start;
-    for (uint64_t now = start; now < target; now = arm64_read_cntpct()) {
+    uint64_t step = arm64_read_cntfrq() / 1000;
+    uint64_t next = arm64_read_cntpct();
+    for (uint64_t now = next; now < target; now = arm64_read_cntpct()) {
         if (now >= next) {
             kshim_console_service();
             next = now + step;
         }
+#if CONFIG_KSHIM_IRQ
+        if (timer_can_sleep()) {
+            uint64_t slice = next < target ? next : target;
+            sleep_until(slice, wake_on_event);
+            if (wake_on_event && arm64_read_cntpct() < slice)
+                return true;
+        }
+#endif
     }
-    return arm64_read_cntpct() - start;
+    return false;
 }
 #endif
 
 uint64_t delay(uint64_t micro_seconds)
 {
-#if CONFIG_KSHIM_CONSOLE_USB_ACM
-    /* The polled USB console needs service during idle waits. */
-    if (micro_seconds >= 1000) return serviced_delay(micro_seconds);
-#endif
     uint64_t start = arm64_read_cntpct();
     uint64_t target_time = start + (arm64_read_cntfrq() * (micro_seconds) / 1000000);
+
+#if CONFIG_KSHIM_CONSOLE_USB_ACM
+    if (micro_seconds >= 1000)
+    {
+        (void)serviced_wait(target_time, false);
+        return arm64_read_cntpct() - start;
+    }
+#endif
 
 #if CONFIG_KSHIM_IRQ
     if (micro_seconds >= TIMER_SLEEP_MIN_US && timer_can_sleep())
@@ -181,6 +191,10 @@ void kshim_wait_event(uint64_t deadline_ms)
     // First CNTPCT at which get_current_time() >= deadline_ms
     target = deadline_ms > (UINT64_MAX - 999U) / frequency ? UINT64_MAX :
              (deadline_ms * frequency + 999U) / 1000U;
+#if CONFIG_KSHIM_CONSOLE_USB_ACM
+    (void)serviced_wait(target, true);
+    return;
+#endif
 #if CONFIG_KSHIM_IRQ
     if (timer_can_sleep())
     {
