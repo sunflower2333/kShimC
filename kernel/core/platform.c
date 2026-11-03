@@ -10,6 +10,9 @@
 #include <platform.h>
 #include <smp.h>
 #include <smp_selftest.h>
+#if CONFIG_KSHIM_IRQ_SELFTEST
+#include <irq_selftest.h>
+#endif
 #include <psci.h>
 #include <kshim_mmu.h>
 #include <config.h>
@@ -64,6 +67,12 @@ int kshim_platform_main(uint64_t fdt, uint64_t arg1, uint64_t arg2, uint64_t arg
 #if CONFIG_KSHIM_SMP_SELFTEST
     int status = kshim_smp_selftest((const void *)(uintptr_t)fdt);
     printf("SMP_SELFTEST %s (%d)\n", status == 0 ? "PASS" : "FAIL", status);
+#endif
+#if CONFIG_KSHIM_IRQ_SELFTEST
+    int irq_status = kshim_irq_selftest((const void *)(uintptr_t)fdt);
+    printf("IRQ_SELFTEST %s (%d)\n", irq_status == 0 ? "PASS" : "FAIL", irq_status);
+#endif
+#if CONFIG_KSHIM_SMP_SELFTEST || CONFIG_KSHIM_IRQ_SELFTEST
     kshim_psci_system_off();
 #endif
     return kshim_user_main(fdt);

@@ -132,6 +132,7 @@ set(KERNEL_SOURCES
     kernel/drivers/console.c kernel/drivers/pl011.c kernel/drivers/keys.c
     kernel/arch/arm64/exception.c kernel/arch/arm64/relocation.c kernel/arch/arm64/mmu.c
     kernel/arch/arm64/psci.c kernel/arch/arm64/timer.c kernel/arch/arm64/smp.c kernel/arch/arm64/smp_selftest.c kernel/arch/arm64/gicv3.c
+    kernel/arch/arm64/irq_selftest.c
     kernel/arch/arm64/startup.S kernel/arch/arm64/mpstartup.S kernel/arch/arm64/arm64.S
     kernel/arch/arm64/psci.S kernel/arch/arm64/timer.S kernel/arch/arm64/smc.S kernel/arch/arm64/gicv3.S
     lib/libfdt/fdt.c lib/libfdt/fdt_check.c lib/libfdt/fdt_ro.c lib/libfdt/fdt_addresses.c

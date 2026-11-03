@@ -11,6 +11,9 @@
 #include <dt.h>
 #include <qcom_dt.h>
 #include <kshim/irq.h>
+#if CONFIG_KSHIM_IRQ_SELFTEST
+#include <irq_selftest.h>
+#endif
 #ifdef CONFIG_BLOCK
 #include <kshim/storage.h>
 #endif
@@ -292,6 +295,9 @@ int kshim_main(
         printf("Invalid runtime device resources\n");
         for (;;) (void)delay(100000);
     }
+#if CONFIG_KSHIM_IRQ_SELFTEST
+    kshim_irq_selftest_inherit(runtime_fdt);
+#endif
     /* Interrupt-driven from here on; without a usable GIC the runtime polls. */
     if (runtime_fdt) (void)kshim_irq_init(runtime_fdt);
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
