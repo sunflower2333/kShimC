@@ -34,6 +34,7 @@ set(LV_CONF_BUILD_DISABLE_THORVG_INTERNAL ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LV_CONF_BUILD_DISABLE_DEMOS ON CACHE BOOL "" FORCE)
 add_subdirectory("${KSHIM_ROOT}/third_party/lvgl" lvgl)
+set(CRDK_USB_ACM ON CACHE BOOL "" FORCE)
 add_subdirectory("${KSHIM_ROOT}/ports/crdk" crdk)
 set(KSHIM_UI_FONT_BLOB "${KSHIM_ROOT}/user/ui/fonts/noto_sans_cjk_sc.ksf")
 configure_file("${KSHIM_ROOT}/user/ui/fonts/ui_font_blob.S.in"
@@ -111,6 +112,24 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dt
 add_custom_target(dt_fixtures DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dtb)
 add_dependencies(dt_test dt_fixtures)
 target_compile_definitions(dt_test PRIVATE "GENERATED_FIXTURES=\"${CMAKE_CURRENT_BINARY_DIR}/fixtures\"")
+# USB CDC-ACM console: kShimC backend + CrDK engine against CrDK's DWC3/host model.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fixtures/usb-acm.dtb
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/fixtures
+    COMMAND ${DTC_EXECUTABLE} -q -I dts -O dtb -o ${CMAKE_CURRENT_BINARY_DIR}/fixtures/usb-acm.dtb
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/usb-acm.dts
+    DEPENDS fixtures/usb-acm.dts)
+add_custom_target(usb_acm_fixtures DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fixtures/usb-acm.dtb)
+kshim_test(usb_acm_test usb_acm_test.c "${KSHIM_ROOT}/kernel/drivers/console.c"
+    "${KSHIM_ROOT}/kernel/drivers/usb_acm.c" "${KSHIM_ROOT}/kernel/dt/dwc3.c"
+    "${CRDK_ROOT}/Tests/UsbAcmDwc3Model.c")
+target_include_directories(usb_acm_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CRDK_ROOT}/Tests")
+target_compile_definitions(usb_acm_test PRIVATE CONFIG_KSHIM_CONSOLE_USB_ACM=1
+    "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
+    "GENERATED_FIXTURES=\"${CMAKE_CURRENT_BINARY_DIR}/fixtures\"")
+find_package(Threads REQUIRED)
+target_link_libraries(usb_acm_test PRIVATE kshim_dt Threads::Threads)
+add_dependencies(usb_acm_test usb_acm_fixtures)
+set_tests_properties(usb_acm_test PROPERTIES TIMEOUT 120)
 kshim_test(mmu_test mmu_test.c "${KSHIM_ROOT}/kernel/arch/arm64/mmu.c")
 target_include_directories(mmu_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(mmu_test PRIVATE kshim_dt)

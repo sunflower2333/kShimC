@@ -15,8 +15,9 @@ kernel/
   arch/               arm64 (startup, MMU, exceptions, GICv3, timer, PSCI, SMP) and riscv
   core/               main (Manifest parsing, image handoff), platform services, power,
                       UEFI payload handoff, input and display services
-  dt/                 Device-tree parsing (console, keys, touch, splash, SPMI, power)
-  drivers/            console, pl011, Qualcomm keys, touch, ST FTM5, power sequencing
+  dt/                 Device-tree parsing (console, DWC3, keys, touch, splash, SPMI, power)
+  drivers/            console (UART + optional USB CDC-ACM mirror), pl011, Qualcomm keys,
+                      touch, ST FTM5, power sequencing
   lib/                picoport (picolibc system-call port)
   include/            Kernel-internal headers (arch, DT, drivers, MMU, SMP, ...)
 user/
@@ -56,7 +57,7 @@ and it no longer pulls in kernel-internal headers. Build glue is in
 | `platform.h` | `kshim_platform_accelerate()` (start PSCI workers and enable the MMU), `kshim_platform_prepare_handoff()` |
 | `smp.h` | Worker offload: CPU counts, `kshim_smp_submit()` / `_join()`, status codes, time |
 | `time.h` | `delay()` (microseconds) and `get_current_time()` (milliseconds) |
-| `console.h` | `kshim_console_write()` and `kshim_console_try_read()` |
+| `console.h` | `kshim_console_write()` and `kshim_console_try_read()` (UART, mirrored to USB CDC-ACM with `CONFIG_KSHIM_CONSOLE_USB_ACM`) |
 | `user.h` | **Upcalls**: entry points userspace implements and the kernel calls (`kshim_user_select()`, `kshim_user_main()`, `kshim_user_prepare_handoff()`, `kshim_user_smp_selftest()`) |
 
 The generated `config.h` (Kconfig) is shared by both sides. libc (picolibc) is
