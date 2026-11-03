@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <platform.h>
 #include <kshim_console.h>
+#include <kshim/irq.h>
 
 #if defined(CONFIG_KSHIM_UEFI_TEST_MENU) && CONFIG_KSHIM_UEFI_TEST_MENU
 #ifndef KSHIM_HAS_UEFI_PAYLOAD
@@ -31,7 +32,9 @@ int kshim_menu_activate(kshim_menu_action_t Action)
   if (Size == 0 || Size > CONFIG_KSHIM_UEFI_MAX_SIZE ||
       Destination == 0 || Destination > UINTPTR_MAX - Size)
     return -1;
-  if (kshim_platform_prepare_handoff() != 0)
+  /* Also restores the inherited GIC, CPU interface and timer state and
+   * leaves DAIF.I masked (kshim_irq_teardown()), as for Linux payloads. */
+  if (kshim_platform_prepare_handoff() != 0 || kshim_irq_ready())
     return -2;
   /* The payload is in the shim's Kernel reservation; UEFI has a separate
    * FD reservation. Boot A and B deliberately use the same test payload. */

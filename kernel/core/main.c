@@ -10,14 +10,15 @@
 #include <kshim/user.h>
 #include <dt.h>
 #include <qcom_dt.h>
+#include <kshim/irq.h>
+#if CONFIG_KSHIM_IRQ_SELFTEST
+#include <irq_selftest.h>
+#endif
 #ifdef CONFIG_BLOCK
 #include <kshim/storage.h>
 #endif
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
 #include <kshim/storage_probe.h>
-#endif
-#if CONFIG_QCOM_IRQCHIP
-#include <qcom_irq.h>
 #endif
 
 #define PL011_UART_BASE 0x09000000ULL
@@ -259,22 +260,17 @@ static uint32_t select_image(const MANIFEST_VIEW *view, uint64_t fdt)
 
 extern void _arm64_mmu_setup(void);
 
-/* Last operation before leaving the runtime, after all boot diagnostics. */
+/* Last operation before leaving the runtime, after all boot diagnostics.
+ * Order (docs/interrupts.md): input/touch and LVGL/workers, drivers restore
+ * their controllers, interrupts are restored, then the MMU goes off. */
 static void prepare_boot(void)
 {
+    int status = kshim_platform_quiesce();
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     kshim_storage_quiesce();
 #endif
-    /* docs/interrupts.md handoff: kshim_platform_prepare_handoff() runs
-     * 1. input/touch/console RX interrupts, 2. LVGL and workers, 3. TLMM,
-     * SPMI and PDC restore, 5. SMP/MMU (the UI path already ran it from
-     * kshim_user_select()). Steps 1 and 3 are repeated, idempotently, so
-     * nothing kShimC enabled reaches kshim_irq_teardown() (4). */
-    int status = kshim_platform_prepare_handoff();
-#if CONFIG_QCOM_IRQCHIP
-    if (!status) status = kshim_input_quiesce() || kshim_irqchip_restore();
-#endif
-    if (status || kshim_console_quiesce()) {
+    if (!status) status = kshim_irq_teardown();
+    if (status || kshim_platform_prepare_handoff() || kshim_console_quiesce()) {
         printf("Device shutdown incomplete; refusing payload handoff\n");
         for (;;) (void)delay(100000);
     }
@@ -299,6 +295,11 @@ int kshim_main(
         printf("Invalid runtime device resources\n");
         for (;;) (void)delay(100000);
     }
+#if CONFIG_KSHIM_IRQ_SELFTEST
+    kshim_irq_selftest_inherit(runtime_fdt);
+#endif
+    /* Interrupt-driven from here on; without a usable GIC the runtime polls. */
+    if (runtime_fdt) (void)kshim_irq_init(runtime_fdt);
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     if (runtime_fdt) (void)kshim_storage_probe(runtime_fdt);
 #endif

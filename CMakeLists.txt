@@ -129,10 +129,11 @@ set(KERNEL_SOURCES
     kernel/core/power.c kernel/drivers/power.c kernel/dt/power.c kernel/dt/spmi.c
     kernel/core/main.c kernel/core/platform.c kernel/core/uefi_boot.c kernel/lib/picoport.c
     kernel/core/input.c kernel/core/display.c
-    kernel/dt/dt.c kernel/dt/console.c kernel/dt/resources.c
+    kernel/dt/dt.c kernel/dt/console.c kernel/dt/resources.c kernel/dt/irq.c kernel/irq/irq.c
     kernel/drivers/console.c kernel/drivers/pl011.c kernel/drivers/keys.c
     kernel/arch/arm64/exception.c kernel/arch/arm64/relocation.c kernel/arch/arm64/mmu.c
     kernel/arch/arm64/psci.c kernel/arch/arm64/timer.c kernel/arch/arm64/smp.c kernel/arch/arm64/smp_selftest.c kernel/arch/arm64/gicv3.c
+    kernel/arch/arm64/irq_selftest.c
     kernel/arch/arm64/startup.S kernel/arch/arm64/mpstartup.S kernel/arch/arm64/arm64.S
     kernel/arch/arm64/psci.S kernel/arch/arm64/timer.S kernel/arch/arm64/smc.S kernel/arch/arm64/gicv3.S
     lib/libfdt/fdt.c lib/libfdt/fdt_check.c lib/libfdt/fdt_ro.c lib/libfdt/fdt_addresses.c
@@ -267,6 +268,9 @@ target_link_libraries(${OUTPUT_NAME}.elf PRIVATE
     "-Wl,--end-group"
 )
 set_target_properties(${OUTPUT_NAME}.elf PROPERTIES LINK_FLAGS "-T${PROCESSED_LINKER_SCRIPT}")
+# IRQ-safe allocator entry points (kernel/lib/picoport.c).
+target_link_options(${OUTPUT_NAME}.elf PRIVATE
+    "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
 
 # After building the ELF file, generate a binary file (main.bin) using objcopy
 add_custom_command(TARGET ${OUTPUT_NAME}.elf POST_BUILD

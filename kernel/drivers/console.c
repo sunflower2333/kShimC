@@ -4,6 +4,7 @@
 #include <dt.h>
 #include <pl011_uart.h>
 #include <Library/cr_debug_uart_poll.h>
+#include <kshim/irq.h>
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
 #include <kshim_mmu.h>
 #include <qcom_dt.h>
@@ -151,11 +152,15 @@ int kshim_console_init(const void *fdt)
     return status;
 }
 
+/* A GENI transfer is a multi-register sequence; an interrupt handler that
+ * prints must not start another one in the middle (printf from handlers). */
 static void uart_write(const char *buffer, uint32_t length)
 {
     if (!initialized) return;
+    unsigned long flags = kshim_irq_save();
     if (console.geni) (void)CrDebugUartPollWrite(&uart, buffer, length);
     else pl011_write(console.base, (char *)buffer, (int)length);
+    kshim_irq_restore(flags);
 }
 
 static int uart_try_read(char *character)
@@ -167,8 +172,11 @@ static int uart_try_read(char *character)
     if (console.geni && !kshim_geni_rx_irq_read(&uart, ConsoleFdt, console.base, character, &received))
         return received;
 #endif
-    if (console.geni) return CrDebugUartPollRead(&uart, (uint8_t *)character) > 0;
-    return pl011_try_read(console.base, character);
+    unsigned long flags = kshim_irq_save();
+    int status = console.geni ? CrDebugUartPollRead(&uart, (uint8_t *)character) > 0 :
+                                pl011_try_read(console.base, character);
+    kshim_irq_restore(flags);
+    return status;
 }
 
 void kshim_console_write(const char *buffer, uint32_t length)

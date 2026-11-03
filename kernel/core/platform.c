@@ -10,10 +10,14 @@
 #include <platform.h>
 #include <smp.h>
 #include <smp_selftest.h>
+#if CONFIG_KSHIM_IRQ_SELFTEST
+#include <irq_selftest.h>
+#endif
 #include <psci.h>
 #include <kshim_mmu.h>
 #include <config.h>
 #include <uefi_boot.h>
+#include <kshim/irq.h>
 #include <kshim_console.h>
 #if CONFIG_QCOM_IRQCHIP
 #include <qcom_irq.h>
@@ -36,9 +40,10 @@ void kshim_platform_accelerate(const void *fdt)
         (void)kshim_mmu_enable_current_cpu();
 }
 
-/* docs/interrupts.md handoff order. kshim_user_select() runs this before
- * returning and prepare_boot() runs it again; every step is idempotent. */
-int kshim_platform_prepare_handoff(void)
+/* docs/interrupts.md handoff steps 1-3. kshim_user_select() and the power
+ * menu reach this through kshim_platform_prepare_handoff() and prepare_boot()
+ * runs it again; every step is idempotent. */
+int kshim_platform_quiesce(void)
 {
     /* 1. Input and touch quiesce: no input interrupt fires from here on. */
     if (kshim_input_quiesce()) return -1;
@@ -48,18 +53,26 @@ int kshim_platform_prepare_handoff(void)
     /* 2. LVGL deinit and worker shutdown. */
     int status = kshim_user_prepare_handoff();
     if (status) return status;
-#if CONFIG_QCOM_IRQCHIP
-    /* 3. Secondary controllers: TLMM pins, SPMI arbiter, PDC routes. */
-    if (kshim_irqchip_restore()) return -3;
-#endif
-    /* 4. kshim_irq_teardown() (GIC core) belongs here, before the CPUs and
-     *    the MMU go down. */
-    /* 5. SMP workers and the MMU. */
+    /* Workers restore their own CPU interface before PSCI CPU_OFF. */
     if (SmpInitialized) {
-        if (kshim_smp_prepare_handoff(KSHIM_SMP_DEFAULT_TIMEOUT_US)) return -2;
+        if (kshim_smp_shutdown(KSHIM_SMP_DEFAULT_TIMEOUT_US)) return -2;
         SmpInitialized = 0;
-        return 0;
     }
+#if CONFIG_QCOM_IRQCHIP
+    /* 3. Secondary controllers: TLMM pins, SPMI arbiter, PDC routes, before
+     *    kshim_irq_teardown() (4) restores the GIC. */
+    if (kshim_irqchip_restore()) return -4;
+#endif
+    return 0;
+}
+
+int kshim_platform_prepare_handoff(void)
+{
+    int status = kshim_platform_quiesce();
+    if (status) return status;
+    /* Interrupt state goes back to the previous bootloader's before the MMU
+     * (and with it the GIC mapping and cache coherency) is torn down. */
+    if (kshim_irq_teardown()) return -3;
     return kshim_mmu_prepare_handoff();
 }
 
@@ -69,6 +82,12 @@ int kshim_platform_main(uint64_t fdt, uint64_t arg1, uint64_t arg2, uint64_t arg
 #if CONFIG_KSHIM_SMP_SELFTEST
     int status = kshim_smp_selftest((const void *)(uintptr_t)fdt);
     printf("SMP_SELFTEST %s (%d)\n", status == 0 ? "PASS" : "FAIL", status);
+#endif
+#if CONFIG_KSHIM_IRQ_SELFTEST
+    int irq_status = kshim_irq_selftest((const void *)(uintptr_t)fdt);
+    printf("IRQ_SELFTEST %s (%d)\n", irq_status == 0 ? "PASS" : "FAIL", irq_status);
+#endif
+#if CONFIG_KSHIM_SMP_SELFTEST || CONFIG_KSHIM_IRQ_SELFTEST
     kshim_psci_system_off();
 #endif
     return kshim_user_main(fdt);

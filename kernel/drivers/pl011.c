@@ -11,14 +11,13 @@ typedef struct PL011_UART_CONTEXT
 
 PPL011_UART_CONTEXT pl011_uart_context = NULL;
 
+/* kshim_irq_handler_t; the interrupt core completes the interrupt. */
 void pl011_isr(
-    PARM64_EXCEPTION_CONTEXT context, // Not used here
-    uint64_t exception_type,
-    uint16_t int_id)
+    uint32_t int_id,
+    void *context) // Not used here
 {
-    // Mark interrupt as handled
-    gicv3_end_of_interrupt(int_id);
-
+    (void)int_id;
+    (void)context;
     // Read masked interrupt status register
     uint32_t misr = REG32_OUT(pl011_uart_context->mmio_base + 0x40);
 

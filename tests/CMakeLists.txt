@@ -130,7 +130,13 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dt
     COMMAND ${DTC_EXECUTABLE} -q -I dts -O dtb -o ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dtb
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/kona-resources.dts
     DEPENDS fixtures/kona-resources.dts)
-add_custom_target(dt_fixtures DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dtb)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fixtures/irq-gic.dtb
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/fixtures
+    COMMAND ${DTC_EXECUTABLE} -q -I dts -O dtb -o ${CMAKE_CURRENT_BINARY_DIR}/fixtures/irq-gic.dtb
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/irq-gic.dts
+    DEPENDS fixtures/irq-gic.dts)
+add_custom_target(dt_fixtures DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fixtures/kona-resources.dtb
+    ${CMAKE_CURRENT_BINARY_DIR}/fixtures/irq-gic.dtb)
 add_dependencies(dt_test dt_fixtures)
 target_compile_definitions(dt_test PRIVATE "GENERATED_FIXTURES=\"${CMAKE_CURRENT_BINARY_DIR}/fixtures\"")
 # USB CDC-ACM console: kShimC backend + CrDK engine against CrDK's DWC3/host model.
@@ -151,6 +157,12 @@ find_package(Threads REQUIRED)
 target_link_libraries(usb_acm_test PRIVATE kshim_dt Threads::Threads)
 add_dependencies(usb_acm_test usb_acm_fixtures)
 set_tests_properties(usb_acm_test PROPERTIES TIMEOUT 120)
+# Interrupt devicetree parsing: GIC node, stride, timer PPIs, specifiers.
+kshim_test(irq_dt_test irq_dt_test.c "${KSHIM_ROOT}/kernel/dt/irq.c")
+target_link_libraries(irq_dt_test PRIVATE kshim_dt)
+add_dependencies(irq_dt_test dt_fixtures)
+target_compile_definitions(irq_dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
+    "GENERATED_FIXTURES=\"${CMAKE_CURRENT_BINARY_DIR}/fixtures\"")
 kshim_test(mmu_test mmu_test.c "${KSHIM_ROOT}/kernel/arch/arm64/mmu.c")
 target_include_directories(mmu_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(mmu_test PRIVATE kshim_dt)
