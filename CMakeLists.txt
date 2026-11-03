@@ -247,6 +247,9 @@ target_link_libraries(${OUTPUT_NAME}.elf PRIVATE
     "-Wl,--end-group"
 )
 set_target_properties(${OUTPUT_NAME}.elf PROPERTIES LINK_FLAGS "-T${PROCESSED_LINKER_SCRIPT}")
+# IRQ-safe allocator entry points (kernel/lib/picoport.c).
+target_link_options(${OUTPUT_NAME}.elf PRIVATE
+    "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free")
 
 # After building the ELF file, generate a binary file (main.bin) using objcopy
 add_custom_command(TARGET ${OUTPUT_NAME}.elf POST_BUILD

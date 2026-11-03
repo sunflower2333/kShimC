@@ -3,6 +3,7 @@
 #include <dt.h>
 #include <pl011_uart.h>
 #include <Library/cr_debug_uart_poll.h>
+#include <kshim/irq.h>
 static struct kshim_console_resource console;
 static struct CrDebugUartPoll uart;
 static bool initialized;
@@ -19,17 +20,24 @@ int kshim_console_init(const void *fdt)
     initialized = true;
     return 0;
 }
+/* A GENI transfer is a multi-register sequence; an interrupt handler that
+ * prints must not start another one in the middle (printf from handlers). */
 void kshim_console_write(const char *buffer, uint32_t length)
 {
     if (!initialized || !buffer || !length) return;
+    unsigned long flags = kshim_irq_save();
     if (console.geni) (void)CrDebugUartPollWrite(&uart, buffer, length);
     else pl011_write(console.base, (char *)buffer, (int)length);
+    kshim_irq_restore(flags);
 }
 int kshim_console_try_read(char *character)
 {
     if (!initialized || !character) return 0;
-    if (console.geni) return CrDebugUartPollRead(&uart, (uint8_t *)character) > 0;
-    return pl011_try_read(console.base, character);
+    unsigned long flags = kshim_irq_save();
+    int status = console.geni ? CrDebugUartPollRead(&uart, (uint8_t *)character) > 0 :
+                                pl011_try_read(console.base, character);
+    kshim_irq_restore(flags);
+    return status;
 }
 uint64_t kshim_console_base(void) { return initialized ? console.base : 0; }
 size_t kshim_console_size(void) { return initialized ? console.size : 0; }
