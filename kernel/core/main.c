@@ -10,6 +10,7 @@
 #include <kshim/user.h>
 #include <dt.h>
 #include <qcom_dt.h>
+#include <kshim/irq.h>
 #ifdef CONFIG_BLOCK
 #include <kshim/storage.h>
 #endif
@@ -256,13 +257,17 @@ static uint32_t select_image(const MANIFEST_VIEW *view, uint64_t fdt)
 
 extern void _arm64_mmu_setup(void);
 
-/* Last operation before leaving the runtime, after all boot diagnostics. */
+/* Last operation before leaving the runtime, after all boot diagnostics.
+ * Order (docs/interrupts.md): input/touch and LVGL/workers, drivers restore
+ * their controllers, interrupts are restored, then the MMU goes off. */
 static void prepare_boot(void)
 {
+    int status = kshim_platform_quiesce();
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     kshim_storage_quiesce();
 #endif
-    if (kshim_platform_prepare_handoff() || kshim_console_quiesce()) {
+    if (!status) status = kshim_irq_teardown();
+    if (status || kshim_platform_prepare_handoff() || kshim_console_quiesce()) {
         printf("Device shutdown incomplete; refusing payload handoff\n");
         for (;;) (void)delay(100000);
     }
@@ -287,6 +292,8 @@ int kshim_main(
         printf("Invalid runtime device resources\n");
         for (;;) (void)delay(100000);
     }
+    /* Interrupt-driven from here on; without a usable GIC the runtime polls. */
+    if (runtime_fdt) (void)kshim_irq_init(runtime_fdt);
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     if (runtime_fdt) (void)kshim_storage_probe(runtime_fdt);
 #endif
