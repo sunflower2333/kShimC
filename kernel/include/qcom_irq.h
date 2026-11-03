@@ -24,7 +24,7 @@
 struct CrIo;
 struct kshim_resources;
 
-/* ---- Devicetree interrupt specifiers (kernel/dt/irq.c) ------------------ */
+/* ---- Devicetree interrupt specifiers (kernel/dt/qcom_irq.c) ------------- */
 
 /* The parent follows interrupt-parent, else the tree parent, up to the first
  * node with #interrupt-cells; interrupts-extended takes precedence over

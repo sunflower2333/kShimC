@@ -103,7 +103,7 @@ target_compile_definitions(dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(dt_test PRIVATE kshim_dt)
 # Qualcomm interrupt cascades and interrupt-driven input over a fake GIC core
 # and register models, resolved from the real andromeda/hdk8150 DTs.
-set(KSHIM_IRQCHIP_SOURCES irq_fake.c "${KSHIM_ROOT}/kernel/dt/irq.c"
+set(KSHIM_IRQCHIP_SOURCES irq_fake.c "${KSHIM_ROOT}/kernel/dt/qcom_irq.c"
     "${KSHIM_ROOT}/kernel/drivers/irqchip/resolve.c" "${KSHIM_ROOT}/kernel/drivers/irqchip/tlmm.c"
     "${KSHIM_ROOT}/kernel/drivers/irqchip/pdc.c" "${KSHIM_ROOT}/kernel/drivers/irqchip/spmi_pmic.c"
     "${KSHIM_ROOT}/kernel/drivers/irqchip/handoff.c")

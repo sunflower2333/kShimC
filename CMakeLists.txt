@@ -145,7 +145,7 @@ if(CONFIG_QCOM_KEYS OR CONFIG_KSHIM_TOUCH OR CONFIG_QCOM_IRQCHIP)
 endif()
 # Qualcomm interrupt cascades and interrupt-driven drivers (docs/interrupts.md).
 if(CONFIG_QCOM_IRQCHIP)
-    list(APPEND KERNEL_SOURCES kernel/dt/irq.c kernel/drivers/irqchip/resolve.c
+    list(APPEND KERNEL_SOURCES kernel/dt/qcom_irq.c kernel/drivers/irqchip/resolve.c
         kernel/drivers/irqchip/tlmm.c kernel/drivers/irqchip/pdc.c kernel/drivers/irqchip/handoff.c)
     if(CONFIG_QCOM_SPMI)
         list(APPEND KERNEL_SOURCES kernel/drivers/irqchip/spmi_pmic.c)
