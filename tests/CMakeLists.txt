@@ -153,6 +153,12 @@ target_compile_definitions(power_menu_test PRIVATE CONFIG_KSHIM_MENU_STYLE_${KSH
     CONFIG_KSHIM_MENU_REDUCED_EFFECTS=$<BOOL:${KSHIM_TEST_MENU_REDUCED_EFFECTS}>)
 kshim_test(power_dt_test power_dt_test.c "${KSHIM_ROOT}/kernel/dt/power.c")
 target_link_libraries(power_dt_test PRIVATE kshim_dt)
+
+# Serial fallback boot menu over stubbed console, key source and clock.
+kshim_test(bootmenu_test bootmenu_test.c "${KSHIM_ROOT}/user/bootmenu/bootmenu.c")
+target_include_directories(bootmenu_test PRIVATE "${KSHIM_ROOT}/tests/include")
+target_compile_definitions(bootmenu_test PRIVATE
+    "CONFIG_KSHIM_MENU_ENTRY1=\"Linux\"" "CONFIG_KSHIM_MENU_ENTRY2=\"Recovery\"")
 add_executable(power_preview_test power_preview_test.c ${KSHIM_TEST_UI_SOURCES})
 target_include_directories(power_preview_test PRIVATE ${KSHIM_TEST_INCLUDE_DIRS})
 target_link_libraries(power_preview_test PRIVATE lvgl kshim_backdrop m)

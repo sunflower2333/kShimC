@@ -82,6 +82,7 @@ static int serial_select(const void *fdt, const char *const *names, size_t count
         if (kshim_console_try_read(&c)) {
             if (c >= '0' && c <= '9') {
                 size_t next = numeric * 10 + c - '0';
+                timeout = 0; /* the user is choosing: stop autoboot */
                 if (next <= count) { numeric = next; kshim_console_write(&c, 1); }
             } else if (c == '\r' || c == '\n') {
                 if (numeric && numeric <= count) { current = numeric - 1; break; }
@@ -90,9 +91,11 @@ static int serial_select(const void *fdt, const char *const *names, size_t count
         }
         if (keys_ready) {
             kshim_key_event_t event;
-            /* Kept as before the kernel/user split: this compares against
-             * NO_EVENT (QCOM_KEYS_OK), so delivered key events are ignored. */
-            if (kshim_key_source_poll(kshim_input_keys(), &event) == KSHIM_KEYS_NO_EVENT && event.pressed) {
+            /* *event is only written for KSHIM_KEYS_EVENT. Like the LVGL
+             * menu, act on press edges and cancel autoboot on the first one. */
+            if (kshim_key_source_poll(kshim_input_keys(), &event) == KSHIM_KEYS_EVENT &&
+                event.type == KSHIM_KEY_EVENT_PRESS) {
+                timeout = 0;
                 if (event.action == KSHIM_KEY_ACTION_UP) current = current ? current - 1 : count - 1;
                 if (event.action == KSHIM_KEY_ACTION_DOWN) current = (current + 1) % count;
                 if (event.action == KSHIM_KEY_ACTION_SELECT) break;
