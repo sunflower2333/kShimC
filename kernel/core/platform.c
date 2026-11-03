@@ -14,6 +14,10 @@
 #include <kshim_mmu.h>
 #include <config.h>
 #include <uefi_boot.h>
+#include <kshim_console.h>
+#if CONFIG_QCOM_IRQCHIP
+#include <qcom_irq.h>
+#endif
 
 __attribute__((weak)) int kshim_menu_activate(kshim_menu_action_t action)
 { (void)action; return -1; }
@@ -32,13 +36,25 @@ void kshim_platform_accelerate(const void *fdt)
         (void)kshim_mmu_enable_current_cpu();
 }
 
+/* docs/interrupts.md handoff order. kshim_user_select() runs this before
+ * returning and prepare_boot() runs it again; every step is idempotent. */
 int kshim_platform_prepare_handoff(void)
 {
-#if CONFIG_KSHIM_TOUCH
-    if (kshim_input_touch_stop()) return -1;
+    /* 1. Input and touch quiesce: no input interrupt fires from here on. */
+    if (kshim_input_quiesce()) return -1;
+#if CONFIG_KSHIM_CONSOLE_RX_IRQ
+    if (kshim_console_rx_irq_stop()) return -1;
 #endif
+    /* 2. LVGL deinit and worker shutdown. */
     int status = kshim_user_prepare_handoff();
     if (status) return status;
+#if CONFIG_QCOM_IRQCHIP
+    /* 3. Secondary controllers: TLMM pins, SPMI arbiter, PDC routes. */
+    if (kshim_irqchip_restore()) return -3;
+#endif
+    /* 4. kshim_irq_teardown() (GIC core) belongs here, before the CPUs and
+     *    the MMU go down. */
+    /* 5. SMP workers and the MMU. */
     if (SmpInitialized) {
         if (kshim_smp_prepare_handoff(KSHIM_SMP_DEFAULT_TIMEOUT_US)) return -2;
         SmpInitialized = 0;

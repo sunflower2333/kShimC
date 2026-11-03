@@ -16,6 +16,9 @@
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
 #include <kshim/storage_probe.h>
 #endif
+#if CONFIG_QCOM_IRQCHIP
+#include <qcom_irq.h>
+#endif
 
 #define PL011_UART_BASE 0x09000000ULL
 #ifndef CONFIG_KSHIM_QEMU_PLATFORM
@@ -262,7 +265,16 @@ static void prepare_boot(void)
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     kshim_storage_quiesce();
 #endif
-    if (kshim_platform_prepare_handoff() || kshim_console_quiesce()) {
+    /* docs/interrupts.md handoff: kshim_platform_prepare_handoff() runs
+     * 1. input/touch/console RX interrupts, 2. LVGL and workers, 3. TLMM,
+     * SPMI and PDC restore, 5. SMP/MMU (the UI path already ran it from
+     * kshim_user_select()). Steps 1 and 3 are repeated, idempotently, so
+     * nothing kShimC enabled reaches kshim_irq_teardown() (4). */
+    int status = kshim_platform_prepare_handoff();
+#if CONFIG_QCOM_IRQCHIP
+    if (!status) status = kshim_input_quiesce() || kshim_irqchip_restore();
+#endif
+    if (status || kshim_console_quiesce()) {
         printf("Device shutdown incomplete; refusing payload handoff\n");
         for (;;) (void)delay(100000);
     }
