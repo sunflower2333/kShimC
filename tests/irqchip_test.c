@@ -301,6 +301,28 @@ static void test_pdc(void *f)
     assert(kshim_qcom_irq_request_spec(f, &up, 0, spi_handler, NULL, &intid) == ERROR_NOT_FOUND);
     assert(!fdt_delprop(f, pdc, "qcom,pdc-ranges"));
 
+    /* SM8250 built-in table (Android kona and mainline compatibles), used
+     * when the DT has no qcom,pdc-ranges. Pins 126-137 are the range
+     * SM8150 lacks. */
+    static const char *const sm8250[] = {"qcom,kona-pdc", "qcom,sm8250-pdc"};
+    for (unsigned i = 0; i < 2; i++) {
+        assert(!fdt_setprop_string(f, pdc, "compatible", sm8250[i]));
+        pdc = compatible(f, sm8250[i]);
+        struct kshim_dt_irq k = {.parent = pdc, .count = 2, .cells = {1, KSHIM_IRQ_TYPE_LEVEL_HIGH}};
+        assert(!kshim_qcom_irq_request_spec(f, &k, 0, spi_handler, NULL, &intid));
+        assert(intid == KSHIM_IRQ_SPI(481) && !kshim_qcom_irq_free(intid));
+        k.cells[0] = 126;
+        assert(!kshim_qcom_irq_request_spec(f, &k, 0, spi_handler, NULL, &intid));
+        assert(intid == KSHIM_IRQ_SPI(716) && !kshim_qcom_irq_free(intid));
+        k.cells[0] = 137;
+        assert(!kshim_qcom_irq_request_spec(f, &k, 0, spi_handler, NULL, &intid));
+        assert(intid == KSHIM_IRQ_SPI(727) && !kshim_qcom_irq_free(intid));
+        k.cells[0] = 138;
+        assert(kshim_qcom_irq_request_spec(f, &k, 0, spi_handler, NULL, &intid) == ERROR_NOT_FOUND);
+    }
+    assert(!fdt_setprop_string(f, pdc, "compatible", "qcom,pdc-sm8150"));
+    pdc = compatible(f, "qcom,pdc-sm8150");
+
     /* MMU mapping of the PDC aperture (kshim_resources_init). */
     static struct kshim_resources r;
     memset(&r, 0, sizeof(r));

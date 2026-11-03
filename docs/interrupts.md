@@ -49,9 +49,11 @@ Polling stays only as a per-driver fallback.
    - PDC (`pdc.c`): GPIOs use the TLMM summary, not their PDC wake pins: one
      `INTR_CFG` word per pin is the whole state, and the shared always-on PDC
      (and the TLMM `spi_cfg` block) stay untouched. The PDC is programmed only
-     for PDC-parented interrupts whose SPI it feeds (`qcom,pdc-ranges`, or
-     the CrDK SM8150 table for the Android DTs): on SM8150 that is the SPMI
-     `periph_irq` (pin 1, SPI 481). `IRQ_i_CFG` type and the enable bit are
+     for PDC-parented interrupts whose SPI it feeds (`qcom,pdc-ranges`, or a
+     built-in table when the DT lacks it: CrDK's SM8150 table for
+     `qcom,pdc-sm8150`, mainline `sm8250.dtsi`'s ranges for `qcom,kona-pdc`
+     and `qcom,sm8250-pdc`; Android kona DTs also carry the property): on
+     SM8150 and SM8250 that is the SPMI `periph_irq` (pin 1, SPI 481). `IRQ_i_CFG` type and the enable bit are
      saved and restored; other PDC children are GIC pass-throughs.
    - SPMI PMIC arbiter (`spmi_pmic.c`): `periph_irq` dispatches per-peripheral
      handlers through `SpmiSharedCrLib` (one client per claimed QPNPINT bit,

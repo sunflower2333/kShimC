@@ -20,15 +20,18 @@
 
 #define PDC_ROUTES 8U
 #define PDC_TYPE_MASK 7U
-/* Android pdc-<soc>.c pin tables as carried by CrDK
- * Target/Sm8150/CrTarget.c, which is UEFI-only and cannot be linked here.
- * Upstream DTs describe the same data with qcom,pdc-ranges. */
+/* Fallback pin tables for DTs without qcom,pdc-ranges. SM8150: Android
+ * pdc-sm8150.c as carried by CrDK Target/Sm8150/CrTarget.c (UEFI-only, not
+ * linkable here). SM8250: mainline sm8250.dtsi qcom,pdc-ranges, which match
+ * CrDK Target/Sm8250/CrTarget.c and Android kona.dtsi. */
 static const struct {
     const char *compatible;
     uint16_t count;
-    PdcRange ranges[3];
+    PdcRange ranges[4];
 } Builtin[] = {
     {"qcom,pdc-sm8150", 3, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}}},
+    {"qcom,kona-pdc", 4, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}, {126, 716, 12}}},
+    {"qcom,sm8250-pdc", 4, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}, {126, 716, 12}}},
 };
 
 struct pdc_route {
