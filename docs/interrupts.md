@@ -107,7 +107,9 @@ introduced.
 - QEMU `virt,gic-version=3` at EL1 (hvc) and EL2 (smc), 1-8 CPUs: timer IRQ
   delivery, WFI idle, SGI wakeups, PL011 RX interrupt, and a GIC state dump at
   handoff equal to the pre-kShimC snapshot (`tools/test_qemu_irq.py`,
-  `CONFIG_KSHIM_IRQ_SELFTEST`).
+  `CONFIG_KSHIM_IRQ_SELFTEST`). `tests/handoff_qemu.py` dumps the state a
+  Manifest payload receives through `prepare_boot()` and compares it with a
+  direct boot that kShimC never touched.
 - Host register models for TLMM, PDC and the SPMI arbiter dispatch and restore.
 - Existing suites stay green: host ctest, `test_qemu_smp.py`, manifest QEMU,
   firmware matrix.
