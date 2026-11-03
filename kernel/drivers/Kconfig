@@ -1,1 +1,2 @@
 source "$srctree/kernel/drivers/block/Kconfig"
+source "$srctree/kernel/drivers/irqchip/Kconfig"

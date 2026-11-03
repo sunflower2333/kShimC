@@ -13,6 +13,9 @@
 #if defined(__aarch64__)
 #include <timer.h>
 #endif
+#if CONFIG_QCOM_IRQCHIP
+#include <kshim/irq.h>
+#endif
 __attribute__((weak)) void kshim_qcom_spmi_delay_us(uint32_t Microseconds)
 {
 #if defined(__aarch64__)
@@ -24,7 +27,17 @@ __attribute__((weak)) void kshim_qcom_spmi_delay_us(uint32_t Microseconds)
 
 #if CONFIG_QCOM_SPMI
 #define SPMI_PORTS 4
-struct spmi_port { SpmiDeviceContext *spmi; int fault; uintptr_t command, write_data; };
+/* Interrupt cascade grants: the RW channel CMD/WDATA0/WDATA1, the observer
+ * CMD and the PIC ACC_ENABLE/IRQ_CLEAR words of one claimed peripheral. */
+#define SPMI_GRANT_WORDS 6U
+#define SPMI_GRANTS 8U
+struct spmi_grant { uint8_t sid, peripheral, references; uintptr_t words[SPMI_GRANT_WORDS]; };
+struct spmi_port {
+  SpmiDeviceContext *spmi; int fault; uintptr_t command, write_data;
+#if CONFIG_QCOM_IRQCHIP
+  struct spmi_grant grants[SPMI_GRANTS];
+#endif
+};
 static struct spmi_port ports[SPMI_PORTS];
 static unsigned port_count;
 void kshim_qcom_spmi_bind(SpmiDeviceContext **contexts, unsigned count)
@@ -33,6 +46,17 @@ void kshim_qcom_spmi_bind(SpmiDeviceContext **contexts, unsigned count)
     port_count = count <= SPMI_PORTS ? count : 0;
     for (unsigned i = 0; i < port_count; ++i) ports[i].spmi = contexts[i];
 }
+
+/* Arbiter transactions are not reentrant (CR_LOCK is a plain spinlock):
+ * once the interrupt cascade dispatches from IRQ context, every
+ * thread-context transaction runs with IRQs masked on this CPU. */
+#if CONFIG_QCOM_IRQCHIP
+#define SPMI_LOCK() unsigned long spmi_irq_flags = kshim_irq_save()
+#define SPMI_UNLOCK() kshim_irq_restore(spmi_irq_flags)
+#else
+#define SPMI_LOCK() do { } while (0)
+#define SPMI_UNLOCK() do { } while (0)
+#endif
 
 static int KshimSpmiContains(const SpmiMemoryRegion *Region,
                              uintptr_t Address, size_t Bytes)
@@ -72,12 +96,28 @@ static UINT32 KshimSpmiRead(void *Context, UINTN Address)
   return Value;
 }
 
+static int KshimSpmiGranted(struct spmi_port *port, UINTN Address)
+{
+#if CONFIG_QCOM_IRQCHIP
+  for (unsigned Grant = 0; Grant < SPMI_GRANTS; Grant++)
+    for (unsigned Word = 0; port->grants[Grant].references && Word < SPMI_GRANT_WORDS; Word++)
+      if (port->grants[Grant].words[Word] == Address)
+        return 1;
+#else
+  (void)port; (void)Address;
+#endif
+  return 0;
+}
+
 static void KshimSpmiWrite(void *Context, UINTN Address, UINT32 Value)
 {
   struct spmi_port *port = Context;
   /* Key reads grant only CMD. Power writes temporarily grant exactly one
-   * WDATA word as well; IRQ ownership/configuration remains inaccessible. */
-  if (!KshimSpmiAddressValid(port, Address) || (Address != port->command && (!port->write_data || Address != port->write_data))) {
+   * WDATA word as well. IRQ configuration is reachable only for the
+   * peripherals the interrupt cascade claimed (kshim_qcom_spmi_grant). */
+  if (!KshimSpmiAddressValid(port, Address) ||
+      (Address != port->command && (!port->write_data || Address != port->write_data) &&
+       !KshimSpmiGranted(port, Address))) {
     port->fault = 1;
     return;
   }
@@ -108,7 +148,7 @@ static int KshimSpmiInit(struct spmi_port *port)
 
 /* CrDK supplies Linux-compatible PMIC Arbiter v1/v2/v3/v5/v7/v8/v8.5
  * transactions. The compatibility API returns the single PMIC status byte. */
-static int spmi_read(struct spmi_port *port, uint8_t Sid, uint32_t Address, uint32_t *Value)
+static int spmi_read_locked(struct spmi_port *port, uint8_t Sid, uint32_t Address, uint32_t *Value)
 {
   uint8_t Byte;
   uint32_t Offset;
@@ -136,6 +176,14 @@ static int spmi_read(struct spmi_port *port, uint8_t Sid, uint32_t Address, uint
   return 0;
 }
 
+static int spmi_read(struct spmi_port *port, uint8_t Sid, uint32_t Address, uint32_t *Value)
+{
+  SPMI_LOCK();
+  int Status = spmi_read_locked(port, Sid, Address, Value);
+  SPMI_UNLOCK();
+  return Status;
+}
+
 /* Dedicated one-byte PON transaction adapter, not a general PMIC write API. */
 int kshim_qcom_power_read8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t *value)
 {
@@ -150,18 +198,98 @@ int kshim_qcom_power_write8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t 
     if(controller>=port_count||!ports[controller].spmi||ports[controller].spmi->BusId!=bus||sid>15||
        (reg!=0x5a&&reg!=0x5b&&reg!=0x57&&reg!=0x8f))return -1;
     struct spmi_port *p=&ports[controller];
-    if(KshimSpmiInit(p))return -1;
+    SPMI_LOCK();
+    int result=-1;
+    if(KshimSpmiInit(p))goto out;
     p->fault=0;
     uint32_t offset=p->spmi->PmicArb.Ops->GetChannelOffset(p->spmi,sid,address,SPMI_ARB_CHANNEL_RW);
     SpmiMemoryRegion *r=&p->spmi->Regions[p->spmi->Version==SPMI_ARB_VERSION_1?
         SPMI_MEMORY_REGION_TYPE_CORE:SPMI_MEMORY_REGION_TYPE_CH_SLAVES];
     if(offset==UINT32_MAX||p->fault||r->BaseAddress>UINTPTR_MAX-offset||
-       !KshimSpmiContains(r,r->BaseAddress+offset,SPMI_PMIC_ARB_WDATA0+sizeof(uint32_t)))return -1;
+       !KshimSpmiContains(r,r->BaseAddress+offset,SPMI_PMIC_ARB_WDATA0+sizeof(uint32_t)))goto out;
     p->command=r->BaseAddress+offset;p->write_data=p->command+SPMI_PMIC_ARB_WDATA0;
     CR_STATUS status=SpmiWrite(p->spmi,sid,address,&value,1);
     p->command=p->write_data=0;
-    return CR_ERROR(status)||p->fault?-1:0;
+    result=CR_ERROR(status)||p->fault?-1:0;
+out:
+    SPMI_UNLOCK();
+    return result;
 }
+
+#if CONFIG_QCOM_IRQCHIP
+SpmiDeviceContext *kshim_qcom_spmi_context(unsigned controller)
+{
+  if (controller >= port_count || !ports[controller].spmi) return NULL;
+  SPMI_LOCK();
+  int status = KshimSpmiInit(&ports[controller]);
+  SPMI_UNLOCK();
+  return status ? NULL : ports[controller].spmi;
+}
+
+static int spmi_grant_words(struct spmi_port *port, uint8_t sid, uint8_t peripheral,
+                            uintptr_t words[SPMI_GRANT_WORDS])
+{
+  SpmiDeviceContext *ctx = port->spmi;
+  UINT16 apid;
+  uint16_t address = (uint16_t)(peripheral << 8);
+  if (CR_ERROR(SpmiGetApid(ctx, sid, peripheral, &apid))) return -1;
+  uint32_t rw = ctx->PmicArb.Ops->GetChannelOffset(ctx, sid, address, SPMI_ARB_CHANNEL_RW);
+  uint32_t obs = ctx->PmicArb.Ops->GetChannelOffset(ctx, sid, address, SPMI_ARB_CHANNEL_OBS);
+  if (rw == UINT32_MAX || obs == UINT32_MAX || !ctx->PmicArb.Ops->GetAccEnable ||
+      !ctx->PmicArb.Ops->GetIrqClear) return -1;
+  uintptr_t write = ctx->PmicArb.WriteAddr + rw, read = ctx->PmicArb.ReadAddr + obs;
+  words[0] = write + SPMI_PMIC_ARB_CMD;
+  words[1] = write + SPMI_PMIC_ARB_WDATA0;
+  words[2] = write + SPMI_PMIC_ARB_WDATA1;
+  words[3] = read + SPMI_PMIC_ARB_CMD;
+  words[4] = ctx->PmicArb.Ops->GetAccEnable(ctx, apid);
+  words[5] = ctx->PmicArb.Ops->GetIrqClear(ctx, apid);
+  for (unsigned i = 0; i < SPMI_GRANT_WORDS; ++i)
+    if (!KshimSpmiAddressValid(port, words[i])) return -1;
+  return 0;
+}
+
+int kshim_qcom_spmi_grant(unsigned controller, uint8_t sid, uint8_t peripheral)
+{
+  if (controller >= port_count || !ports[controller].spmi || sid > 15) return -1;
+  struct spmi_port *port = &ports[controller];
+  struct spmi_grant *slot = NULL;
+  int status = -1;
+  SPMI_LOCK();
+  if (KshimSpmiInit(port)) goto out;
+  for (unsigned i = 0; i < SPMI_GRANTS; ++i) {
+    struct spmi_grant *g = &port->grants[i];
+    if (g->references && g->sid == sid && g->peripheral == peripheral) {
+      if (g->references == UINT8_MAX) goto out;
+      ++g->references; status = 0; goto out;
+    }
+    if (!g->references && !slot) slot = g;
+  }
+  if (!slot) goto out;
+  port->fault = 0;
+  if (spmi_grant_words(port, sid, peripheral, slot->words) || port->fault) {
+    port->fault = 0;
+    goto out;
+  }
+  slot->sid = sid; slot->peripheral = peripheral; slot->references = 1;
+  status = 0;
+out:
+  SPMI_UNLOCK();
+  return status;
+}
+
+void kshim_qcom_spmi_revoke(unsigned controller, uint8_t sid, uint8_t peripheral)
+{
+  if (controller >= port_count) return;
+  SPMI_LOCK();
+  for (unsigned i = 0; i < SPMI_GRANTS; ++i) {
+    struct spmi_grant *g = &ports[controller].grants[i];
+    if (g->references && g->sid == sid && g->peripheral == peripheral && !--g->references)
+      memset(g, 0, sizeof(*g));
+  }
+  SPMI_UNLOCK();
+}
+#endif
 
 static CR_STATUS pmic_read(void *context, UINT8 sid, UINT16 address, UINT8 *buffer, UINTN size)
 {

@@ -76,6 +76,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_BINARY_DIR}/.config" "${CMAKE_SOURCE_DIR}/Kconfig"
     "${CMAKE_SOURCE_DIR}/kernel/Kconfig" "${CMAKE_SOURCE_DIR}/kernel/drivers/Kconfig"
+    "${CMAKE_SOURCE_DIR}/kernel/drivers/irqchip/Kconfig"
     "${CMAKE_SOURCE_DIR}/user/Kconfig"
     "${CMAKE_SOURCE_DIR}/tools/configure_kconfig.py")
 execute_process(COMMAND ${CMAKE_COMMAND} -E env ${KCONFIG_ENV}
@@ -139,8 +140,16 @@ set(KERNEL_SOURCES
 # Userspace: boot-entry selection and the LVGL boot menu.
 set(USER_SOURCES user/bootmenu/bootmenu.c)
 
-if(CONFIG_QCOM_KEYS OR CONFIG_KSHIM_TOUCH)
+if(CONFIG_QCOM_KEYS OR CONFIG_KSHIM_TOUCH OR CONFIG_QCOM_IRQCHIP)
     list(APPEND KERNEL_SOURCES kernel/dt/gpio.c)
+endif()
+# Qualcomm interrupt cascades and interrupt-driven drivers (docs/interrupts.md).
+if(CONFIG_QCOM_IRQCHIP)
+    list(APPEND KERNEL_SOURCES kernel/dt/irq.c kernel/drivers/irqchip/resolve.c
+        kernel/drivers/irqchip/tlmm.c kernel/drivers/irqchip/pdc.c kernel/drivers/irqchip/handoff.c)
+    if(CONFIG_QCOM_SPMI)
+        list(APPEND KERNEL_SOURCES kernel/drivers/irqchip/spmi_pmic.c)
+    endif()
 endif()
 if(CONFIG_QCOM_KEYS)
     list(APPEND KERNEL_SOURCES kernel/dt/keys.c)
@@ -176,7 +185,7 @@ if(KSHIM_UEFI_PAYLOAD)
     list(APPEND KERNEL_SOURCES ${CMAKE_BINARY_DIR}/uefi_payload.S)
 endif()
 set(CRDK_SPMI ${CONFIG_QCOM_SPMI} CACHE BOOL "" FORCE)
-if(CONFIG_QCOM_KEYS OR CONFIG_BLK_SDHCI)
+if(CONFIG_QCOM_KEYS OR CONFIG_BLK_SDHCI OR CONFIG_QCOM_IRQCHIP)
     set(CRDK_GPIO ON CACHE BOOL "" FORCE)
 else()
     set(CRDK_GPIO OFF CACHE BOOL "" FORCE)
@@ -188,6 +197,7 @@ else()
     set(CRDK_GENI OFF CACHE BOOL "" FORCE)
 endif()
 set(CRDK_DISPLAY ${CONFIG_KSHIM_FRAMEBUFFER} CACHE BOOL "" FORCE)
+set(CRDK_IRQCHIP ${CONFIG_QCOM_IRQCHIP} CACHE BOOL "" FORCE)
 # Console type is selected from DT, so UART support remains a capability in every profile.
 set(CRDK_UART ON CACHE BOOL "" FORCE)
 

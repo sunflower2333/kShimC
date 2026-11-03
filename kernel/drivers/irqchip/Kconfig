@@ -1,0 +1,29 @@
+# Qualcomm interrupt cascades and interrupt-driven drivers
+# (docs/interrupts.md layers 2 and 3). Everything here needs the GICv3 core.
+config QCOM_IRQCHIP
+    bool "Qualcomm TLMM, PDC and SPMI interrupt cascades"
+    depends on KSHIM_IRQ
+    default y
+    help
+        TLMM summary dispatch of per-GPIO interrupts, PDC routes for the
+        GIC SPIs the PDC feeds, and SPMI PMIC arbiter (periph_irq) dispatch
+        through CrDK SpmiSharedCrLib. Every pin, PDC field and PMIC bit is
+        saved before use and restored before payload handoff.
+
+config KSHIM_INPUT_IRQ
+    bool "Interrupt-driven keys and touch"
+    depends on QCOM_IRQCHIP && (QCOM_KEYS || KSHIM_TOUCH)
+    default y
+    help
+        PMIC PON and PMIC-GPIO keys through the SPMI cascade, TLMM
+        gpio-keys and the touch controller IRQ GPIO through the TLMM
+        cascade. Events are queued by the handlers; a key or controller
+        whose interrupt does not resolve keeps polling.
+
+config KSHIM_CONSOLE_RX_IRQ
+    bool "Interrupt-driven GENI console RX"
+    depends on QCOM_IRQCHIP
+    default y
+    help
+        Queue received bytes from the QUP serial engine's RX FIFO
+        watermark/last interrupt. TX keeps DebugUartLib's polled path.

@@ -20,6 +20,15 @@ int kshim_qcom_key_read32_status(
 #include <Library/spmi.h>
 void kshim_qcom_spmi_bind(SpmiDeviceContext **contexts, unsigned count);
 
+/* SPMI interrupt cascade (CONFIG_QCOM_IRQCHIP, kernel/drivers/irqchip/
+ * spmi_pmic.c): the initialized controller context, and reference-counted
+ * write grants for exactly the channel and PIC words of one claimed
+ * peripheral. Without a grant SpmiLib cannot touch a peripheral's IRQ
+ * configuration through this transport. */
+SpmiDeviceContext *kshim_qcom_spmi_context(unsigned controller);
+int kshim_qcom_spmi_grant(unsigned controller, uint8_t sid, uint8_t peripheral);
+void kshim_qcom_spmi_revoke(unsigned controller, uint8_t sid, uint8_t peripheral);
+
 /* Restricted PON adapter used only by the power sequencer. */
 int kshim_qcom_power_read8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t *value);
 int kshim_qcom_power_write8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t value);

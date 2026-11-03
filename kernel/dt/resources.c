@@ -8,6 +8,13 @@
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
 #include <kshim/storage_probe.h>
 #endif
+#if CONFIG_QCOM_IRQCHIP
+#include <qcom_irq.h>
+/* The TLMM cascade writes INTR_CFG/INTR_STATUS on the key pin's page. */
+#define KEY_GPIO_PERMISSIONS (KSHIM_MMU_READ | KSHIM_MMU_WRITE)
+#else
+#define KEY_GPIO_PERMISSIONS KSHIM_MMU_READ
+#endif
 static struct kshim_resources resources;
 static bool initialized;
 struct kshim_resources *kshim_resources_get(void) { return &resources; }
@@ -132,7 +139,7 @@ int kshim_resources_init(const void *f, size_t available)
         for (size_t i = 0; i < key_count; ++i)
             if (!QCOM_KEY_IS_SPMI_TOKEN(keys[i].Base) &&
                 kshim_resource_map(&resources, keys[i].Base + keys[i].RegisterOffset,
-                    4, KSHIM_MMU_DEVICE, KSHIM_MMU_READ)) return -1;
+                    4, KSHIM_MMU_DEVICE, KEY_GPIO_PERMISSIONS)) return -1;
     }
 #endif
 #if CONFIG_KSHIM_TOUCH
@@ -165,6 +172,9 @@ int kshim_resources_init(const void *f, size_t available)
             resources.ui_scratch.base, resources.ui_scratch.size,
             ui_scratch_type(f, resources.ui_scratch), KSHIM_MMU_READ | KSHIM_MMU_WRITE))
         resources.ui_scratch = (struct dt_range){0};
+#endif
+#if CONFIG_QCOM_IRQCHIP
+    kshim_irqchip_map_resources(&resources); /* optional PDC routes */
 #endif
     if (kshim_power_map_resources(&resources)) return -1;
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
