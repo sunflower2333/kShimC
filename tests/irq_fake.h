@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * Host fakes for the Qualcomm interrupt cascades: a GIC core behind the
- * committed kshim/irq.h API, a sparse MMIO bus behind struct CrIo, and
+ * kshim/irq.h API (kshim_irq_from_fdt() is the core's own, from
+ * kernel/dt/irq.c), a sparse MMIO bus behind struct CrIo, and
  * register models of the SM8150 TLMM, PDC and SPMI PMIC arbiter v5 + PMIC.
  * Addresses are the physical ones from the real andromeda/hdk8150 DTs.
  */

@@ -104,7 +104,7 @@ target_compile_definitions(dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DI
 target_link_libraries(dt_test PRIVATE kshim_dt)
 # Qualcomm interrupt cascades and interrupt-driven input over a fake GIC core
 # and register models, resolved from the real andromeda/hdk8150 DTs.
-set(KSHIM_IRQCHIP_SOURCES irq_fake.c "${KSHIM_ROOT}/kernel/dt/qcom_irq.c"
+set(KSHIM_IRQCHIP_SOURCES irq_fake.c "${KSHIM_ROOT}/kernel/dt/qcom_irq.c" "${KSHIM_ROOT}/kernel/dt/irq.c"
     "${KSHIM_ROOT}/kernel/drivers/irqchip/resolve.c" "${KSHIM_ROOT}/kernel/drivers/irqchip/tlmm.c"
     "${KSHIM_ROOT}/kernel/drivers/irqchip/pdc.c" "${KSHIM_ROOT}/kernel/drivers/irqchip/spmi_pmic.c"
     "${KSHIM_ROOT}/kernel/drivers/irqchip/handoff.c")
@@ -148,7 +148,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fixtures/usb-acm.dtb
 add_custom_target(usb_acm_fixtures DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fixtures/usb-acm.dtb)
 kshim_test(usb_acm_test usb_acm_test.c "${KSHIM_ROOT}/kernel/drivers/console.c"
     "${KSHIM_ROOT}/kernel/drivers/usb_acm.c" "${KSHIM_ROOT}/kernel/dt/dwc3.c"
-    "${CRDK_ROOT}/Tests/UsbAcmDwc3Model.c")
+    "${CRDK_ROOT}/Tests/UsbAcmDwc3Model.c" irq_mask_stub.c)
 target_include_directories(usb_acm_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CRDK_ROOT}/Tests")
 target_compile_definitions(usb_acm_test PRIVATE CONFIG_KSHIM_CONSOLE_USB_ACM=1
     "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""

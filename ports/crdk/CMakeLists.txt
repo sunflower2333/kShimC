@@ -67,6 +67,9 @@ foreach(soc ${CRDK_GPIO_TARGET_SOCS})
     set_source_files_properties("${CRDK_ROOT}/Target/${soc}/CrGpioTarget.c" PROPERTIES
         COMPILE_DEFINITIONS "CrTargetGetGpioContext=KshimCrdk${soc}GpioContext")
 endforeach()
+# Interrupt setup/handoff code: size over speed, the runtime slot is tight.
+set_source_files_properties("${CRDK_ROOT}/Library/PdcLib/pdc.c"
+    "${CRDK_ROOT}/Library/SpmiSharedCrLib/SpmiShared.c" PROPERTIES COMPILE_OPTIONS -Os)
 add_library(crdk STATIC ${CRDK_SOURCES} crdk_port.c crdk_io.c)
 add_library(crdk_spmi ALIAS crdk)
 target_compile_definitions(crdk PUBLIC CR_FREESTANDING=1)

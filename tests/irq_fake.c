@@ -58,16 +58,7 @@ int kshim_irq_free(uint32_t intid)
 void kshim_irq_enable(uint32_t intid) { assert(intid < 1020); FakeGic[intid].enabled = FakeGic[intid].requested; }
 void kshim_irq_disable(uint32_t intid) { assert(intid < 1020); FakeGic[intid].enabled = false; ++FakeGic[intid].disables; }
 
-int kshim_irq_from_fdt(const void *fdt, int node, int index, uint32_t *intid, unsigned *trigger)
-{
-    struct kshim_dt_irq spec;
-    if (index < 0 || kshim_dt_irq(fdt, node, (unsigned)index, &spec)) return ERROR_NOT_FOUND;
-    if (kshim_dt_irq_kind(fdt, spec.parent) != KSHIM_DT_IRQ_GIC) return ERROR_NOT_SUPPORTED;
-    if (spec.count != 3) return ERROR_INVALID_PARAMETER;
-    *intid = spec.cells[0] ? KSHIM_IRQ_PPI(spec.cells[1]) : KSHIM_IRQ_SPI(spec.cells[1]);
-    *trigger = spec.cells[2] & 0xfU;
-    return 0;
-}
+/* kshim_irq_from_fdt() is the core's (kernel/dt/irq.c), linked as is. */
 
 void fake_gic_line(uint32_t intid, bool (*line)(void)) { FakeGic[intid].line = line; }
 

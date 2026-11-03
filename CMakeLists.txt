@@ -158,6 +158,12 @@ endif()
 if(CONFIG_KSHIM_CONSOLE_RX_IRQ)
     list(APPEND KERNEL_SOURCES kernel/drivers/geni_rx_irq.c)
 endif()
+# Mostly setup and handoff code with short handlers; the 4 MiB slot is
+# nearly full on andromeda/hdk8250, so these are optimized for size.
+set_source_files_properties(kernel/dt/qcom_irq.c kernel/drivers/irqchip/resolve.c
+    kernel/drivers/irqchip/tlmm.c kernel/drivers/irqchip/pdc.c kernel/drivers/irqchip/handoff.c
+    kernel/drivers/irqchip/spmi_pmic.c kernel/drivers/input_irq.c kernel/drivers/geni_rx_irq.c
+    PROPERTIES COMPILE_OPTIONS -Os)
 if(CONFIG_QCOM_KEYS)
     list(APPEND KERNEL_SOURCES kernel/dt/keys.c)
 endif()

@@ -30,7 +30,7 @@ __attribute__((weak)) void kshim_qcom_spmi_delay_us(uint32_t Microseconds)
 /* Interrupt cascade grants: the RW channel CMD/WDATA0/WDATA1, the observer
  * CMD and the PIC ACC_ENABLE/IRQ_CLEAR words of one claimed peripheral. */
 #define SPMI_GRANT_WORDS 6U
-#define SPMI_GRANTS 8U
+#define SPMI_GRANTS 4U
 struct spmi_grant { uint8_t sid, peripheral, references; uintptr_t words[SPMI_GRANT_WORDS]; };
 struct spmi_port {
   SpmiDeviceContext *spmi; int fault; uintptr_t command, write_data;
