@@ -1,1 +1,16 @@
+config KSHIM_CONSOLE_USB_ACM
+    bool "Mirror the console to a USB CDC-ACM device (DWC3)"
+    default n
+    help
+        Run the DWC3 controller found in the runtime DT ("qcom,dwc3" or
+        "qcom,dwc-usb3-msm" with an "snps,dwc3" child) as a USB serial
+        device using CrDK's UsbAcmCrLib, and mirror the DT-selected UART
+        console to it. Input is accepted from both. Output written before
+        a host opens the port is kept (16 KiB) and sent once it reads.
+
+        The previous bootloader must leave USB powered and clocked; no
+        clock, GDSC, PHY or reset is touched, and an unclocked controller
+        can hang the bus. The controller is polled from console writes,
+        input polling and idle delays, and stopped before payload handoff.
+
 source "$srctree/kernel/drivers/block/Kconfig"

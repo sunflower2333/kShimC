@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/Project-Aloha/CrDK",
-  "branch": "feature/2610",
-  "revision": "f23922d9f044fc4c32748da821d6ee1084df9d3f",
+  "branch": "feature/shared-usb-acm",
+  "revision": "d184dc4aac39d9738e52ab4403df5b0e596a95b4",
   "patches": [
     {
       "file": "0001-freestanding-resources.patch",

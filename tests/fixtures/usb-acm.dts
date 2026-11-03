@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: MIT
+// Focused USB CDC-ACM console fixture: a PL011 console plus two DWC3 cores
+// under mainline "qcom,dwc3" wrappers (the second one host-only).
+/dts-v1/;
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "qcom,sm8150";
+	interrupt-parent = <&intc>;
+
+	chosen {
+		stdout-path = "/soc/serial@9000000";
+		bootargs = "console=ttyAMA0";
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		intc: interrupt-controller@17a00000 {
+			compatible = "arm,gic-v3";
+			#interrupt-cells = <3>;
+			interrupt-controller;
+			reg = <0 0x17a00000 0 0x10000>;
+		};
+
+		serial@9000000 {
+			compatible = "arm,pl011";
+			reg = <0 0x9000000 0 0x1000>;
+		};
+
+		usb@a6f8800 {
+			compatible = "qcom,sm8150-dwc3", "qcom,dwc3";
+			reg = <0 0x0a6f8800 0 0x400>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+
+			usb@a600000 {
+				compatible = "snps,dwc3";
+				reg = <0 0x0a600000 0 0xcd00>;
+				interrupts = <0 133 4>;
+				dr_mode = "peripheral";
+			};
+		};
+
+		usb@a8f8800 {
+			compatible = "qcom,sm8150-dwc3", "qcom,dwc3";
+			reg = <0 0x0a8f8800 0 0x400>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+
+			usb@a800000 {
+				compatible = "snps,dwc3";
+				reg = <0 0x0a800000 0 0xcd00>;
+				interrupts = <0 138 4>;
+				dr_mode = "host";
+			};
+		};
+	};
+};

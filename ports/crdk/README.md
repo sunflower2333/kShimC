@@ -1,9 +1,10 @@
 # CrDK integration
 
-The complete `lib/CrDK` submodule is pinned to Project-Aloha/CrDK
-`feature/2610` at `f23922d9f044fc4c32748da821d6ee1084df9d3f`. Firmware and
-host tests compile a build-local materialization, never a private selection
-of copied drivers.
+The complete `lib/CrDK` submodule is pinned to CrDK
+`feature/shared-usb-acm` at `d184dc4aac39d9738e52ab4403df5b0e596a95b4`:
+`feature/2610` (f23922d plus 8a60b41 and 5eb2765) with the shared USB CDC-ACM
+console (UsbAcmCrLib) on top. Firmware and host tests compile a build-local
+materialization, never a private selection of copied drivers.
 
 `UPSTREAM.json` records the baseline and the hash of the single patch,
 `0001-freestanding-resources.patch`. It contains the freestanding OSKAL
@@ -36,6 +37,7 @@ and refreshes its manifest hash. No push is part of that workflow.
 | RPMh / CmdDB | RpmhLib polling API, CmdDBLib bounded lookup | RSC/TCS topology, rail names and constraints |
 | UART | DebugUartLib polling API | DT earlycon/stdout-path selection and byte-stream interface |
 | Splash | DisplayLib read-only scanout reader | DT SDE offsets and splash reservation; framebuffer conversion |
+| USB console | UsbAcmCrLib DWC3 device + CDC-ACM engine | DT DWC3 core window and IRQ, bounded MMIO, identity DMA, VA cache maintenance, console lock, polling, quiesce |
 
 `CR_FREESTANDING` makes CrDK OSKAL include the explicit `crdk_os.h` port
 contract. `crdk_port.c` supplies allocation/string adapters, native MMIO
@@ -47,6 +49,14 @@ the newer upstream OSKAL names (`CR_NOT_READY`, `CR_ALREADY_STARTED`,
 `CR_LOG_*_FMT` formats, `CrMemoryFence`, `CR_MUTEX` and
 `CrAtomicCompareExchange32`). Injectable `CrIo` separates the same shared
 code from native MMIO for tests.
+
+`CONFIG_KSHIM_CONSOLE_USB_ACM` builds UsbAcmCrLib (`CRDK_USB_ACM`). The
+engine needs nothing from the patch beyond the freestanding `cr_status.h`,
+`cr_string.h` and `cr_time.h`. kShimC services it by polling;
+`CrUsbAcmServiceEvents()` and the GEVNTSIZ/DEVTEN policy are ready for an
+interrupt handler once this port has a GIC-backed `CrRegisterInterrupt`.
+The DWC3 node's interrupt is parsed into the backend's resource but not
+registered.
 
 Repeated START, descriptor STOP boundaries, terminal read NACK, abort
 recovery and SPI chip select continuity are implemented in the shared GENI
