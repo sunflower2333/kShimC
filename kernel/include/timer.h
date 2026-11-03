@@ -2,7 +2,7 @@
 #pragma once
 #include <stdint.h>
 #include <arm64_sysreg.h>
-/* delay() and get_current_time() are public. */
+/* delay(), get_current_time() and kshim_wait_event() are public. */
 #include <kshim/time.h>
 
 extern uint64_t arm64_read_cntfrq(void);
@@ -13,11 +13,15 @@ extern uint64_t arm64_read_cntptval(void);
 extern void arm64_write_cntpctl(uint64_t cntp_ctlr);
 extern void arm64_write_cntpcval(uint64_t cntp_cval);
 extern void arm64_write_cntptval(uint64_t cntp_ctlr);
+extern uint64_t arm64_read_cntvct(void);
+extern uint64_t arm64_read_cntvctl(void);
+extern void arm64_write_cntvctl(uint64_t ctl);
+extern uint64_t arm64_read_cntvcval(void);
+extern void arm64_write_cntvcval(uint64_t cval);
+extern uint64_t arm64_read_cnthpctl(void);
+extern void arm64_write_cnthpctl(uint64_t ctl);
+extern uint64_t arm64_read_cnthpcval(void);
+extern void arm64_write_cnthpcval(uint64_t cval);
 
-void arm64_arch_timer_init(
-    // PPI numbers
-    uint8_t arch_timer_virt_irq_no,
-    uint8_t arch_timer_hyp_irq_no,
-    uint8_t arch_timer_nonsec_irq_no,
-    uint8_t arch_timer_sec_irq_no
-);
+/* arm64_arch_timer_init()/teardown() take the PPIs from the runtime DT;
+ * see gicv3.h. */

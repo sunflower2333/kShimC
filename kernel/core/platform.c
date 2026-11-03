@@ -10,10 +10,14 @@
 #include <platform.h>
 #include <smp.h>
 #include <smp_selftest.h>
+#if CONFIG_KSHIM_IRQ_SELFTEST
+#include <irq_selftest.h>
+#endif
 #include <psci.h>
 #include <kshim_mmu.h>
 #include <config.h>
 #include <uefi_boot.h>
+#include <kshim/irq.h>
 
 __attribute__((weak)) int kshim_menu_activate(kshim_menu_action_t action)
 { (void)action; return -1; }
@@ -32,18 +36,28 @@ void kshim_platform_accelerate(const void *fdt)
         (void)kshim_mmu_enable_current_cpu();
 }
 
-int kshim_platform_prepare_handoff(void)
+int kshim_platform_quiesce(void)
 {
 #if CONFIG_KSHIM_TOUCH
     if (kshim_input_touch_stop()) return -1;
 #endif
     int status = kshim_user_prepare_handoff();
     if (status) return status;
+    /* Workers restore their own CPU interface before PSCI CPU_OFF. */
     if (SmpInitialized) {
-        if (kshim_smp_prepare_handoff(KSHIM_SMP_DEFAULT_TIMEOUT_US)) return -2;
+        if (kshim_smp_shutdown(KSHIM_SMP_DEFAULT_TIMEOUT_US)) return -2;
         SmpInitialized = 0;
-        return 0;
     }
+    return 0;
+}
+
+int kshim_platform_prepare_handoff(void)
+{
+    int status = kshim_platform_quiesce();
+    if (status) return status;
+    /* Interrupt state goes back to the previous bootloader's before the MMU
+     * (and with it the GIC mapping and cache coherency) is torn down. */
+    if (kshim_irq_teardown()) return -3;
     return kshim_mmu_prepare_handoff();
 }
 
@@ -53,6 +67,12 @@ int kshim_platform_main(uint64_t fdt, uint64_t arg1, uint64_t arg2, uint64_t arg
 #if CONFIG_KSHIM_SMP_SELFTEST
     int status = kshim_smp_selftest((const void *)(uintptr_t)fdt);
     printf("SMP_SELFTEST %s (%d)\n", status == 0 ? "PASS" : "FAIL", status);
+#endif
+#if CONFIG_KSHIM_IRQ_SELFTEST
+    int irq_status = kshim_irq_selftest((const void *)(uintptr_t)fdt);
+    printf("IRQ_SELFTEST %s (%d)\n", irq_status == 0 ? "PASS" : "FAIL", irq_status);
+#endif
+#if CONFIG_KSHIM_SMP_SELFTEST || CONFIG_KSHIM_IRQ_SELFTEST
     kshim_psci_system_off();
 #endif
     return kshim_user_main(fdt);

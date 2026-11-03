@@ -6,6 +6,7 @@
 #include <qcom_key_platform.h>
 #include <kshim_console.h>
 #include <string.h>
+#include <error_no.h>
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
 #include <kshim/storage_probe.h>
 #endif
@@ -78,6 +79,21 @@ static int touch_maps(struct kshim_resources *r, const struct CrIo *io)
     return kshim_resource_map(r, q->cmd_db_base, q->cmd_db_size, KSHIM_MMU_NORMAL_NC, KSHIM_MMU_READ);
 }
 #endif
+#if CONFIG_KSHIM_IRQ
+/* The GIC is optional: without it the runtime polls. A failed probe leaves
+ * no partial mapping behind. */
+static int gic_maps(struct kshim_resources *r)
+{
+    int status = kshim_dt_gic(r->fdt, &r->gic);
+    if (status) return status;
+    if (kshim_resource_map(r, r->gic.dist.base, r->gic.dist.size, KSHIM_MMU_DEVICE,
+                           KSHIM_MMU_READ | KSHIM_MMU_WRITE)) return ERROR_NOT_SUPPORTED;
+    for (unsigned i = 0; i < r->gic.redist_count; ++i)
+        if (kshim_resource_map(r, r->gic.redist[i].base, r->gic.redist[i].size, KSHIM_MMU_DEVICE,
+                               KSHIM_MMU_READ | KSHIM_MMU_WRITE)) return ERROR_NOT_SUPPORTED;
+    return 0;
+}
+#endif
 #if CONFIG_KSHIM_FRAMEBUFFER
 /* The display reservation past the scanout frame is owned by the display and
  * unused while kShimC runs; the UI keeps its inflated font and background
@@ -113,6 +129,7 @@ int kshim_resources_init(const void *f, size_t available)
     memset(&resources, 0, sizeof(resources));
     resources.fdt = f;
     resources.spmi_status = resources.touch_status = resources.splash_status = -1;
+    resources.gic_status = ERROR_NOT_SUPPORTED;
 #if CONFIG_QCOM_SPMI
     resources.spmi_status = kshim_dt_spmi(f, &resources);
     SpmiDeviceContext *contexts[KSHIM_SPMI_MAX];
@@ -173,6 +190,17 @@ int kshim_resources_init(const void *f, size_t available)
 #endif
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     (void)kshim_storage_map_resources(&resources); /* optional; restores on failure */
+#endif
+#if CONFIG_KSHIM_IRQ
+    /* Last, so a full table costs interrupts, never a mandatory region. */
+    kshim_mmu_region_t saved[KSHIM_RESOURCE_MAX];
+    size_t saved_count = resources.mapping_count;
+    memcpy(saved, resources.mappings, saved_count * sizeof(*saved));
+    resources.gic_status = gic_maps(&resources);
+    if (resources.gic_status) {
+        memcpy(resources.mappings, saved, saved_count * sizeof(*saved));
+        resources.mapping_count = saved_count;
+    }
 #endif
     initialized = true;
     return 0;

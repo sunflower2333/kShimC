@@ -54,6 +54,40 @@ Polling stays only as a per-driver fallback.
    `kshim_wait_event(next_deadline)` (the next LVGL timer, countdown or
    animation) and wake on input interrupts, instead of `delay(5000)` loops.
 
+## Layer 1 as implemented
+
+- `kernel/dt/irq.c`: the `arm,gic-v3` node (GICD, `#redistributor-regions`
+  GICR regions, 1- or 2-cell `redistributor-stride`), the timer PPIs
+  (positional or `interrupt-names`; on SM8150 the timer inherits the PDC as
+  parent, which PPIs pass straight through to the GIC), and
+  `kshim_irq_from_fdt()` over `interrupts` and `interrupts-extended`. Any
+  non-GIC parent, the PDC included, is `ERROR_NOT_SUPPORTED`; on SM8150 that
+  is most device nodes, since `/` names the PDC as `interrupt-parent`.
+- `kernel/dt/resources.c` maps GICD and the GICR regions last, so a full
+  resource table costs interrupts, never a mandatory region.
+- `kernel/arch/arm64/gicv3.c`: before changing anything it saves `GICD_CTLR`
+  and the SPI enables, the boot CPU's GICR SGI/PPI frame and `GICR_WAKER`,
+  and its CPU interface (`ICC_SRE/CTLR/PMR/BPR1/IGRPEN1`), `VBAR` and, at EL2,
+  `HCR_EL2.IMO`. Every inherited source is disabled; an SPI's group,
+  priority, trigger and route are saved the first time kShimC configures it.
+  Each worker saves its own frame and CPU interface in
+  `kshim_irq_cpu_init()` and puts them back before PSCI `CPU_OFF`.
+- `kernel/irq/irq.c`: INTID-indexed handlers; IRQ entry acknowledges,
+  dispatches and EOIs (`EOImode` 0). SGI 1 is the cross-CPU wake.
+- `timer.c`: the virtual timer at EL1, `CNTHP` at EL2, one-shot `CVAL`
+  deadlines in `CNTPCT` units. `delay()` and `kshim_wait_event()` sleep in
+  WFI with IRQs masked around the check-and-sleep; `kshim_wait_event()` ends
+  on a deadline or on a device interrupt taken since the previous wait.
+- `kshim_smp_wait_event()`/`kshim_smp_send_event()` replace worker `wfe`/`sev`
+  hand-off with WFI and the wake SGI, and fall back to WFE/SEV without IRQs.
+- `kshim_irq_teardown()` (from `kshim_platform_prepare_handoff()`, after the
+  workers are off and before the MMU): stops the timer and restores its
+  CTL/CVAL, disables every SPI and clears pending/active of those kShimC
+  enabled, restores the saved SPI configuration, enables and `GICD_CTLR`,
+  restores the frames and the CPU interface, `VBAR` and `HCR_EL2.IMO`, and
+  leaves `DAIF.I` masked. `tools/test_qemu_irq.py` checks the result against
+  a seeded pre-kShimC snapshot.
+
 ## Handoff contract
 
 `prepare_boot()` order:
@@ -72,7 +106,10 @@ introduced.
 
 - QEMU `virt,gic-version=3` at EL1 (hvc) and EL2 (smc), 1-8 CPUs: timer IRQ
   delivery, WFI idle, SGI wakeups, PL011 RX interrupt, and a GIC state dump at
-  handoff equal to the pre-kShimC snapshot.
+  handoff equal to the pre-kShimC snapshot (`tools/test_qemu_irq.py`,
+  `CONFIG_KSHIM_IRQ_SELFTEST`). `tests/handoff_qemu.py` dumps the state a
+  Manifest payload receives through `prepare_boot()` and compares it with a
+  direct boot that kShimC never touched.
 - Host register models for TLMM, PDC and the SPMI arbiter dispatch and restore.
 - Existing suites stay green: host ctest, `test_qemu_smp.py`, manifest QEMU,
   firmware matrix.

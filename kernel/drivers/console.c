@@ -4,6 +4,7 @@
 #include <dt.h>
 #include <pl011_uart.h>
 #include <Library/cr_debug_uart_poll.h>
+#include <kshim/irq.h>
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
 #include <kshim_mmu.h>
 #include <qcom_dt.h>
@@ -115,9 +116,13 @@ int kshim_console_map_resources(struct kshim_resources *r)
 
 void kshim_console_service(void)
 {
-    if (!kshim_usb_acm_active() || !console_lock(false)) return;
-    kshim_usb_acm_poll();
-    console_unlock();
+    if (!kshim_usb_acm_active()) return;
+    unsigned long flags = kshim_irq_save();
+    if (console_lock(false)) {
+        kshim_usb_acm_poll();
+        console_unlock();
+    }
+    kshim_irq_restore(flags);
 }
 #endif
 
@@ -145,30 +150,41 @@ int kshim_console_init(const void *fdt)
     return status;
 }
 
+/* A GENI transfer is a multi-register sequence; an interrupt handler that
+ * prints must not start another one in the middle (printf from handlers). */
 static void uart_write(const char *buffer, uint32_t length)
 {
     if (!initialized) return;
+    unsigned long flags = kshim_irq_save();
     if (console.geni) (void)CrDebugUartPollWrite(&uart, buffer, length);
     else pl011_write(console.base, (char *)buffer, (int)length);
+    kshim_irq_restore(flags);
 }
 
 static int uart_try_read(char *character)
 {
     if (!initialized) return 0;
-    if (console.geni) return CrDebugUartPollRead(&uart, (uint8_t *)character) > 0;
-    return pl011_try_read(console.base, character);
+    unsigned long flags = kshim_irq_save();
+    int status = console.geni ? CrDebugUartPollRead(&uart, (uint8_t *)character) > 0 :
+                                pl011_try_read(console.base, character);
+    kshim_irq_restore(flags);
+    return status;
 }
 
 void kshim_console_write(const char *buffer, uint32_t length)
 {
     if (!buffer || !length) return;
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
+    /* IRQs stay masked from ticket to release: a handler that printed while
+     * this CPU waited for its ticket would queue behind it forever. */
+    unsigned long flags = kshim_irq_save();
     bool locked = console_lock(true);
     uart_write(buffer, length);
     if (locked) {
         kshim_usb_acm_write(buffer, length);
         console_unlock();
     }
+    kshim_irq_restore(flags);
 #else
     uart_write(buffer, length);
 #endif
@@ -178,11 +194,16 @@ int kshim_console_try_read(char *character)
 {
     if (!character) return 0;
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
-    if (!console_lock(true)) return 0;
+    unsigned long flags = kshim_irq_save();
+    if (!console_lock(true)) {
+        kshim_irq_restore(flags);
+        return 0;
+    }
     int got = uart_try_read(character);
     if (!got) got = kshim_usb_acm_read(character);
     else kshim_usb_acm_poll();
     console_unlock();
+    kshim_irq_restore(flags);
     return got;
 #else
     return uart_try_read(character);

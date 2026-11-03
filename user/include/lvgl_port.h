@@ -29,8 +29,13 @@ int kshim_lvgl_has_cjk_font(const kshim_lvgl_t *Context);
 int kshim_lvgl_init(kshim_lvgl_t *Context, kshim_framebuffer_t *Framebuffer,
                     kshim_key_source_t *Keys);
 
-/* Advance LVGL's cooperative timer loop. elapsed_ms may be zero. */
-void kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs);
+/* Advance LVGL's cooperative timer loop. elapsed_ms may be zero. Returns
+ * the milliseconds until the menu next needs a frame: the next LVGL timer,
+ * countdown label change or backdrop refresh (UINT32_MAX: none scheduled). */
+uint32_t kshim_lvgl_frame(kshim_lvgl_t *Context, uint32_t ElapsedMs);
+/* The same for loops that sleep between frames: IdleMs of ElapsedMs was
+ * spent waiting and does not count towards the slow-frame heuristic. */
+uint32_t kshim_lvgl_frame_idle(kshim_lvgl_t *Context, uint32_t ElapsedMs, uint32_t IdleMs);
 
 /* Return non-zero after kshim_lvgl_init has installed a display. */
 int kshim_lvgl_ready(const kshim_lvgl_t *Context);

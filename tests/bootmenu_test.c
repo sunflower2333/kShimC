@@ -22,16 +22,45 @@ static int keys_init_status;
 static const struct key_step *keys; static size_t key_count, key_next;
 static const struct char_step *chars; static size_t char_count, char_next;
 static unsigned key_polls;
+static unsigned waits, stalls;
+static uint64_t max_sleep_ms;
 
-uint64_t get_current_time() { return now_ms; }
-uint64_t delay(uint64_t micro_seconds)
+static void guard(void)
 {
-    now_ms += micro_seconds / 1000u ? micro_seconds / 1000u : 1u;
     if (now_ms > GUARD_MS) {
         fprintf(stderr, "menu did not return within %u ms\n", GUARD_MS);
         abort();
     }
+}
+uint64_t get_current_time() { return now_ms; }
+uint64_t delay(uint64_t micro_seconds)
+{
+    now_ms += micro_seconds / 1000u ? micro_seconds / 1000u : 1u;
+    guard();
     return micro_seconds;
+}
+/* Sleep to the deadline, or until the next scripted input arrives (as its
+ * interrupt would end the wait). The menus must make progress: a wait that
+ * cannot advance the clock more than a few times in a row is a busy loop. */
+void kshim_wait_event(uint64_t deadline_ms)
+{
+    uint64_t next = deadline_ms;
+    ++waits;
+    if (key_next < key_count && keys[key_next].at_ms > now_ms && keys[key_next].at_ms < next)
+        next = keys[key_next].at_ms;
+    if (char_next < char_count && chars[char_next].at_ms > now_ms && chars[char_next].at_ms < next)
+        next = chars[char_next].at_ms;
+    if (next <= now_ms) {
+        if (++stalls > 3) {
+            fprintf(stderr, "menu spins without sleeping at %llu ms\n", (unsigned long long)now_ms);
+            abort();
+        }
+        return;
+    }
+    stalls = 0;
+    if (deadline_ms - now_ms > max_sleep_ms) max_sleep_ms = deadline_ms - now_ms;
+    now_ms = next;
+    guard();
 }
 void kshim_console_write(const char *buffer, uint32_t length) { (void)buffer; (void)length; }
 int kshim_console_try_read(char *character)
@@ -64,7 +93,7 @@ static size_t run(const struct key_step *k, size_t nk, const struct char_step *c
                   size_t initial, uint32_t timeout_ms)
 {
     size_t selected = SIZE_MAX;
-    now_ms = 0; key_polls = 0;
+    now_ms = 0; key_polls = 0; waits = 0; stalls = 0; max_sleep_ms = 0;
     keys = k; key_count = nk; key_next = 0;
     chars = c; char_count = nc; char_next = 0;
     assert(kshim_user_select(0, names, 3, initial, timeout_ms, &selected) == 0);
@@ -114,6 +143,12 @@ int main(void)
     /* No interaction: the default entry boots once the timeout expires. */
     assert(run(NULL, 0, NULL, 0, 1, 100) == 1);
     assert(now_ms >= 100 && now_ms < 120);
+    /* It sleeps between polls (no busy loop), never past the 5 ms input
+     * poll while input is polled, and wakes exactly at the deadline. */
+    assert(waits >= 100 / 5 && waits <= 100 / 5 + 1);
+    assert(max_sleep_ms == 5);
+    assert(run(NULL, 0, NULL, 0, 2, 103) == 2);
+    assert(now_ms == 103);
 
     /* Escape restores the default. */
     static const struct key_step down_then_esc[] = {PRESS(10, DOWN)};

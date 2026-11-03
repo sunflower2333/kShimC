@@ -38,3 +38,10 @@ int kshim_smp_join(
     int *result);
 
 uint64_t kshim_smp_time_us(void);
+
+/* Cross-CPU events with WFE semantics: kshim_smp_wait_event() returns after
+ * a kshim_smp_send_event() from another CPU since this CPU's previous wait,
+ * or spuriously, so callers re-check their condition in a loop. CPUs taking
+ * interrupts sleep in WFI and are woken by an SGI; otherwise WFE/SEV. */
+void kshim_smp_wait_event(void);
+void kshim_smp_send_event(void);

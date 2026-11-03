@@ -38,6 +38,15 @@ int pl011_try_read(uint64_t base, char *character)
     return 1;
 }
 
+/*------------------------------------------- local IRQ masking (per CPU) */
+static _Thread_local unsigned long irq_depth;
+unsigned long kshim_irq_save(void) { return irq_depth++; }
+void kshim_irq_restore(unsigned long flags)
+{
+    assert(irq_depth > 0 && flags == irq_depth - 1); /* properly nested */
+    irq_depth = flags;
+}
+
 /*-------------------------------------------- controller MMIO -> model */
 static unsigned model_mmio;
 static int nest;

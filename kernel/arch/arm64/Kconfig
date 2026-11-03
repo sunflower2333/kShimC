@@ -16,10 +16,21 @@ choice
 endchoice
 config KSHIM_IRQ
     bool "Interrupt-driven runtime (GICv3 and generic timer)"
-    default n
+    default y
     help
         Discover the GICv3 and the generic timer from the runtime device
         tree, take device and timer interrupts on the boot CPU, and sleep in
         WFI instead of busy-waiting. Interrupt state is restored before
-        payload handoff. See docs/interrupts.md. Default n until the core
-        implementation lands; drivers keep polling as a fallback.
+        payload handoff. See docs/interrupts.md. Without it, or when the
+        GIC cannot be brought up, the runtime polls as before.
+
+config KSHIM_IRQ_SELFTEST
+    bool "Run the QEMU interrupt self-test and exit"
+    depends on KSHIM_IRQ && KSHIM_QEMU_PLATFORM && KSHIM_SMP
+    default n
+    help
+        Seed a non-trivial inherited GIC state, then check timer interrupts
+        and WFI idle, SGI wake-up of the PSCI workers, the PL011 receive
+        interrupt, and that the GIC, CPU interface and timer state after the
+        handoff teardown equals the state before kShimC touched it. Used by
+        tools/test_qemu_irq.py.
