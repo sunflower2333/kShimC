@@ -12,3 +12,6 @@ int kshim_platform_main(uint64_t fdt, uint64_t arg1, uint64_t arg2, uint64_t arg
 
 /* Quiesce the touch controller before handoff (kernel/core/input.c). */
 int kshim_input_touch_stop(void);
+/* Handoff step 1 (docs/interrupts.md): stop touch and every input interrupt
+ * (keys; touch) so no handler runs while the UI and controllers go down. */
+int kshim_input_quiesce(void);

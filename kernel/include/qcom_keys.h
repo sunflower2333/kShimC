@@ -127,6 +127,19 @@ typedef struct {
   /* Appended for source/layout compatibility with the original value-only
    * aggregate: old positional initializers still map ReadContext correctly. */
   QcomKeyRead32Status Read32Status;
+  /* Interrupt-assisted descriptors (CONFIG_KSHIM_INPUT_IRQ, see
+   * QcomKeysIrqSample). IrqAlive reports whether descriptor Index still has
+   * a live interrupt; once it does not, the descriptor is polled again. */
+  uint16_t IrqDriven;
+  uint16_t IrqResync;
+  uint32_t IrqDebounceMs;
+  uint64_t IrqQuietUntil[QCOM_KEYS_MAX];
+  uint64_t IrqAuditAt[QCOM_KEYS_MAX];
+  uint8_t IrqMisses[QCOM_KEYS_MAX];
+  int (*IrqAlive)(void *Context, size_t Index);
+  void *IrqContext;
+  /* Deferred interrupt setup, run by the first poll once the GIC core is up. */
+  int (*IrqStart)(void *Keys);
 } QcomKeys;
 
 /*
@@ -211,6 +224,25 @@ void QcomKeysSetEmitRelease(QcomKeys *Keys, uint8_t Enable);
  * error is returned only when no source produced a sample.
  */
 int QcomKeysPoll(QcomKeys *Keys, QcomKeyEvent *Event);
+
+/*
+ * Interrupt-assisted sampling (CONFIG_KSHIM_INPUT_IRQ). Called from the
+ * descriptor's interrupt handler: the level is sampled and a change is
+ * queued at once (debounced by hardware for PON, by the quiet window
+ * otherwise); further edges within IrqDebounceMs only mark the descriptor
+ * for one resample by QcomKeysPoll after the window. Otherwise QcomKeysPoll
+ * reads an IRQ-driven descriptor only every QCOM_KEYS_IRQ_AUDIT_MS: a level
+ * change without an interrupt is reported late, and after
+ * QCOM_KEYS_IRQ_MISSES of them the descriptor is polled again (an interrupt
+ * that resolves but is never delivered). Queues are shared with the handler
+ * under kshim_irq_save().
+ */
+#define QCOM_KEYS_IRQ_AUDIT_MS 100U
+#define QCOM_KEYS_IRQ_MISSES   2U
+void QcomKeysIrqSample(QcomKeys *Keys, size_t Index);
+/* Mark descriptor Index interrupt-driven (or polled again) and schedule one
+ * resample so a key held across the switch is still reported. */
+void QcomKeysIrqSet(QcomKeys *Keys, size_t Index, uint8_t Driven);
 
 /* Helpers for integrations that need to inspect a descriptor's current bit. */
 int QcomKeyReadPressed(

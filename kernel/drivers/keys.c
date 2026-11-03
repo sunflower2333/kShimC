@@ -10,6 +10,21 @@
 #include <qcom_keys.h>
 
 #include <stdint.h>
+#if !defined(KSHIM_HOST_TEST)
+#include <config.h>
+#endif
+
+/* Pending queues and debouncer state are shared with key interrupt handlers
+ * when CONFIG_KSHIM_INPUT_IRQ is set; IRQ-masked sections keep them whole. */
+#if CONFIG_KSHIM_INPUT_IRQ
+#include <kshim/irq.h>
+#include <kshim/time.h>
+static inline unsigned long QcomKeysLock(void) { return kshim_irq_save(); }
+static inline void QcomKeysUnlock(unsigned long Flags) { kshim_irq_restore(Flags); }
+#else
+static inline unsigned long QcomKeysLock(void) { return 0; }
+static inline void QcomKeysUnlock(unsigned long Flags) { (void)Flags; }
+#endif
 
 uint32_t QcomKeyReadMmio32(void *Context, uint64_t Address)
 {
@@ -538,24 +553,133 @@ static int QcomKeyDequeue(
   return QCOM_KEYS_EVENT;
 }
 
+#if CONFIG_KSHIM_INPUT_IRQ
+/* IRQs masked. Sample once and queue a changed level. */
+static void QcomKeysIrqCommit(QcomKeys *Keys, size_t Index, uint64_t Now)
+{
+  uint16_t Bit = (uint16_t)(1U << Index);
+  uint8_t Pressed;
+
+  if (QcomKeyReadPressed(Keys, &Keys->Descriptors[Index], &Pressed) !=
+      QCOM_KEYS_OK) {
+    /* Unreadable now: try again from the next poll. */
+    Keys->IrqResync |= Bit;
+    Keys->IrqQuietUntil[Index] = Now;
+    return;
+  }
+  Keys->Candidate[Index] = Pressed;
+  Keys->Samples[Index] = QcomKeyDebounceLimit(Keys, &Keys->Descriptors[Index]);
+  if (Pressed == Keys->Stable[Index])
+    return;
+  Keys->Stable[Index] = Pressed;
+  QcomKeyQueueEdge(Keys, Index, Pressed);
+  Keys->IrqQuietUntil[Index] = Now + Keys->IrqDebounceMs;
+}
+
+void QcomKeysIrqSample(QcomKeys *Keys, size_t Index)
+{
+  if (Keys == NULL || Index >= Keys->Count ||
+      (Keys->IrqDriven & (1U << Index)) == 0U)
+    return;
+  unsigned long Flags = QcomKeysLock();
+  uint64_t Now = get_current_time();
+  if (Now < Keys->IrqQuietUntil[Index]) {
+    /* Bounce inside the quiet window: settle once it has passed. */
+    Keys->IrqResync |= (uint16_t)(1U << Index);
+  } else {
+    Keys->IrqResync &= (uint16_t)~(1U << Index);
+    QcomKeysIrqCommit(Keys, Index, Now);
+  }
+  QcomKeysUnlock(Flags);
+}
+
+void QcomKeysIrqSet(QcomKeys *Keys, size_t Index, uint8_t Driven)
+{
+  uint16_t Bit = (uint16_t)(1U << Index);
+
+  if (Keys == NULL || Index >= Keys->Count)
+    return;
+  unsigned long Flags = QcomKeysLock();
+  if (Driven) {
+    Keys->IrqDriven |= Bit;
+    Keys->IrqResync |= Bit;
+    Keys->IrqQuietUntil[Index] = 0U;
+    Keys->IrqAuditAt[Index] = 0U;
+    Keys->IrqMisses[Index] = 0U;
+  } else {
+    Keys->IrqDriven &= (uint16_t)~Bit;
+    Keys->IrqResync &= (uint16_t)~Bit;
+  }
+  QcomKeysUnlock(Flags);
+}
+
+/* Poll-side handling of an IRQ-driven descriptor; non-zero when it must be
+ * polled instead (its interrupt path is gone). */
+static int QcomKeysIrqPoll(QcomKeys *Keys, size_t Index)
+{
+  uint16_t Bit = (uint16_t)(1U << Index);
+
+  if ((Keys->IrqDriven & Bit) == 0U)
+    return 1;
+  if (Keys->IrqAlive != NULL && !Keys->IrqAlive(Keys->IrqContext, Index)) {
+    QcomKeysIrqSet(Keys, Index, 0U);
+    return 1;
+  }
+  unsigned long Flags = QcomKeysLock();
+  uint64_t Now = get_current_time();
+  if (Now >= Keys->IrqQuietUntil[Index] &&
+      ((Keys->IrqResync & Bit) != 0U || Now >= Keys->IrqAuditAt[Index])) {
+    uint8_t Stable = Keys->Stable[Index];
+    int Audit = (Keys->IrqResync & Bit) == 0U;
+    Keys->IrqResync &= (uint16_t)~Bit;
+    Keys->IrqAuditAt[Index] = Now + QCOM_KEYS_IRQ_AUDIT_MS;
+    QcomKeysIrqCommit(Keys, Index, Now);
+    /* An audit that finds a new level saw an edge no interrupt reported:
+     * the edge is queued now, and a repeat offender is polled from here on. */
+    if (Audit && Keys->Stable[Index] != Stable &&
+        ++Keys->IrqMisses[Index] >= QCOM_KEYS_IRQ_MISSES)
+      Keys->IrqDriven &= (uint16_t)~Bit;
+  }
+  QcomKeysUnlock(Flags);
+  return 0;
+}
+#endif
+
 int QcomKeysPoll(QcomKeys *Keys, QcomKeyEvent *Event)
 {
   size_t Index;
   int Status;
   int FirstError = QCOM_KEYS_NO_EVENT;
   uint8_t Sampled = 0U;
+  unsigned long Flags;
 
   if (Keys == NULL || Event == NULL || Keys->Count == 0U)
     return QCOM_KEYS_EINVAL;
 
+#if CONFIG_KSHIM_INPUT_IRQ
+  if (Keys->IrqStart != NULL && kshim_irq_ready()) {
+    int (*Start)(void *) = Keys->IrqStart;
+    Keys->IrqStart = NULL;
+    (void)Start(Keys);
+  }
+#endif
   /* An event queued by the previous poll is returned before sampling again. */
-  if (QcomKeyDequeue(Keys, Event) == QCOM_KEYS_EVENT)
+  Flags = QcomKeysLock();
+  Status = QcomKeyDequeue(Keys, Event);
+  QcomKeysUnlock(Flags);
+  if (Status == QCOM_KEYS_EVENT)
     return QCOM_KEYS_EVENT;
 
   for (Index = 0; Index < Keys->Count; Index++) {
     uint8_t Pressed;
     uint8_t Limit;
 
+#if CONFIG_KSHIM_INPUT_IRQ
+    if (!QcomKeysIrqPoll(Keys, Index)) {
+      Sampled = 1U;
+      continue;
+    }
+#endif
     Status = QcomKeyReadPressed(Keys, &Keys->Descriptors[Index], &Pressed);
     if (Status != QCOM_KEYS_OK) {
       /* One unavailable transport must not suppress independent GPIO keys. */
@@ -576,11 +700,15 @@ int QcomKeysPoll(QcomKeys *Keys, QcomKeyEvent *Event)
     if (Keys->Samples[Index] >= Limit &&
         Keys->Stable[Index] != Keys->Candidate[Index]) {
       Keys->Stable[Index] = Keys->Candidate[Index];
+      Flags = QcomKeysLock();
       QcomKeyQueueEdge(Keys, Index, Keys->Stable[Index]);
+      QcomKeysUnlock(Flags);
     }
   }
 
+  Flags = QcomKeysLock();
   Status = QcomKeyDequeue(Keys, Event);
+  QcomKeysUnlock(Flags);
   if (Status == QCOM_KEYS_EVENT)
     return Status;
   return Sampled != 0U ? QCOM_KEYS_NO_EVENT : FirstError;
