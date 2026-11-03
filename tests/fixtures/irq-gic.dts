@@ -1,0 +1,75 @@
+/dts-v1/;
+/* Interrupt parsing fixture: a two-region GICv3 with a 1-cell stride, a
+ * PDC-style 3-cell forwarder, a TLMM-style 2-cell controller, and specifiers
+ * over every parent kind (tests/irq_dt_test.c). */
+/ {
+    #address-cells = <2>;
+    #size-cells = <2>;
+    interrupt-parent = <&gic>;
+
+    gic: interrupt-controller@8000000 {
+        compatible = "arm,gic-v3";
+        interrupt-controller;
+        #interrupt-cells = <3>;
+        #redistributor-regions = <2>;
+        redistributor-stride = <0x40000>;
+        reg = <0 0x8000000 0 0x10000>, <0 0x80a0000 0 0x80000>, <0 0x9100000 0 0x40000>;
+        interrupts = <1 9 4>;
+        interrupt-parent = <&gic>;
+    };
+
+    pdc: interrupt-controller@b220000 {
+        compatible = "qcom,test-pdc";
+        interrupt-controller;
+        #interrupt-cells = <3>;
+        interrupt-parent = <&gic>;
+        reg = <0 0xb220000 0 0x400>;
+    };
+
+    timer {
+        compatible = "arm,armv8-timer";
+        interrupt-parent = <&pdc>;
+        interrupts = <1 10 0xf08>, <1 11 0xf08>, <1 14 0xf08>;
+        interrupt-names = "hyp-phys", "virt", "phys";
+    };
+
+    soc {
+        compatible = "simple-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges = <0 0 0 0x20000000>;
+
+        tlmm: pinctrl@f000000 {
+            compatible = "qcom,test-tlmm";
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            reg = <0xf000000 0x1000>;
+            interrupts = <0 208 4>;
+        };
+        uart@1000 {
+            reg = <0x1000 0x1000>;
+            interrupts = <0 1 4>, <1 7 1>;
+        };
+        dev@2000 {
+            reg = <0x2000 0x1000>;
+            interrupts-extended = <&gic 0 5 1>, <&tlmm 12 2>, <&gic 1 2 4>;
+        };
+        through-pdc@3000 {
+            reg = <0x3000 0x1000>;
+            interrupt-parent = <&pdc>;
+            interrupts = <0 40 4>;
+        };
+        keys {
+            interrupt-parent = <&tlmm>;
+            interrupts = <5 2>;
+        };
+        bad-cells { interrupts = <0 1>; };
+        espi { interrupts = <2 5 4>; };
+        bad-type { interrupts = <7 5 4>; };
+        bad-spi { interrupts = <0 988 4>; };
+        bad-ppi { interrupts = <1 16 4>; };
+        bad-ext { interrupts-extended = <&gic 0 5>; };
+        bad-phandle { interrupts-extended = <0x7777 0 5 4>; };
+        no-irq { };
+    };
+};
