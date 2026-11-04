@@ -65,6 +65,8 @@ static int drv_probe(struct kshim_touch_dev *dev)
     ++S.probes;
     fake_log("probe:%s", dev->driver->name);
     assert(dev->tracker.initialized && dev->powered);
+    /* The DT size is the default range probe starts from. */
+    assert(dev->max_x == dev->props.size_x && dev->max_y == dev->props.size_y);
     if (S.probe_status) return S.probe_status;
     dev->max_x = S.max_x;
     dev->max_y = S.max_y;

@@ -42,7 +42,8 @@
  *     reset released, post_reset_delay_us. With driver->power_on the
  *     pinctrl state is applied first, then power_on runs, then the IRQ GPIO
  *     is made an input. The tracker is set up (provisional range), then
- *     driver->probe, then the tracker gets the final range: dev->props size
+ *     driver->probe, which finds dev->max_x/max_y preset to the DT size (0
+ *     when absent), then the tracker gets the final range: dev->props size
  *     when the DT gives one, else dev->max_x/max_y from probe. A failed
  *     probe runs driver->quiesce (bounded) and releases everything again.
  *  7. Events: IRQ-driven when CONFIG_KSHIM_INPUT_IRQ and the TLMM interrupt

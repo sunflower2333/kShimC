@@ -544,6 +544,9 @@ static int try_node(const struct kshim_touch_driver *drv, const void *fdt, int n
         return deferred;
     }
     reconcile_irq(dev);
+    /* probe sees the DT size as the default range (it may replace it). */
+    dev->max_x = dev->props.size_x;
+    dev->max_y = dev->props.size_y;
     status = bind_bus(dev);
     if (status) {
         if (status != ERROR_NOT_FOUND)

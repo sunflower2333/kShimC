@@ -42,8 +42,9 @@ emit, ctx)`:
    `power_on_delay_us`, reset released, `post_reset_delay_us`. A
    `driver->power_on` override gets pinctrl first and the IRQ GPIO is made an
    input after it.
-7. The tracker gets a provisional range, `driver->probe` runs, then the
-   tracker gets the final range (DT size, else the probe's `max_x/max_y`). A
+7. The tracker gets a provisional range, then `driver->probe` runs with
+   `max_x/max_y` preset to the DT size (0 when absent). The tracker then
+   gets the final range: the DT size, else the probe's `max_x/max_y`. A
    failed probe runs `driver->quiesce` and releases everything.
 8. The TLMM interrupt is requested when `CONFIG_KSHIM_INPUT_IRQ` and the GIC
    are up (otherwise at a later poll).
