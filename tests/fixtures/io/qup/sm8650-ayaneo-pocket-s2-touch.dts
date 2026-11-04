@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: MIT
+/*
+ * AYANEO Pocket S2 fixture: mainline sm8650-ayaneo-pocket-s2.dts plus the
+ * touchscreen node of the RFC patch "sm8650-ayaneo-pocket-s2: add display
+ * nodes" (lkml 2604.3/08167), which is not in mainline. Only the I2C touch
+ * facts of that patch are reproduced here (bus, address, compatible, IRQ,
+ * reset, supplies, size, pin states); see README.md for how the DTB is built.
+ */
+#include "sm8650-ayaneo-pocket-s2.dts"
+
+&i2c4 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	touchscreen@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <162 IRQ_TYPE_EDGE_FALLING>;
+
+		/* As written in the RFC; the GT911 polarity is still to be verified. */
+		reset-gpios = <&tlmm 161 GPIO_ACTIVE_HIGH>;
+
+		VDDIO-supply = <&vreg_l14b_3p2>;
+		AVDD28-supply = <&vreg_l14b_3p2>;
+
+		touchscreen-size-x = <1440>;
+		touchscreen-size-y = <2560>;
+
+		pinctrl-0 = <&ts_reset_default>, <&ts_irq_default>;
+		pinctrl-names = "default";
+	};
+};
+
+&tlmm {
+	ts_reset_default: ts-reset-default-state {
+		pins = "gpio161";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-down;
+	};
+
+	ts_irq_default: ts-irq-default-state {
+		pins = "gpio162";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+};

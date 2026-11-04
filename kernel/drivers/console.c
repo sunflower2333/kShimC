@@ -1,10 +1,15 @@
 /* SPDX-License-Identifier: MIT */
+/*
+ * The DT console: one UART instance (kshim/uart.h, GENI or PL011) opened
+ * from its MMIO window before the MMU and QUP discovery, plus the optional
+ * USB CDC-ACM mirror. The QUP core reserves the console's serial engine
+ * (KSHIM_QUP_OWNER_CONSOLE); kshim_console_quiesce() restores it last.
+ */
 #include <kshim_console.h>
 #include <config.h>
 #include <dt.h>
-#include <pl011_uart.h>
-#include <Library/cr_debug_uart_poll.h>
 #include <kshim/irq.h>
+#include <kshim/uart.h>
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
 #include <kshim_mmu.h>
 #include <qcom_dt.h>
@@ -12,10 +17,11 @@
 #include <string.h>
 #endif
 static struct kshim_console_resource console;
-static struct CrDebugUartPoll uart;
+static struct kshim_uart uart;
 static bool initialized;
 #if CONFIG_KSHIM_CONSOLE_RX_IRQ
 static const void *ConsoleFdt;
+static bool RxAttempted;
 #endif
 
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
@@ -137,16 +143,8 @@ int kshim_console_init(const void *fdt)
 #if CONFIG_KSHIM_CONSOLE_RX_IRQ
         ConsoleFdt = fdt;
 #endif
-        if (console.geni) {
-            const struct CrIo *io = CrIoDefault();
-            if (io) {
-                uart = (struct CrDebugUartPoll){.io = *io, .base = console.base, .size = console.size};
-                status = CrDebugUartPollInit(&uart) ? -1 : 0;
-            }
-        } else {
-            pl011_init(console.base);
-            status = 0;
-        }
+        status = kshim_uart_open_mmio(&uart, console.geni ? KSHIM_UART_GENI : KSHIM_UART_PL011,
+                                      console.base, console.size) ? -1 : 0;
     }
     initialized = status == 0;
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
@@ -156,32 +154,30 @@ int kshim_console_init(const void *fdt)
     return status;
 }
 
-/* A GENI transfer is a multi-register sequence; an interrupt handler that
- * prints must not start another one in the middle (printf from handlers). */
+/* Polled TX under kshim_irq_save (kshim_uart_write): a GENI transfer is a
+ * multi-register sequence that a printing handler must not interleave. */
 static void uart_write(const char *buffer, uint32_t length)
 {
     if (!initialized) return;
-    unsigned long flags = kshim_irq_save();
-    if (console.geni) (void)CrDebugUartPollWrite(&uart, buffer, length);
-    else pl011_write(console.base, (char *)buffer, (int)length);
-    kshim_irq_restore(flags);
+    (void)kshim_uart_write(&uart, buffer, length);
 }
 
 static int uart_try_read(char *character)
 {
     if (!initialized) return 0;
 #if CONFIG_KSHIM_CONSOLE_RX_IRQ
-    /* RX interrupt (kernel/drivers/geni_rx_irq.c) when it is live: the
-     * handler queues bytes without the console lock; this drains them. */
-    int received;
-    if (console.geni && !kshim_geni_rx_irq_read(&uart, ConsoleFdt, console.base, character, &received))
-        return received;
+    /* The console comes up before the GIC: start the RX interrupt
+     * (kernel/drivers/geni_rx_irq.c) on the first read after, once. Its
+     * handler queues bytes without the console lock; reads dequeue. */
+    if (console.geni && !RxAttempted && kshim_irq_ready()) {
+        RxAttempted = true;
+        (void)kshim_uart_rx_irq_start(&uart, ConsoleFdt, -1);
+    }
 #endif
-    unsigned long flags = kshim_irq_save();
-    int status = console.geni ? CrDebugUartPollRead(&uart, (uint8_t *)character) > 0 :
-                                pl011_try_read(console.base, character);
-    kshim_irq_restore(flags);
-    return status;
+    uint8_t byte;
+    if (kshim_uart_read_byte(&uart, &byte) != 1) return 0;
+    *character = (char)byte;
+    return 1;
 }
 
 void kshim_console_write(const char *buffer, uint32_t length)
@@ -225,6 +221,13 @@ int kshim_console_try_read(char *character)
 
 uint64_t kshim_console_base(void) { return initialized ? console.base : 0; }
 size_t kshim_console_size(void) { return initialized ? console.size : 0; }
+
+/* docs/interrupts.md handoff step 1 (kshim_platform_quiesce). */
+int kshim_console_rx_irq_stop(void)
+{
+    return kshim_uart_rx_irq_stop(&uart) ? -1 : 0;
+}
+
 int kshim_console_quiesce(void)
 {
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
@@ -233,10 +236,10 @@ int kshim_console_quiesce(void)
     kshim_usb_acm_stop();
     if (locked) console_unlock();
 #endif
-#if CONFIG_KSHIM_CONSOLE_RX_IRQ
     if (kshim_console_rx_irq_stop()) return -1;
-#endif
-    int status = console.geni ? CrDebugUartPollQuiesce(&uart) : 0;
+    /* Both sequencers idle, then the configuration the boot chain left
+     * (CrDebugUartPollQuiesce); a timeout keeps ownership. */
+    int status = kshim_uart_quiesce(&uart);
     if (!status) initialized = false;
     return status;
 }

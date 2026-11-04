@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * GENI UART console RX interrupt (CONFIG_KSHIM_CONSOLE_RX_IRQ).
+ * GENI UART RX interrupt (kshim/uart.h kshim_geni_rx_irq_*), used by the
+ * console with CONFIG_KSHIM_CONSOLE_RX_IRQ and by other GENI UART instances.
  *
- * Coexistence with CrDK DebugUartLib's polled console:
+ * Coexistence with CrDK DebugUartLib's polled engine:
  *  - only GENI_SE_IRQ_EN.GENI_S and S_IRQ_EN.{RX_FIFO_WATERMARK,
  *    RX_FIFO_LAST} are set; the M sequencer (TX) keeps its masked, polled
  *    path, so printf is unaffected;
@@ -11,61 +12,67 @@
  *    unpacking, error recovery and latch clearing;
  *  - CrDebugUartPollQuiesce restores its own pre-kShimC snapshot of all three
  *    enable registers; kShimC restores its bits and frees the SPI before it.
- * The ring is read by kshim_console_try_read() with IRQs masked.
+ * The queue (struct kshim_uart rx_queue) is read with IRQs masked; on
+ * overflow the oldest bytes are dropped. The handler never takes the console
+ * ticket lock.
  */
-#include <kshim_console.h>
+#include <kshim/uart.h>
 #include <qcom_irq.h>
 #include <dt.h>
 #include <Library/cr_debug_uart_poll.h>
 #include <Library/cr_geni_regs.h>
 
-#define RX_RING 256U
 #define RX_S_BITS (GENI_SE_S_IRQ_RX_FIFO_WATERMARK | GENI_SE_S_IRQ_RX_FIFO_LAST)
 
-static struct {
-    struct CrDebugUartPoll *uart;
-    char data[RX_RING];
-    unsigned head, count, dropped;
-    bool attempted, active;
-    uint32_t intid, saved_se, saved_s;
-} Rx;
+static uint32_t rd(struct kshim_uart *u, unsigned offset)
+{ return u->geni.io.read32(u->geni.io.context, u->geni.base + offset); }
+static void wr(struct kshim_uart *u, unsigned offset, uint32_t value)
+{ u->geni.io.write32(u->geni.io.context, u->geni.base + offset, value); }
 
-static uint32_t rd(unsigned offset)
-{ return Rx.uart->io.read32(Rx.uart->io.context, Rx.uart->base + offset); }
-static void wr(unsigned offset, uint32_t value)
-{ Rx.uart->io.write32(Rx.uart->io.context, Rx.uart->base + offset, value); }
-
-/* IRQs masked. Bounded drain into the ring; the newest bytes win. */
-static void drain(void)
+static void push(struct kshim_uart *u, uint8_t byte)
 {
-    for (unsigned budget = 4U * RX_RING; budget; --budget) {
+    if (u->rx_tail - u->rx_head == KSHIM_UART_RX_QUEUE) { ++u->rx_head; ++u->rx_dropped; }
+    u->rx_queue[u->rx_tail % KSHIM_UART_RX_QUEUE] = byte;
+    ++u->rx_tail;
+}
+
+/* IRQs masked. Bounded drain into the queue; the newest bytes win. */
+static void drain(struct kshim_uart *u)
+{
+    for (unsigned budget = 4U * KSHIM_UART_RX_QUEUE; budget; --budget) {
         uint8_t byte;
-        int status = CrDebugUartPollRead(Rx.uart, &byte);
+        int status = CrDebugUartPollRead(&u->geni, &byte);
         if (status > 0) {
-            if (Rx.count == RX_RING) { Rx.head = (Rx.head + 1U) % RX_RING; --Rx.count; ++Rx.dropped; }
-            Rx.data[(Rx.head + Rx.count++) % RX_RING] = (char)byte;
+            push(u, byte);
             continue;
         }
-        if (Rx.uart->poisoned) break;
+        if (u->geni.poisoned) break;
         if (status < 0) continue; /* DebugUartLib recovered RX; read again. */
         /* Empty: drop the latch, then recheck so a word that landed in
          * between is read now rather than left without an interrupt. */
-        wr(GENI_SE_S_IRQ_CLEAR, RX_S_BITS);
-        if (!(rd(GENI_SE_RX_FIFO_STATUS) & GENI_SE_RX_FIFO_WC_MSK)) return;
+        wr(u, GENI_SE_S_IRQ_CLEAR, RX_S_BITS);
+        if (!(rd(u, GENI_SE_RX_FIFO_STATUS) & GENI_SE_RX_FIFO_WC_MSK)) return;
     }
-    if (Rx.uart->poisoned) {
+    if (u->geni.poisoned) {
         /* Nothing can clear the latch any more: mask kShimC's sources. */
-        wr(GENI_SE_S_IRQ_EN, (rd(GENI_SE_S_IRQ_EN) & ~RX_S_BITS) | (Rx.saved_s & RX_S_BITS));
-        kshim_irq_disable(Rx.intid);
+        wr(u, GENI_SE_S_IRQ_EN, (rd(u, GENI_SE_S_IRQ_EN) & ~RX_S_BITS) | (u->rx_saved_s_irq_en & RX_S_BITS));
+        kshim_irq_disable(u->intid);
     }
 }
 
-static void isr(uint32_t intid, void *context) { (void)intid; (void)context; drain(); }
-
-static int console_node(const void *f, uintptr_t base)
+static void isr(uint32_t intid, void *context)
 {
-    static const char *const compatibles[] = {"qcom,msm-geni-console", "qcom,geni-debug-uart"};
-    for (unsigned i = 0; i < 2; ++i)
+    (void)intid;
+    drain(context);
+}
+
+/* The available GENI UART node whose window starts at the instance base. */
+static int uart_node(const void *f, uintptr_t base)
+{
+    static const char *const compatibles[] = {
+        "qcom,msm-geni-console", "qcom,geni-debug-uart", "qcom,geni-uart", "qcom,msm-geni-serial-hs",
+    };
+    for (unsigned i = 0; i < sizeof(compatibles) / sizeof(compatibles[0]); ++i)
         for (int n = fdt_node_offset_by_compatible(f, -1, compatibles[i]); n >= 0;
              n = fdt_node_offset_by_compatible(f, n, compatibles[i])) {
             struct dt_range reg;
@@ -74,54 +81,59 @@ static int console_node(const void *f, uintptr_t base)
     return -1;
 }
 
-static void start(struct CrDebugUartPoll *uart, const void *fdt, uintptr_t base)
+int kshim_geni_rx_irq_start(struct kshim_uart *u, const void *fdt, int node)
 {
-    Rx.attempted = true;
-    int node = fdt ? console_node(fdt, base) : -1;
-    if (node < 0 || !uart->initialized || uart->base != base) return;
-    Rx.uart = uart;
-    Rx.saved_se = rd(GENI_SE_IRQ_EN);
-    Rx.saved_s = rd(GENI_SE_S_IRQ_EN);
+    if (!u || !fdt) return ERROR_INVALID_PARAMETER;
+    if (u->kind != KSHIM_UART_GENI || !u->open || !u->geni.initialized) return ERROR_NOT_SUPPORTED;
+    if (u->rx_irq) return 0;
+    if (!kshim_irq_ready()) return ERROR_NOT_READY;
+    if (node < 0) node = uart_node(fdt, u->base);
+    if (node < 0) return ERROR_NOT_SUPPORTED;
+    u->rx_saved_irq_en = rd(u, GENI_SE_IRQ_EN);
+    u->rx_saved_s_irq_en = rd(u, GENI_SE_S_IRQ_EN);
     /* Android: <0 357 0> under the PDC root, a pass-through; QUP serial
      * engines are level high. */
-    if (kshim_qcom_irq_request(fdt, node, 0, KSHIM_IRQ_TYPE_LEVEL_HIGH, isr, NULL, &Rx.intid))
-        return;
+    uint32_t intid;
+    int status = kshim_qcom_irq_request(fdt, node, 0, KSHIM_IRQ_TYPE_LEVEL_HIGH, isr, u, &intid);
+    if (status) return status == ERROR_NOT_FOUND ? ERROR_NOT_SUPPORTED : status;
+    u->intid = intid;
     unsigned long flags = kshim_irq_save();
-    wr(GENI_SE_S_IRQ_EN, Rx.saved_s | RX_S_BITS);
-    wr(GENI_SE_IRQ_EN, Rx.saved_se | GENI_SE_IRQ_GENI_S_EN);
-    Rx.active = true;
-    drain(); /* bytes received before the interrupt existed */
-    kshim_irq_restore(flags);
-}
-
-int kshim_geni_rx_irq_read(struct CrDebugUartPoll *uart, const void *fdt, uintptr_t base,
-                           char *character, int *received)
-{
-    /* The console comes up before the GIC: start on the first read after. */
-    if (!Rx.attempted && kshim_irq_ready()) start(uart, fdt, base);
-    if (!Rx.active || !character || !received) return 1;
-    unsigned long flags = kshim_irq_save();
-    if (!Rx.count) drain(); /* never strand a byte behind a lost latch */
-    *received = Rx.count != 0;
-    if (*received) {
-        *character = Rx.data[Rx.head];
-        Rx.head = (Rx.head + 1U) % RX_RING;
-        --Rx.count;
-    }
+    wr(u, GENI_SE_S_IRQ_EN, u->rx_saved_s_irq_en | RX_S_BITS);
+    wr(u, GENI_SE_IRQ_EN, u->rx_saved_irq_en | GENI_SE_IRQ_GENI_S_EN);
+    u->rx_irq = true;
+    drain(u); /* bytes received before the interrupt existed */
     kshim_irq_restore(flags);
     return 0;
 }
 
-int kshim_console_rx_irq_stop(void)
+int kshim_geni_rx_irq_read(struct kshim_uart *u, uint8_t *byte)
 {
-    if (!Rx.active) return 0;
+    if (!u || !byte) return ERROR_INVALID_PARAMETER;
+    if (!u->rx_irq) return ERROR_NOT_READY;
     unsigned long flags = kshim_irq_save();
-    wr(GENI_SE_IRQ_EN, (rd(GENI_SE_IRQ_EN) & ~GENI_SE_IRQ_GENI_S_EN) |
-                       (Rx.saved_se & GENI_SE_IRQ_GENI_S_EN));
-    wr(GENI_SE_S_IRQ_EN, (rd(GENI_SE_S_IRQ_EN) & ~RX_S_BITS) | (Rx.saved_s & RX_S_BITS));
+    if (u->rx_head == u->rx_tail) drain(u); /* never strand a byte behind a lost latch */
+    int got = u->rx_head != u->rx_tail;
+    if (got) {
+        *byte = u->rx_queue[u->rx_head % KSHIM_UART_RX_QUEUE];
+        ++u->rx_head;
+    }
+    kshim_irq_restore(flags);
+    return got;
+}
+
+int kshim_geni_rx_irq_stop(struct kshim_uart *u)
+{
+    if (!u) return ERROR_INVALID_PARAMETER;
+    if (!u->rx_irq) return 0;
+    unsigned long flags = kshim_irq_save();
+    wr(u, GENI_SE_IRQ_EN, (rd(u, GENI_SE_IRQ_EN) & ~GENI_SE_IRQ_GENI_S_EN) |
+                          (u->rx_saved_irq_en & GENI_SE_IRQ_GENI_S_EN));
+    wr(u, GENI_SE_S_IRQ_EN, (rd(u, GENI_SE_S_IRQ_EN) & ~RX_S_BITS) | (u->rx_saved_s_irq_en & RX_S_BITS));
     kshim_irq_restore(flags);
     /* Source masked first, so the level line is low when the GIC lets go. */
-    if (kshim_qcom_irq_free(Rx.intid)) return -1;
-    Rx.active = false;
+    int status = kshim_qcom_irq_free(u->intid);
+    if (status) return status;
+    u->rx_irq = false;
+    u->intid = 0;
     return 0;
 }

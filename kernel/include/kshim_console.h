@@ -16,12 +16,9 @@ int kshim_console_quiesce(void);
 int kshim_console_init(const void *fdt);
 uint64_t kshim_console_base(void);
 
-/* GENI RX interrupt (CONFIG_KSHIM_CONSOLE_RX_IRQ, kernel/drivers/geni_rx_irq.c).
- * read: 0 when the interrupt path served the request (*received set),
- * non-zero to use the polled read. stop: handoff step 1. */
-struct CrDebugUartPoll;
-int kshim_geni_rx_irq_read(struct CrDebugUartPoll *uart, const void *fdt, uintptr_t base,
-                           char *character, int *received);
+/* Console RX interrupt stop (CONFIG_KSHIM_CONSOLE_RX_IRQ starts it on the
+ * first read after the GIC is up, kshim_uart_rx_irq_start): handoff step 1.
+ * The RX interrupt engine itself is kshim/uart.h kshim_geni_rx_irq_*. */
 int kshim_console_rx_irq_stop(void);
 
 struct kshim_resources;

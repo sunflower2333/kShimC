@@ -81,4 +81,20 @@ int kshim_spi_sync(const struct kshim_spi_device *device, const struct kshim_spi
 int kshim_spi_write_then_read(const struct kshim_spi_device *device, const void *tx, size_t tx_length,
                               void *rx, size_t rx_length, uint32_t timeout_us);
 
+/* Handoff: quiesce every registered controller, newest first. Later
+ * transfers fail with KSHIM_IO_ERR_QUIESCED. Idempotent. */
 int kshim_spi_quiesce_all(void);
+
+/* ---- Additions by the qup owner (additive, docs/qup.md) ----------------- */
+
+/* Limits of the GENI controller (CrDK GeniSeLib FIFO core): chip select
+ * 0..3, modes 0..3 (CS_HIGH/LSB_FIRST and words other than 8 bits are
+ * ERROR_NOT_SUPPORTED), at most 32 segments per message, len <= 16 MiB - 1,
+ * timeout <= 1 s. The SE clock is CXO 19.2 MHz undivided, so the bus rate
+ * is 19.2 MHz / ceil(19.2 MHz / max_speed_hz) (1 MHz asks give 960 kHz). A
+ * segment with neither tx nor rx clocks out zeros in TX-only commands. */
+#define KSHIM_SPI_GENI_MAX_SEGMENTS 32U
+
+/* GENI controller probe behind kshim_spi_controller_get()
+ * (CONFIG_KSHIM_SPI_GENI, kernel/drivers/qup/geni_spi.c). */
+int kshim_geni_spi_probe(const void *fdt, int node, struct kshim_spi_controller **controller);
