@@ -273,6 +273,17 @@ static void check_control_and_bulk(void)
         assert(kshim_usb_bulk(ss, bo, out, 32, 100, &actual) == 0);
         assert(kshim_usb_bulk(ss, bi, in, 64, 100, &actual) == 0 && actual == 32 && in[0] == (uint8_t)i);
     }
+    /* 100 KiB in one URB: the bounce buffer crosses 64 KiB boundaries, so
+     * the TD is several chained Normal TRBs; a short IN packet in the first
+     * TRB of such a TD ends it with the bytes received. */
+    static uint8_t big[100 * 1024];
+    memset(big, 0x5a, sizeof(big));
+    assert(kshim_usb_bulk(ss, bo, big, sizeof(big), 100, &actual) == 0 && actual == sizeof(big));
+    assert(Xm.last_td_trbs >= 2);
+    assert(kshim_usb_bulk(ss, bo, out, 100, 100, &actual) == 0);
+    memset(big, 0, sizeof(big));
+    assert(kshim_usb_bulk(ss, bi, big, sizeof(big), 100, &actual) == 0 && actual == 100);
+    assert(!memcmp(big, out, 100) && Xm.last_td_trbs == 1);
     /* The interrupt endpoint refuses a bulk helper. */
     assert(kshim_usb_bulk(hs, &hs->interfaces[0].endpoints[0], in, 8, 10, NULL) == ERROR_INVALID_PARAMETER);
 }

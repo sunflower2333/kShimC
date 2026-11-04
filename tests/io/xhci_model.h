@@ -77,6 +77,7 @@ struct xm {
     unsigned depth;
     /* Statistics. */
     unsigned irqs_raised, hcrst_count, run_count, stop_count, commands[64], doorbells;
+    unsigned td_trbs, last_td_trbs;   /* Normal TRBs of the last chained TD */
     unsigned rs_clear_before_hcrst; /* a takeover cleared R/S before HCRST */
     uint64_t scratch_seen;
     unsigned last_write_seq, rs_clear_seq, hcrst_seq, seq;

@@ -266,6 +266,10 @@ static void control_out_done(struct xm_dev *d, const struct xm_ep *ep)
 /* Advance past the rest of a chained TD after a short packet. */
 static void skip_td(struct xm_ep *ep, uint32_t control)
 {
+    if (control & T_CH) {
+        Xm.last_td_trbs = Xm.td_trbs;
+        Xm.td_trbs = 0;
+    }
     while (control & T_CH) {
         uint32_t *t = trb(ep->deq);
         if (T_TYPE(t[3]) == 6) {
@@ -340,6 +344,11 @@ static void run_ep(unsigned s, unsigned dci)
             return;
         }
         assert(type == 1);
+        ++Xm.td_trbs;
+        if (!(c & T_CH)) {
+            Xm.last_td_trbs = Xm.td_trbs;
+            Xm.td_trbs = 0;
+        }
         uint32_t n = len;
         if (ep->type == 7) { /* interrupt IN */
             if (!d->report_ready) return; /* NAK: the TD stays pending */
