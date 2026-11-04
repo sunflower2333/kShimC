@@ -28,3 +28,13 @@ config KSHIM_PCI_QCOM
         owned and restored); otherwise the port is cold-initialised with
         CrDK PcieLib and per-SoC target data, and shut down again before
         handoff.
+
+config KSHIM_PCI_SELFTEST
+    bool "PCI enumeration self-test (QEMU)"
+    depends on KSHIM_PCI
+    default n
+    help
+        Probe-only driver for xHCI functions used by tools/test_qemu_pci.py:
+        enables memory decoding, reads the xHCI capability registers through
+        BAR0, requests and frees the interrupt, and logs PCI_SELFTEST lines.
+        The function is left unbound and every change is undone at handoff.
