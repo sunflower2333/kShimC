@@ -30,10 +30,11 @@
  *    block whose LE32 at +44 is the touch data address; LE16 checksum last.
  *  - Checksums: the LE16 in the last two bytes equals the 16-bit sum of
  *    every byte before it.
- *  - Touch data (at the IC-info address): 8-byte header (status, reserved,
- *    count/request code, reserved[3], LE16 checksum), then 8-byte points
- *    (bits [7:4] track ID, [3:0] type with 1 = stylus hover and
- *    3 = stylus; X, Y, W as LE16), then an LE16 checksum over the points.
+ *  - Touch data (at the address the IC information gives): 8-byte header
+ *    (status, reserved, count/request code, reserved[3], LE16 checksum),
+ *    then 8-byte points (bits [7:4] track ID, [3:0] type with 1 = stylus
+ *    hover and 3 = stylus; X, Y, W as LE16), then an LE16 checksum over
+ *    the points.
  *    Status bit 7 = touch event (count in byte 2 [3:0], at most 10),
  *    bit 6 = request (code in byte 2; 3 = the firmware asks for a reset).
  *    Writing one 0 byte at the touch data address releases the event and
@@ -73,7 +74,8 @@
 #define BRL_MAX_POINTS         10U
 /* Header, two points and their checksum: one read covers most frames. */
 #define BRL_PRE_READ           (BRL_HEAD_BYTES + 2U * BRL_POINT_BYTES + BRL_CHECKSUM_BYTES)
-#define BRL_EVENT_MAX          (BRL_HEAD_BYTES + BRL_MAX_POINTS * BRL_POINT_BYTES + BRL_CHECKSUM_BYTES)
+#define BRL_EVENT_MAX \
+    (BRL_HEAD_BYTES + BRL_MAX_POINTS * BRL_POINT_BYTES + BRL_CHECKSUM_BYTES)
 
 #define BRL_STATUS_TOUCH       0x80U
 #define BRL_STATUS_REQUEST     0x40U
