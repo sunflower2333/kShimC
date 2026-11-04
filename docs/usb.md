@@ -16,7 +16,6 @@ run on hardware; QEMU and host register models are the evidence so far.
 | `kernel/drivers/usb/host/xhci_ops.c` | `struct kshim_usb_hcd_ops`: ports, slots/contexts, TDs, transfer events, cancel |
 | `kernel/drivers/usb/host/xhci_pci.c` | PCI driver (class 0x0c0330, 1912:0014/0015, 1033:0194), Renesas preparation |
 | `kernel/drivers/usb/host/renesas_fw.c` | uPD720201/uPD720202 firmware download over config space |
-| `kernel/drivers/usb/host/test_pci.c` | Test only: weak bus-0 ECAM enumerator for QEMU (`KSHIM_USB_XHCI_TEST_PCI`) |
 | `kernel/drivers/usb/core/selftest.c` | Test only: HID/BOT self-test class driver (`KSHIM_USB_SELFTEST`) |
 
 ## Execution model
@@ -152,7 +151,6 @@ invalidates; with the MMU off both reduce to barriers in effect.
 | `KSHIM_USB_XHCI_RENESAS` | Renesas firmware download |
 | `KSHIM_USB_XHCI_RENESAS_FW` | Firmware file name |
 | `KSHIM_USB_XHCI_RENESAS_FW_EMBED` | Optional build-time image path |
-| `KSHIM_USB_XHCI_TEST_PCI` | Test only: weak QEMU bus-0 enumerator |
 | `KSHIM_USB_SELFTEST`, `_MS` | Test only: HID/BOT self-test class driver |
 
 ## Additions to the architect's headers (additive)
@@ -173,7 +171,9 @@ invalidates; with the MMU off both reduce to barriers in effect.
   takeover (with port power control), dead and stuck.
 - QEMU: `tools/test_qemu_xhci.py` (qemu-xhci and nec-usb-xhci; usb-kbd
   and usb-storage; interrupt-driven and polled; EL1 and EL2) compares the
-  xHCI function a payload finds after handoff with a direct boot.
+  xHCI function a payload finds after handoff with a direct boot. It runs
+  on the real PCI core (`KSHIM_PCI_ECAM`, QEMU gpex); the test-only bus-0
+  enumerator it used before the PCI merge was removed.
 
 ## Hardware risks (unverified)
 

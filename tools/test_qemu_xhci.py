@@ -15,9 +15,9 @@ registers. The dump must equal the one taken when the payload boots directly
 (kShimC never ran): the controller is halted and reset and every config
 register kShimC changed is restored.
 
-Two runtimes are built: interrupt-driven (INTx through the test-only PCI
-enumerator) and polled (CONFIG_KSHIM_USB_XHCI_FORCE_POLL). The PCI layer is
-CONFIG_KSHIM_USB_XHCI_TEST_PCI until the PCI core is merged.
+Two runtimes are built: interrupt-driven (INTx through the PCI core and the
+gpex interrupt-map) and polled (CONFIG_KSHIM_USB_XHCI_FORCE_POLL). The PCI
+layer is the real PCI core with the generic ECAM host (CONFIG_KSHIM_PCI_ECAM).
 """
 import argparse
 import hashlib
@@ -111,7 +111,7 @@ void payload_main(void)
 
 CONTROLLERS = {
     # qemu-xhci has no msi/msix properties in QEMU 8.2; kShimC never enables
-    # MSI on it (the test enumerator offers INTx only).
+    # MSI on it (the ECAM host offers INTx only).
     "qemu-xhci": {"device": "qemu-xhci,id=xhci", "id": "1b36:000d"},
     "nec-usb-xhci": {"device": "nec-usb-xhci,id=xhci,msi=off,msix=off", "id": "1033:0194"},
 }
@@ -217,8 +217,11 @@ def check_log(output, controller, mode):
     """Evidence from the kShimC part of the log and the problems found."""
     evidence, problems = {}, []
     ident = CONTROLLERS[controller]["id"]
-    if not re.search(rf"pci-test: 00:\S+ {ident} class 0c0330 BAR0 0x[0-9a-f]+\+0x[0-9a-f]+ INTA INTID (\d+)", output):
+    if not re.search(rf"PCI: 0000:00:[0-9a-f]{{2}}\.0 \[{ident}\] class 0x0c0330 BAR0 mem(64)? "
+                     r"0x[0-9a-f]+\+0x[0-9a-f]+[^\n]* INTA->(\d+)", output):
         problems.append("xHCI function not enumerated with BAR0 and INTx")
+    if not re.search(rf"PCI: 0000:00:[0-9a-f]{{2}}\.0 bound to ", output):
+        problems.append("xHCI function not bound")
     started = re.search(r"xhci: (\S+): v(\d+)\.(\d+), (\d+) slots, (\d+) ports", output)
     if started:
         evidence["controller"] = {"version": f"{started.group(2)}.{started.group(3)}",
@@ -264,8 +267,8 @@ def check_log(output, controller, mode):
             problems.append("interrupt taken in polled mode")
     else:
         problems.append("no xHCI stop at handoff")
-    if "pci-test: quiesced, config journal replayed" not in output:
-        problems.append("PCI journal not replayed")
+    # The PCI core's journal replay is checked by the payload's config-space
+    # dump, which must equal a direct boot.
     if "Device shutdown incomplete" in output:
         problems.append("handoff refused")
     return evidence, problems
