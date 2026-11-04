@@ -1,12 +1,27 @@
 # SPDX-License-Identifier: MIT
-# Owner: touch-goodix (docs/io-stack.md).
+# Owner: touch-goodix (docs/io-stack.md, docs/touch-goodix.md).
 
 config KSHIM_TOUCH_GT911
     bool "Goodix GT911 (I2C)"
     depends on KSHIM_TOUCH && KSHIM_I2C && KSHIM_REGULATOR
     default n
+    help
+        Goodix GT911 on I2C ("goodix,gt911", reg 0x5d or 0x14), for
+        example the AYANEO Pocket S2 touchscreen on &i2c4. Selects the
+        DT address with the INT level at the reset release, reads the
+        product ID and configuration (0x8140, 0x8047) and reports the
+        points at 0x814E/0x814F. A controller the previous bootloader left
+        running is inherited without a reset. Interrupt-driven through
+        the TLMM with a polling fallback.
 
 config KSHIM_TOUCH_GT9916
     bool "Goodix GT9916 Berlin (SPI)"
     depends on KSHIM_TOUCH && KSHIM_SPI && KSHIM_REGULATOR
     default n
+    help
+        Goodix GT9916 ("goodix,gt9916", Berlin-D protocol) on SPI, for
+        example the Qualcomm QRD8650 touchscreen on &spi4. Boot-option
+        handshake, firmware version and IC information (touch data
+        address) reads, checksummed touch events. Requires
+        touchscreen-size-x/y in the DT. Interrupt-driven through the TLMM
+        with a polling fallback.
