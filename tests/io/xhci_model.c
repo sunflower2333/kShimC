@@ -101,8 +101,13 @@ static void deliver(void)
 {
     if (Xm.depth || !Xm.irq_due) return;
     Xm.irq_due = false;
-    ++Xm.irqs_raised;
-    if (Xm.irq) Xm.irq(Xm.irq_context);
+    /* A level-triggered line is taken again for as long as it stays high. */
+    for (unsigned guard = 0; guard < 10000; ++guard) {
+        ++Xm.irqs_raised;
+        if (Xm.irq) Xm.irq(Xm.irq_context);
+        if (!Xm.level_stuck || !(Xm.iman & IMAN_IP) || !(Xm.iman & IMAN_IE) || !(Xm.usbcmd & CMD_INTE))
+            break;
+    }
 }
 
 /* ---- Contexts --------------------------------------------------------------- */
@@ -669,7 +674,7 @@ static void rt_write(uintptr_t reg, uint32_t v)
 {
     switch (reg) {
     case 0x20:
-        Xm.iman = (Xm.iman & ~(v & IMAN_IP)) & ~IMAN_IE;
+        Xm.iman = (Xm.iman & ~(Xm.level_stuck ? 0 : (v & IMAN_IP))) & ~IMAN_IE;
         Xm.iman |= v & IMAN_IE;
         return;
     case 0x24: Xm.imod = v; return;

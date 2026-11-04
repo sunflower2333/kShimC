@@ -70,6 +70,7 @@ struct xm {
     struct xm_slot slots[XM_SLOTS + 1];
     struct xm_dev devs[XM_PORTS + 1];
     bool ignore_commands;
+    bool level_stuck;              /* IMAN.IP cannot be cleared: the INTx level stays */
     /* Interrupt line. */
     void (*irq)(void *context);
     void *irq_context;

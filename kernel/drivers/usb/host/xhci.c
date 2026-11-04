@@ -32,6 +32,7 @@
 #define XHCI_COMMAND_TIMEOUT_US  5000000U /* Address Device includes SET_ADDRESS */
 #define XHCI_PORT_POWER_MS       20U      /* root hub power-on to power-good */
 #define XHCI_IMOD_INTERVAL       160U     /* 40 us in 250 ns units (5.5.2.2) */
+#define XHCI_IRQ_STUCK_LIMIT     100U
 
 static inline void xhci_barrier(void)
 {
@@ -262,6 +263,10 @@ int xhci_process_events(struct xhci *x)
 {
     if (x->processing || !x->running || !x->events) return 0;
     x->processing = true;
+    if (x->irq_stuck_disabled && x->hcd.irq_driven) {
+        x->hcd.irq_driven = false;
+        printf("xhci: %s: interrupt stuck after acknowledge; polling\n", x->name);
+    }
     uint32_t sts = xhci_op_read(x, XHCI_USBSTS);
     if (sts != UINT32_MAX && (sts & (XHCI_STS_HSE | XHCI_STS_HCE)) && !x->dead) {
         x->processing = false;
@@ -335,6 +340,20 @@ bool xhci_irq(struct xhci *x)
     xhci_rt_write(x, XHCI_IR(0) + XHCI_IMAN, XHCI_IMAN_IP | XHCI_IMAN_IE);
     ++x->irqs;
     x->hcd.irq_pending = true;
+    /* While EHB is set nothing re-raises IP, so an IP that survives its
+     * acknowledge is a level that will not drop (INTx storm). After
+     * XHCI_IRQ_STUCK_LIMIT such calls in a row, stop interrupt generation;
+     * the event ring is then only polled. MSI clears IP by itself. */
+    if (xhci_rt_read(x, XHCI_IR(0) + XHCI_IMAN) & XHCI_IMAN_IP) {
+        if (++x->irq_stuck >= XHCI_IRQ_STUCK_LIMIT) {
+            xhci_op_write(x, XHCI_USBCMD, xhci_op_read(x, XHCI_USBCMD) & ~XHCI_CMD_INTE);
+            xhci_rt_write(x, XHCI_IR(0) + XHCI_IMAN, XHCI_IMAN_IP);
+            x->irq_enabled = false;
+            x->irq_stuck_disabled = true;
+        }
+    } else {
+        x->irq_stuck = 0;
+    }
     return true;
 }
 

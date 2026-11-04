@@ -13,6 +13,8 @@
  *             power control (ports off after HCRST)
  *   dead      commands never complete: bounded timeout, controller halted,
  *             handoff still resets it
+ *   stuck     the INTx level never drops after the acknowledge: interrupt
+ *             generation stopped after a bounded storm, polling continues
  */
 #include "../../kernel/drivers/usb/host/xhci.h"
 #include "xhci_model.h"
@@ -420,6 +422,27 @@ static void scenario_takeover(void)
     check_quiesce(legsup, legctl);
 }
 
+static void scenario_stuck(void)
+{
+    xm_init(32, 0, false);
+    Xm.irq = line;
+    Xm.irq_context = &X;
+    Xm.level_stuck = true;
+    IrqReady = true;
+    uint32_t legsup = Xm.legsup, legctl = Xm.legctl;
+    attach_all();
+    assert(kshim_usb_class_register(&KbdDriver) == 0);
+    assert(start(true) == 0);
+    assert(kshim_usb_settle(3000) == 0);
+    /* The storm was cut after the limit; everything else ran polled. */
+    assert(X.irq_stuck_disabled && !X.irq_enabled && !X.hcd.irq_driven);
+    assert(!(Xm.usbcmd & 4U) && !(Xm.iman & 2U) && Xm.irqs_raised <= 200);
+    check_enumerated();
+    check_reports(1, 5);
+    check_control_and_bulk();
+    check_quiesce(legsup, legctl);
+}
+
 static void scenario_dead(void)
 {
     xm_init(32, 0, false);
@@ -446,6 +469,7 @@ int main(int argc, char **argv)
     else if (!strcmp(which, "lostirq")) scenario_poll(true);
     else if (!strcmp(which, "takeover")) scenario_takeover();
     else if (!strcmp(which, "dead")) scenario_dead();
+    else if (!strcmp(which, "stuck")) scenario_stuck();
     else return 2;
     printf("usb_xhci_test %s: ok\n", which);
     return 0;

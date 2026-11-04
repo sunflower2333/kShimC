@@ -294,6 +294,8 @@ struct xhci {
     /* State. */
     bool running, dead, quiesced, inherited_running, processing;
     bool irq_enabled;
+    bool irq_stuck_disabled;            /* set in IRQ context: polled from then on */
+    uint32_t irq_stuck;
     /* Statistics for logs and tests. */
     uint32_t irqs, irqs_spurious, event_count, polls_with_work;
 };
