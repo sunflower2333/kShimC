@@ -51,7 +51,9 @@ int kshim_resource_map(struct kshim_resources *r, uint64_t base, uint64_t size,
     r->mappings[r->mapping_count++] = (kshim_mmu_region_t){base, size, type, permissions};
     return 0;
 }
-#if CONFIG_KSHIM_TOUCH
+/* Legacy FTM5/QUP touch windows. With the touch framework the GPIO, QUP and
+ * regulator subsystems map what the controller uses (kshim_io_map_resources). */
+#if CONFIG_KSHIM_TOUCH && !CONFIG_KSHIM_TOUCH_FRAMEWORK
 static bool ram_contains(const void *f, uint64_t base, uint64_t size)
 {
     for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
@@ -161,7 +163,7 @@ int kshim_resources_init(const void *f, size_t available)
                     4, KSHIM_MMU_DEVICE, KEY_GPIO_PERMISSIONS)) return -1;
     }
 #endif
-#if CONFIG_KSHIM_TOUCH
+#if CONFIG_KSHIM_TOUCH && !CONFIG_KSHIM_TOUCH_FRAMEWORK
     resources.touch_status = kshim_dt_touch(f, &resources.touch);
     if (!resources.touch_status) {
         /* Failed optional probes must not leave partial mappings or upgraded

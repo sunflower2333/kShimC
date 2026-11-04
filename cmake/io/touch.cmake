@@ -4,5 +4,6 @@
 # kernel/core/input.c and the tracker kernel/drivers/touch.c. See
 # docs/io-stack.md.
 if(CONFIG_KSHIM_TOUCH_FRAMEWORK)
-    list(APPEND KERNEL_SOURCES kernel/drivers/input/touch/registry.c)
+    list(APPEND KERNEL_SOURCES kernel/drivers/input/touch/registry.c
+        kernel/drivers/input/touch/core.c kernel/drivers/touch.c)
 endif()

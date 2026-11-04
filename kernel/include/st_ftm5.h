@@ -1,7 +1,14 @@
 /* SPDX-License-Identifier: MIT */
 #pragma once
-
-#include <qcom_bus.h>
+/*
+ * ST FTM5 protocol core (kernel/drivers/st_ftm5.c). The touch framework's
+ * FTM5 driver (kernel/drivers/input/touch/ftm5.c) runs it over kshim/i2c.h
+ * and the framework's tracker (which carries the DT swap/invert); the
+ * legacy CONFIG_KSHIM_TOUCH path runs it over the CrDK GENI core. This
+ * header does not include qcom_bus.h, whose kshim_i2c_* aliases of the CrDK
+ * names would collide with kshim/i2c.h; the GENI adapters take struct CrGeni
+ * (qcom_bus.h's kshim_qcom_bus).
+ */
 #include <touch.h>
 
 #include <stdbool.h>
@@ -82,12 +89,14 @@ int kshim_ftm5_init(kshim_ftm5_t *device,
                     const kshim_ftm5_transport_t *transport,
                     kshim_touch_t *touch);
 
-/* Convenience adapters for an initialized Qualcomm GENI serial engine. */
+/* Convenience adapters for an initialized Qualcomm GENI serial engine
+ * (legacy path; struct CrGeni is qcom_bus.h's struct kshim_qcom_bus). */
+struct CrGeni;
 int kshim_ftm5_init_i2c(kshim_ftm5_t *device,
-                        struct kshim_qcom_bus *bus,
+                        struct CrGeni *bus,
                         kshim_touch_t *touch);
 int kshim_ftm5_init_spi(kshim_ftm5_t *device,
-                        struct kshim_qcom_bus *bus,
+                        struct CrGeni *bus,
                         kshim_touch_t *touch);
 
 /* Drain at most one 32-event hardware FIFO snapshot. */

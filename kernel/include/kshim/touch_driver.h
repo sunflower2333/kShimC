@@ -6,41 +6,72 @@
  * touch service, kernel/drivers/touch.c tracker). Drivers: touch-st (FTM4,
  * FTM5), touch-goodix (GT911, GT9916). See docs/io-stack.md.
  *
- * The framework implements kshim_input_touch_start/poll (include/kshim/input.h)
- * and kshim_input_touch_stop (platform.h):
+ * The framework (kernel/drivers/input/touch/core.c) implements the touch
+ * service behind kshim_input_touch_start/poll (include/kshim/input.h) and
+ * kshim_input_touch_stop (platform.h), which kernel/core/input.c forwards to
+ * kshim_touch_framework_start/poll/stop below:
  *  1. Selection: for each driver in kshim_touch_drivers[] order, each
- *     compatible, each available DT node: the parent must resolve as an I2C
- *     adapter (kshim_i2c_adapter_get) or SPI controller
- *     (kshim_spi_controller_get) allowed by bus_mask; driver->match may
- *     reject the node (vendor property family, panel selection). The first
- *     node that powers and probes successfully is the active device; one
- *     active device per boot.
- *  2. Common resources from DT: pinctrl "default"; reset GPIO from
- *     "reset-gpios" (driver->reset_gpio_names overrides, for Android
- *     "fts,reset-gpio"); IRQ from "interrupts"/"interrupts-extended" (TLMM
- *     parent: pin + trigger), else from the IRQ GPIO; IRQ GPIO from
- *     "irq-gpios" (driver->irq_gpio_names overrides), else the TLMM pin of
- *     the interrupt; supplies driver->supplies[] ("<name>-supply"; missing
- *     ones are skipped). Common binding properties touchscreen-size-x/y,
- *     touchscreen-swapped-x-y, touchscreen-inverted-x/y fill dev->props.
- *  3. Power on (driver->power_on, else the common sequence): reset asserted
- *     (when present), supplies on in table order, power_on_delay_us, reset
- *     released, post_reset_delay_us. Then driver->probe.
- *  4. Events: IRQ-driven when the TLMM interrupt resolves and is live
- *     (kshim_gpio_irq_request). The framework's handler masks the pin
- *     (kshim_gpio_irq_mask) and marks the device pending; it never touches
- *     the bus. kshim_input_touch_poll() (thread context) then calls
- *     driver->handle and unmasks. Polling fallback: no interrupt, or an
- *     active IRQ level held 100 ms without delivery -> driver->pending (or
- *     the IRQ GPIO level) decides when to call handle each poll.
- *  5. Reports: handle calls kshim_touch_report() in controller coordinates;
- *     the framework applies swap/invert, scales to the surface through the
- *     tracker (touch.h) and queues PRESS/MOVE/RELEASE for the emit callback.
- *  6. Stop/quiesce: free the IRQ, driver->quiesce (stop scanning, bounded),
- *     cancel the active contact, reset asserted only if it was asserted at
- *     entry, supplies disabled (back to inherited), pins restored by the GPIO
- *     registry. Idempotent; kshim_input_quiesce() (step 1) and
- *     kshim_io_quiesce() both call it.
+ *     compatible, each available DT node, in DT order. The first node that
+ *     matches, powers and probes is the active device; one per boot.
+ *  2. DT resources, no device access: touchscreen-size-x/y,
+ *     touchscreen-swapped-x-y and touchscreen-inverted-x/y fill dev->props;
+ *     reset GPIO from "reset-gpios" (driver->reset_gpio_names overrides, for
+ *     Android "fts,reset-gpio"); IRQ GPIO from "irq-gpios"
+ *     (driver->irq_gpio_names overrides); supplies driver->supplies[]
+ *     ("<name>-supply"; absent ones are skipped, an unsupported provider is
+ *     logged and left as inherited); the interrupt from
+ *     "interrupts"/"interrupts-extended" when its parent is the TLMM.
+ *  3. driver->match(dev, fdt): no bus I/O. It sees the resolved resources
+ *     and may adjust them (vendor size/flip properties into dev->props, the
+ *     polarity of Android raw-level GPIO properties) or reject the node
+ *     (ERROR_NOT_FOUND: vendor property family, panel selection). dev->bus is
+ *     the driver's bus when bus_mask names exactly one, else 0.
+ *  4. IRQ reconciliation: without an "interrupts" entry the TLMM pin of the
+ *     IRQ GPIO is the interrupt (level, at the GPIO's active level); without
+ *     an IRQ GPIO the interrupt's TLMM pin is the IRQ GPIO. When both name
+ *     the same pin the interrupt trigger decides the GPIO's active level
+ *     (LEVEL_LOW/EDGE_FALLING = active low); a trigger of NONE follows the
+ *     GPIO. Different pins: the interrupt is dropped and the GPIO polled.
+ *  5. Bus: the parent must resolve as an I2C adapter (kshim_i2c_adapter_get)
+ *     or SPI controller (kshim_spi_controller_get) allowed by bus_mask; this
+ *     is the first device access (the controller is probed on demand).
+ *  6. Power on. Common sequence: reset asserted (when present), supplies on
+ *     in table order, the pinctrl state "default" (Android "pmx_ts_active"
+ *     when there is no "default"), applied only once the supplies are on so
+ *     no pull drives an unpowered IC, IRQ GPIO as input, power_on_delay_us,
+ *     reset released, post_reset_delay_us. With driver->power_on the
+ *     pinctrl state is applied first, then power_on runs, then the IRQ GPIO
+ *     is made an input. The tracker is set up (provisional range), then
+ *     driver->probe, then the tracker gets the final range: dev->props size
+ *     when the DT gives one, else dev->max_x/max_y from probe. A failed
+ *     probe runs driver->quiesce (bounded) and releases everything again.
+ *  7. Events: IRQ-driven when CONFIG_KSHIM_INPUT_IRQ and the TLMM interrupt
+ *     can be requested (kshim_gpio_irq_request). The framework's handler
+ *     masks the pin (kshim_gpio_irq_mask) and marks the device pending; it
+ *     never touches the bus. kshim_input_touch_poll() (thread context) then
+ *     calls driver->handle and unmasks. One handle pass runs right after the
+ *     interrupt is requested (anything latched before it). Polling fallback:
+ *     no interrupt, a TLMM cascade that sealed the pin, or the IRQ GPIO held
+ *     at its active level for 100 ms without a delivery; then
+ *     driver->pending (or the IRQ GPIO level; no GPIO = always) decides when
+ *     each poll calls handle. A handle error disables touch (contact
+ *     cancelled, interrupt freed); the device is still quiesced at stop.
+ *  8. Reports: handle calls kshim_touch_report() in controller coordinates
+ *     (or updates dev->tracker directly). The tracker (touch.h) is set up
+ *     with the touchscreen.yaml transform, inversion in controller space and
+ *     then the swap (as its flip plus a 90 degree rotation), scales to the
+ *     surface and emits PRESS/MOVE/RELEASE synchronously to the emit
+ *     callback. kshim_touch_report() also counts a MOVE for a contact that is
+ *     not down as ENTER, so frame-based controllers may report every contact
+ *     present as MOVE.
+ *  9. Stop/quiesce: free the IRQ, driver->quiesce (stop scanning, bounded;
+ *     if it fails and a reset GPIO exists, holding reset for
+ *     power_on_delay_us stops the controller instead, otherwise the error
+ *     is returned and the next call retries), cancel the active contact,
+ *     reset asserted, supplies disabled newest first (back to the inherited
+ *     state), IRQ and reset GPIOs freed (the GPIO registry restores their
+ *     snapshots, so reset ends as it was found). Idempotent;
+ *     kshim_input_quiesce() (step 1) and kshim_io_quiesce() both call it.
  *
  * Return codes: 0 or a positive ERROR_ or KSHIM_IO_ERR_ code (kshim/io.h); a driver
  * wrapping legacy negative-errno code converts at its boundary.
@@ -83,8 +114,9 @@ struct kshim_touch_driver {
     uint32_t power_on_delay_us;         /* supplies on -> reset release */
     uint32_t post_reset_delay_us;       /* reset release -> probe */
     size_t priv_size;                   /* zeroed bytes at dev->priv, <= KSHIM_TOUCH_PRIV_MAX */
-    /* Optional, no bus I/O: 0 accepts the node, ERROR_NOT_FOUND skips it,
-     * any other code skips it with a log line. */
+    /* Optional, no bus I/O, runs after the DT resources are resolved (step
+     * 3): 0 accepts the node, ERROR_NOT_FOUND skips it, any other code skips
+     * it with a log line. May adjust dev->props and the GPIO descriptors. */
     int (*match)(struct kshim_touch_dev *dev, const void *fdt);
     /* Optional replacement of the common power-on sequence (GT911 drives the
      * IRQ GPIO during reset to select its I2C address). Use
@@ -159,3 +191,29 @@ int kshim_touch_irq_gpio_input(struct kshim_touch_dev *dev);
 
 /* Handoff (kshim_io_quiesce, after PCI): stop the active device. Idempotent. */
 int kshim_touch_quiesce_all(void);
+
+/* ---- Touch service (kernel/core/input.c), additive to the architect API -- */
+
+/* Select, power and probe the first matching controller of `fdt` and scale
+ * its reports to an output_width x output_height surface; events go to emit
+ * from kshim_touch_framework_poll(). 0 = ready (calling it again only
+ * updates the surface and callback); ERROR_NOT_FOUND = no node matched any
+ * driver (no device was touched); any other code = every candidate failed
+ * and was released again. Thread context. */
+int kshim_touch_framework_start(const void *fdt, uint32_t output_width, uint32_t output_height,
+                                kshim_touch_event_fn emit, void *context);
+/* Service the active device once (deferred IRQ work or polling). 0, or the
+ * handle error after which touch is disabled until stop. Boot CPU only;
+ * other CPUs return 0. */
+int kshim_touch_framework_poll(void);
+/* Same as kshim_touch_quiesce_all(). */
+int kshim_touch_framework_stop(void);
+/* The active device, or NULL (diagnostics, host tests). */
+const struct kshim_touch_dev *kshim_touch_active(void);
+
+/* Android board selection shared by drivers' match hooks (kernel/dt/touch.c):
+ * false when the controller node's bus names another touch controller in
+ * "qcom,i2c-touch-active" (an empty string selects none), or when the node
+ * lists "panel" phandles and none of them is the panel of an active DSI
+ * display ("qcom,dsi-display-active" + "qcom,dsi-panel"). */
+bool kshim_touch_dt_selected(const void *fdt, int node, const char *compatible);

@@ -4,6 +4,7 @@
  * Firmware update, flash, calibration, and manufacturing commands are absent.
  */
 #include <st_ftm5.h>
+#include <qcom_bus.h>
 
 #include <string.h>
 
