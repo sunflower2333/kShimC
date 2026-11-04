@@ -347,9 +347,10 @@ int kshim_usb_get_descriptor(struct kshim_usb_device *device, uint8_t type, uint
                                    KSHIM_USB_RECIP_DEVICE, KSHIM_USB_REQ_GET_DESCRIPTOR,
                                    (uint16_t)(type << 8 | index), language, data, length,
                                    USB_DESCRIPTOR_TIMEOUT_MS, actual);
-        if (!status || status == KSHIM_IO_ERR_STALL || status == ERROR_BUSY ||
-            status == KSHIM_IO_ERR_QUIESCED || status == ERROR_NOT_READY ||
-            status == KSHIM_IO_ERR_NO_MEMORY || status == ERROR_INVALID_PARAMETER)
+        /* Only transient bus errors are retried; a STALL is an answer and a
+         * timeout already cost a full second. */
+        if (status != ERROR_DEVICE_ERROR && status != KSHIM_IO_ERR_NO_DEVICE &&
+            status != KSHIM_IO_ERR_OVERFLOW)
             break;
     }
     return status;
