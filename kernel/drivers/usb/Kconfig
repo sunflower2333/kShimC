@@ -65,3 +65,27 @@ config KSHIM_USB_XHCI_RENESAS_FW_EMBED
         without the loader it is the only source. The image is Renesas'
         proprietary firmware: never commit it, and check its redistribution
         terms before distributing a runtime that embeds it.
+
+config KSHIM_USB_XHCI_TEST_PCI
+    bool "Test-only PCI bus-0 ECAM enumerator for the xHCI QEMU test"
+    depends on KSHIM_USB_XHCI && KSHIM_QEMU_PLATFORM
+    default n
+    help
+        Weak, minimal implementation of kshim/pci.h for QEMU virt's
+        pci-host-ecam-generic (bus 0, memory BARs, INTx, config journal).
+        It lets tools/test_qemu_xhci.py run before the PCI core is merged;
+        the real PCI core overrides every symbol. Not for hardware.
+
+config KSHIM_USB_SELFTEST
+    bool "USB core self-test class driver (QEMU test)"
+    depends on KSHIM_USB
+    default n
+    help
+        Binds HID interfaces, fetches their report descriptor, submits an
+        interrupt-IN URB and logs reports; kshim_usb_settle() then waits up
+        to KSHIM_USB_SELFTEST_MS for two reports. Test builds only.
+
+config KSHIM_USB_SELFTEST_MS
+    int "Self-test report wait (ms)"
+    depends on KSHIM_USB_SELFTEST
+    default 5000

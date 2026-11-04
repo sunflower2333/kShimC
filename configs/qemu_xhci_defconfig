@@ -1,0 +1,23 @@
+# QEMU virt (GICv3) xHCI test runtime: tools/test_qemu_xhci.py.
+# qemu-xhci / nec-usb-xhci behind the gpex ECAM host, serial menu.
+# KSHIM_USB_XHCI_TEST_PCI is a test-only bus-0 enumerator (weak symbols)
+# until the PCI core (owner pci) is merged; KSHIM_USB_SELFTEST binds HID
+# interfaces to exercise control and interrupt transfers.
+# The Renesas download path and the Android firmware loader are built
+# (link coverage) but QEMU has no Renesas controller.
+CONFIG_KSHIM_QEMU_PLATFORM=y
+CONFIG_KSHIM_SMP=n
+CONFIG_KSHIM_FRAMEBUFFER=n
+CONFIG_KSHIM_LVGL=n
+CONFIG_QCOM_KEYS=n
+CONFIG_QCOM_SPMI=n
+CONFIG_BLOCK=y
+CONFIG_FS_EXT4=y
+CONFIG_FIRMWARE_LOADER=y
+CONFIG_KSHIM_PCI=y
+CONFIG_KSHIM_USB=y
+CONFIG_KSHIM_USB_XHCI=y
+CONFIG_KSHIM_USB_XHCI_RENESAS=y
+CONFIG_KSHIM_USB_XHCI_TEST_PCI=y
+CONFIG_KSHIM_USB_SELFTEST=y
+CONFIG_KSHIM_USB_SELFTEST_MS=5000

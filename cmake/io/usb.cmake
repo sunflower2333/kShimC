@@ -7,10 +7,16 @@ if(CONFIG_KSHIM_USB)
     list(APPEND KERNEL_SOURCES kernel/core/dma.c
         kernel/drivers/usb/core/core.c kernel/drivers/usb/core/desc.c
         kernel/drivers/usb/core/enumerate.c)
+    if(CONFIG_KSHIM_USB_SELFTEST)
+        list(APPEND KERNEL_SOURCES kernel/drivers/usb/core/selftest.c)
+    endif()
 endif()
 if(CONFIG_KSHIM_USB_XHCI)
     list(APPEND KERNEL_SOURCES kernel/drivers/usb/host/xhci.c
         kernel/drivers/usb/host/xhci_ops.c kernel/drivers/usb/host/xhci_pci.c)
+    if(CONFIG_KSHIM_USB_XHCI_TEST_PCI)
+        list(APPEND KERNEL_SOURCES kernel/drivers/usb/host/test_pci.c)
+    endif()
 endif()
 if(CONFIG_KSHIM_USB_XHCI_RENESAS)
     list(APPEND KERNEL_SOURCES kernel/drivers/usb/host/renesas_fw.c)
