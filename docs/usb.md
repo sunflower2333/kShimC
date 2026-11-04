@@ -59,7 +59,11 @@ Start (`xhci_start`, 4.2):
 3. BIOS handoff (7.1): set OS Owned, wait up to 100 ms for BIOS Owned to
    clear, else take it (no SMM on these platforms); disable the SMI enables
    and clear latched SMI events. Both registers are snapshot first.
-4. HCRST, CNR clear; PAGESIZE; DCBAA (MaxSlotsEn = min(MaxSlots, 32));
+4. Renesas only: if an earlier owner left a 64-bit address (non-zero
+   upper half of DCBAAP, ERSTBA or ERDP), clear DCBAAP, CRCR and every
+   interrupter's ERSTBA/ERDP while halted; these parts keep upper halves
+   across a reset.
+5. HCRST, CNR clear; PAGESIZE; DCBAA (MaxSlotsEn = min(MaxSlots, 32));
    scratchpad array and pages; command ring (64 TRBs); one event-ring
    segment (256 TRBs) and its ERST; interrupter 0 (IMOD 40 us, IE when an
    interrupt was granted); R/S=1; port power when PPC.
