@@ -22,6 +22,7 @@
 #include <qcom_keys_fdt.h>
 #include <st_ftm5.h>
 #include <Library/cr_debug_uart_poll.h>
+#include <kshim/uart.h>
 
 static void *load(const char *name)
 {
@@ -413,10 +414,11 @@ static bool geni_line(void)
 
 static void test_console(const void *f)
 {
+    /* The console's GENI RX interrupt now runs on struct kshim_uart
+     * (kshim/uart.h); the console opens it with kshim_uart_open_mmio(). */
     struct kshim_console_resource console;
-    static struct CrDebugUartPoll uart;
-    char c;
-    int got;
+    static struct kshim_uart uart;
+    uint8_t c;
     fake_reset();
     assert(!kshim_console_probe(f, &console) && console.geni);
     Se = console.base;
@@ -426,48 +428,54 @@ static void test_console(const void *f)
     /* Firmware left the M (TX) interrupt enabled; DebugUartLib masks it. */
     fake_poke(Se + 0xe1c, 4U);
     fake_poke(Se + 0x614, 1U);
-    uart = (struct CrDebugUartPoll){.io = FakeIo, .base = Se, .size = console.size};
-    assert(!CrDebugUartPollInit(&uart));
+    memset(&uart, 0, sizeof(uart));
+    uart.kind = KSHIM_UART_GENI;
+    uart.base = Se;
+    uart.size = console.size;
+    uart.geni = (struct CrDebugUartPoll){.io = FakeIo, .base = Se, .size = console.size};
+    assert(!CrDebugUartPollInit(&uart.geni));
+    uart.open = true;
 
     /* Before the GIC core is up the polled read is used. */
     FakeIrqReady = false;
-    assert(kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) == 1);
+    assert(kshim_geni_rx_irq_start(&uart, f, -1) == ERROR_NOT_READY);
+    assert(kshim_geni_rx_irq_read(&uart, &c) == ERROR_NOT_READY);
     geni_receive("x");
-    assert(CrDebugUartPollRead(&uart, (uint8_t *)&c) == 1 && c == 'x');
+    assert(CrDebugUartPollRead(&uart.geni, &c) == 1 && c == 'x');
     fake_poke(Se + 0x640, 0);
 
     FakeIrqReady = true;
-    assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && !got);
+    assert(!kshim_geni_rx_irq_start(&uart, f, -1) && kshim_geni_rx_irq_read(&uart, &c) == 0);
     struct fake_gic_irq *g = &FakeGic[uart_intid];
     assert(g->requested && g->trigger == KSHIM_IRQ_TYPE_LEVEL_HIGH);
     assert(fake_peek(Se + 0xe1c) == 8U && fake_peek(Se + 0x644) == ((1U << 26) | (1U << 27)));
     assert(fake_peek(Se + 0x614) == 0); /* TX interrupt untouched */
     assert(fake_writes_in(FAKE_PDC_BASE, 0x400) == 0); /* SPI 357: PDC pass-through */
 
-    /* The handler drains the FIFO into the ring; reads only dequeue. */
+    /* The handler drains the FIFO into the queue; reads only dequeue. */
     geni_receive("ok\r");
     assert(geni_line() && fake_gic_run() == 1 && !RxCount && !geni_line());
-    assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && got && c == 'o');
-    assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && got && c == 'k');
-    assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && got && c == '\r');
-    assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && !got);
+    assert(kshim_geni_rx_irq_read(&uart, &c) == 1 && c == 'o');
+    assert(kshim_geni_rx_irq_read(&uart, &c) == 1 && c == 'k');
+    assert(kshim_geni_rx_irq_read(&uart, &c) == 1 && c == '\r');
+    assert(kshim_geni_rx_irq_read(&uart, &c) == 0);
     geni_receive("12345");
     assert(fake_gic_run() == 1);
     for (const char *p = "12345"; *p; ++p)
-        assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && got && c == *p);
+        assert(kshim_geni_rx_irq_read(&uart, &c) == 1 && c == (uint8_t)*p);
     /* A byte whose latch was lost is still read by the next poll. */
     geni_receive("z");
     fake_poke(Se + 0x640, 0);
     assert(fake_gic_run() == 0);
-    assert(!kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) && got && c == 'z');
+    assert(kshim_geni_rx_irq_read(&uart, &c) == 1 && c == 'z');
     /* TX stays on the polled path while RX is interrupt-driven. */
-    assert(!CrDebugUartPollWrite(&uart, "hello", 5));
+    assert(!CrDebugUartPollWrite(&uart.geni, "hello", 5));
 
-    assert(!kshim_console_rx_irq_stop());
+    assert(!kshim_geni_rx_irq_stop(&uart));
     assert(!g->requested && fake_peek(Se + 0xe1c) == 0 && fake_peek(Se + 0x644) == 0);
-    assert(!kshim_console_rx_irq_stop());
-    assert(kshim_geni_rx_irq_read(&uart, f, Se, &c, &got) == 1); /* polled again */
-    assert(!CrDebugUartPollQuiesce(&uart));
+    assert(!kshim_geni_rx_irq_stop(&uart));
+    assert(kshim_geni_rx_irq_read(&uart, &c) == ERROR_NOT_READY); /* polled again */
+    assert(!CrDebugUartPollQuiesce(&uart.geni));
     assert(fake_peek(Se + 0xe1c) == 4U && fake_peek(Se + 0x614) == 1U); /* inherited */
     assert(!FakeIrqMasked);
     printf("console rx: ok\n");
