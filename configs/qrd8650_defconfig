@@ -21,10 +21,12 @@ CONFIG_KSHIM_SMP_WORKERS=7
 # Pointer service for the LVGL menu; the touch driver comes with GT9916.
 CONFIG_KSHIM_TOUCH=y
 
-# I/O stack (docs/io-stack.md). Not enabled yet: with the LVGL menu the 4 MiB
-# Manifest slot has about 8 KiB left on this profile, and the platform layer
-# alone (CONFIG_KSHIM_REGULATOR=y, ~45 KiB) already overflows it ("kShim
-# runtime exceeds image slot"). Enable once the slot question is settled:
-#   sm8650:       CONFIG_KSHIM_REGULATOR=y
-#   qup:          CONFIG_KSHIM_QUP=y  CONFIG_KSHIM_SPI=y
-#   touch-goodix: CONFIG_KSHIM_TOUCH_GT9916=y
+# I/O stack (docs/io-stack.md): GT9916 on spi4 through the QUP/GENI SPI
+# controller, rails and pads through the SM8650 platform layer. With the LVGL
+# menu this profile no longer fits the 4 MiB Manifest slot ("kShim runtime
+# exceeds image slot"); slot size is not treated as a blocker, every symbol
+# resolves (checked with a larger scratch slot).
+CONFIG_KSHIM_REGULATOR=y
+CONFIG_KSHIM_QUP=y
+CONFIG_KSHIM_SPI=y
+CONFIG_KSHIM_TOUCH_GT9916=y

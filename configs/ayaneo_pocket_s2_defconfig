@@ -20,18 +20,29 @@ CONFIG_KSHIM_SMP_WORKERS=7
 # Pointer service for the LVGL menu; the touch driver comes with GT911.
 CONFIG_KSHIM_TOUCH=y
 
-# Not enabled yet: with the LVGL menu the 4 MiB Manifest slot has about
-# 8 KiB left on this profile. Storage plus the firmware loader overflows it
-# by ~80 KiB and the platform layer alone (CONFIG_KSHIM_REGULATOR=y) by
-# ~8-45 KiB ("kShim runtime exceeds image slot"). Enable once the slot
-# question is settled:
-#   storage for renesas_usb_fw.mem (super/vendor{slot}/firmware; an EROFS
-#   vendor partition needs CONFIG_FS_EROFS, GPL-2.0 opt-in):
-#                 CONFIG_BLOCK=y  CONFIG_BLK_UFS=y  CONFIG_FS_EXT4=y
-#                 CONFIG_FS_F2FS=y  CONFIG_FIRMWARE_LOADER=y
-#   sm8650:       CONFIG_KSHIM_REGULATOR=y
-#   qup:          CONFIG_KSHIM_QUP=y  CONFIG_KSHIM_I2C=y
-#   pci:          CONFIG_KSHIM_PCI=y  CONFIG_KSHIM_PCI_QCOM=y
-#   xhci:         CONFIG_KSHIM_USB=y  CONFIG_KSHIM_USB_XHCI=y  CONFIG_KSHIM_USB_XHCI_RENESAS=y
-#   usbhid:       CONFIG_KSHIM_USB_HUB=y  CONFIG_KSHIM_USB_HID=y
-#   touch-goodix: CONFIG_KSHIM_TOUCH_GT911=y
+# I/O stack (docs/io-stack.md). With the LVGL menu this profile no longer
+# fits the 4 MiB Manifest slot ("kShim runtime exceeds image slot"); slot
+# size is not treated as a blocker, every symbol resolves (checked with a
+# larger scratch slot).
+# Storage for renesas_usb_fw.mem (super/vendor{slot}/firmware). An EROFS
+# vendor partition needs CONFIG_FS_EROFS (GPL-2.0 opt-in, left off here);
+# without it the controller only starts if UEFI already loaded the firmware.
+CONFIG_BLOCK=y
+CONFIG_BLK_UFS=y
+CONFIG_FS_EXT4=y
+CONFIG_FS_F2FS=y
+CONFIG_FIRMWARE_LOADER=y
+# Platform layer (gpio, pinctrl, clk, regulators).
+CONFIG_KSHIM_REGULATOR=y
+# Gamepad: pcie1 -> uPD720201 xHCI (Renesas firmware) -> USB HID.
+CONFIG_KSHIM_PCI=y
+CONFIG_KSHIM_PCI_QCOM=y
+CONFIG_KSHIM_USB=y
+CONFIG_KSHIM_USB_XHCI=y
+CONFIG_KSHIM_USB_XHCI_RENESAS=y
+CONFIG_KSHIM_USB_HUB=y
+CONFIG_KSHIM_USB_HID=y
+# Touch: GT911 on i2c4 (RFC node).
+CONFIG_KSHIM_QUP=y
+CONFIG_KSHIM_I2C=y
+CONFIG_KSHIM_TOUCH_GT911=y
