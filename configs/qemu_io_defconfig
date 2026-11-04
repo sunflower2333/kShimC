@@ -1,0 +1,13 @@
+CONFIG_KSHIM_QEMU_PLATFORM=y
+CONFIG_KSHIM_SMP=n
+CONFIG_KSHIM_FRAMEBUFFER=n
+CONFIG_KSHIM_LVGL=n
+CONFIG_QCOM_KEYS=n
+CONFIG_QCOM_SPMI=n
+# USB input stack (docs/io-stack.md): USB core, hub and HID class drivers,
+# input injection. tools/test_qemu_usb_input.py adds the PCI host and xHCI
+# options (CONFIG_KSHIM_PCI, CONFIG_KSHIM_PCI_ECAM, CONFIG_KSHIM_USB_XHCI)
+# once those drivers are in the tree.
+CONFIG_KSHIM_USB=y
+CONFIG_KSHIM_USB_HUB=y
+CONFIG_KSHIM_USB_HID=y

@@ -77,6 +77,9 @@ enum kshim_hid_report_type {
 #define KSHIM_HID_MAX_ITEMS   192U
 #define KSHIM_HID_MAX_REPORTS 32U
 #define KSHIM_HID_MAX_APPLICATIONS 8U
+/* Explicit usage lists of array items ("Usage A, Usage C" instead of a
+ * Usage Minimum/Maximum range) are kept in desc->usages. */
+#define KSHIM_HID_MAX_ARRAY_USAGES 64U
 
 struct kshim_hid_item {
     uint32_t usage;          /* variable: its usage; array: usage minimum */
@@ -89,6 +92,10 @@ struct kshim_hid_item {
     uint8_t type;            /* enum kshim_hid_report_type */
     uint16_t flags;          /* KSHIM_HID_MAIN_* */
     int32_t logical_min, logical_max;  /* sign-extended per the item size */
+    /* Arrays declared with an explicit usage list: desc->usages[usage_index ..
+     * usage_index + usage_count - 1] in declaration order (usage/usage_max
+     * then hold the first and last). 0 for ranges and variables. */
+    uint8_t usage_index, usage_count;
 };
 
 struct kshim_hid_report {
@@ -105,12 +112,19 @@ struct kshim_hid_desc {
     uint32_t applications[KSHIM_HID_MAX_APPLICATIONS];
     unsigned application_count;
     bool report_ids;         /* every report starts with its ID byte */
+    uint32_t usages[KSHIM_HID_MAX_ARRAY_USAGES]; /* explicit array usage lists */
+    unsigned usage_count;
 };
 
 /* Parse a report descriptor (short items; long items are skipped). Push/Pop
  * depth 4, collection depth 8; Usage Minimum/Maximum, extended (4-byte)
  * usages, Unit/Exponent ignored. KSHIM_IO_ERR_PROTOCOL for malformed input,
- * KSHIM_IO_ERR_OVERFLOW when a table limit is exceeded. Pure function. */
+ * KSHIM_IO_ERR_OVERFLOW when a table limit is exceeded. Pure function.
+ * Constant (padding) fields and data fields on vendor-defined usage pages
+ * (0xff00-0xffff) only advance the bit offsets; they produce no items. A
+ * Logical Maximum that reads negative while Logical Minimum is >= 0 (for
+ * example "Logical Maximum (255)" encoded as the single byte 0xff) is taken
+ * as unsigned. */
 int kshim_hid_parse(const uint8_t *descriptor, size_t length, struct kshim_hid_desc *desc);
 
 /* First item of `type` whose usage range contains `usage` in report
@@ -122,6 +136,12 @@ const struct kshim_hid_item *kshim_hid_find(const struct kshim_hid_desc *desc, u
 bool kshim_hid_get_value(const struct kshim_hid_item *item, const uint8_t *data, size_t length,
                          unsigned index, int32_t *value);
 bool kshim_hid_has_application(const struct kshim_hid_desc *desc, uint32_t usage);
+/* Usage selected by an array element's value (HID 1.11 6.2.2.5: Usage
+ * Minimum + value - Logical Minimum, or the value's entry of an explicit
+ * usage list). false for a null value (outside the logical range or the
+ * usage range), which means "no control active" in that slot. */
+bool kshim_hid_array_usage(const struct kshim_hid_desc *desc, const struct kshim_hid_item *item,
+                           int32_t value, uint32_t *usage);
 
 /* ---- Mapping to kShimC input (kshim/input_inject.h) --------------------- */
 
@@ -137,11 +157,31 @@ struct kshim_hid_input {
     const struct kshim_hid_desc *desc;
     unsigned caps;               /* KSHIM_HID_INPUT_* found in the descriptor */
     bool boot_keyboard, boot_mouse; /* fixed boot-protocol layouts instead of desc */
-    uint32_t held[KSHIM_HID_INPUT_MAX_KEYS]; /* usages currently mapped as pressed */
+    /* Linux key codes currently reported as pressed (edge detection; one
+     * code per physical control, so two controls with the same code, such
+     * as a hat and a stick both pointing up, give one PRESS). */
+    uint32_t held[KSHIM_HID_INPUT_MAX_KEYS];
     unsigned held_count;
+    /* Addition (usbhid): report ID that pressed held[i]; a report only
+     * releases the codes of its own ID. */
+    uint8_t held_report[KSHIM_HID_INPUT_MAX_KEYS];
     int8_t axis_state[2];        /* -1/0/+1 per stick axis after hysteresis */
     bool pointer_pressed;
+    /* Additions (usbhid): last pointer report, for change detection and the
+     * release on reset; gamepad direction auto-repeat. */
+    bool pointer_valid, pointer_absolute;
+    int32_t pointer_x, pointer_y;
+    uint32_t pointer_range_x, pointer_range_y;
+    uint32_t repeat_code;        /* held gamepad direction code, 0 = none */
+    uint64_t repeat_at_ms;       /* next repeat (get_current_time() base) */
 };
+
+/* Gamepad direction auto-repeat (hat, D-pad usages, stick): a direction held
+ * for KSHIM_HID_REPEAT_DELAY_MS repeats every KSHIM_HID_REPEAT_INTERVAL_MS
+ * as a PRESS event with pressed = 2 (the Linux autorepeat value), until it
+ * is released. Keyboards, buttons and wheels never repeat. */
+#define KSHIM_HID_REPEAT_DELAY_MS    500U
+#define KSHIM_HID_REPEAT_INTERVAL_MS 150U
 
 /* Classify the descriptor (keyboard 0x00010006, mouse 0x00010002,
  * gamepad 0x00010005, joystick 0x00010004, consumer control 0x000c0001,
@@ -156,6 +196,12 @@ int kshim_hid_input_report(struct kshim_hid_input *input, const uint8_t *report,
 /* Release everything held (device gone / handoff): RELEASE for each held
  * key, pointer release. */
 void kshim_hid_input_reset(struct kshim_hid_input *input);
+/* Periodic work from the transport's service hook (thread context): the
+ * gamepad direction auto-repeat. Devices report only on change after
+ * SET_IDLE(0), so the repeat cannot come from reports. */
+void kshim_hid_input_service(struct kshim_hid_input *input, uint64_t now_ms);
+/* Key action of a Linux code produced by the mapping (KEY_UP -> UP, ...). */
+int kshim_hid_input_action(uint32_t code);
 
 /* Mapping (docs/io-stack.md "HID mapping"):
  *  keyboard  Up -> UP, Down -> DOWN, Enter/Keypad Enter/Space -> SELECT,
@@ -163,12 +209,17 @@ void kshim_hid_input_reset(struct kshim_hid_input *input);
  *  gamepad / joystick
  *            Hat switch N/NE/NW -> UP, S/SE/SW -> DOWN; D-pad usages
  *            0x90/0x91 -> UP/DOWN; Y axis past 50 % of its half range ->
- *            UP/DOWN, released below 25 % (hysteresis); Button 1 -> SELECT,
- *            Button 2 -> BACK; code = Linux BTN_* / KEY_*.
+ *            UP/DOWN, released below 25 % (hysteresis: the 25 % band is
+ *            the dead zone); Button 1 -> SELECT, Button 2 -> BACK. Codes:
+ *            BTN_DPAD_UP/BTN_DPAD_DOWN for every direction source,
+ *            BTN_SOUTH/BTN_EAST for the buttons. Directions auto-repeat
+ *            (kshim_hid_input_service). The X axis is tracked but not mapped.
  *  consumer  Volume Increment -> UP, Volume Decrement -> DOWN.
  *  mouse     relative X/Y -> relative pointer, Button 1 -> pointer press,
- *            Wheel +/- -> UP/DOWN key press+release.
+ *            Wheel +/- -> UP/DOWN key press+release (KEY_SCROLLUP/DOWN, at
+ *            most 3 per report).
  *  tablet    absolute X/Y (logical range) -> absolute pointer, Button 1 or
  *            Tip Switch -> pointer press.
  * Key events are edges: one PRESS when the mapped control becomes active,
- * one RELEASE when it stops; no auto-repeat. */
+ * one RELEASE when it stops; only gamepad directions auto-repeat. A
+ * keyboard report whose array slots hold ErrorRollOver changes nothing. */

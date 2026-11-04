@@ -117,6 +117,9 @@ static int serial_select(const void *fdt, const char *const *names, size_t count
                 if (event.action == KSHIM_KEY_ACTION_UP) current = current ? current - 1 : count - 1;
                 if (event.action == KSHIM_KEY_ACTION_DOWN) current = (current + 1) % count;
                 if (event.action == KSHIM_KEY_ACTION_SELECT) break;
+                /* BACK (keyboard Escape, gamepad B) returns to the default
+                 * entry without booting it; console Esc still boots it. */
+                if (event.action == KSHIM_KEY_ACTION_BACK) current = initial;
                 printf("\n> %s\n", names[current]);
             }
         }

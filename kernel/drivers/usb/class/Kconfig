@@ -12,6 +12,11 @@ config KSHIM_USB_HUB
     bool "USB hub class driver"
     depends on KSHIM_USB
     default n
+    help
+        USB 2.0 and SuperSpeed hubs, nested up to tier 6: port power,
+        debounce, reset, enumeration and removal of the devices below.
+        Port changes come from the hub's status-change endpoint; a hub
+        whose endpoint keeps failing is polled instead.
 
 config KSHIM_USB_HID
     bool "USB HID keyboards, mice, tablets and gamepads as menu input"
@@ -23,3 +28,6 @@ config KSHIM_USB_HID
         (hat/D-pad, stick, buttons), consumer volume keys, mice and tablets
         to the boot menu's UP/DOWN/SELECT/BACK actions and pointer. Pointer
         events are delivered through the touch service (KSHIM_TOUCH).
+        XInput-class gamepads (interface 0xff/0x5d/0x01, Xbox 360-style)
+        are mapped as gamepads too, as a fallback for controllers without
+        a HID report descriptor.

@@ -157,6 +157,8 @@ static void KshimLvglReadKeys(lv_indev_t *Input, lv_indev_data_t *Data)
   case KSHIM_KEY_ACTION_UP: mKey = LV_KEY_PREV; break;
   case KSHIM_KEY_ACTION_DOWN: mKey = LV_KEY_NEXT; break;
   case KSHIM_KEY_ACTION_SELECT: mKey = LV_KEY_ENTER; break;
+  /* Keyboard Escape / gamepad B (injected input): closes the power dialog. */
+  case KSHIM_KEY_ACTION_BACK: mKey = LV_KEY_ESC; break;
   default: return;
   }
   if (mContext) { mContext->AutobootCancelled = 1; mContext->CountdownEnabled = 0; }
@@ -756,6 +758,10 @@ void kshim_lvgl_touch(void *Context, const kshim_touch_event_t *Event)
     Ui->PointerPressed = 0U;
     /* A bus failure or controller reset must not confirm the Boot button. */
     lv_indev_wait_release(mPointerInput);
+    break;
+  case KSHIM_TOUCH_EVENT_HOVER:
+    /* A USB mouse/tablet moved without a button: new position, released. */
+    Ui->PointerPressed = 0U;
     break;
   default: return;
   }
