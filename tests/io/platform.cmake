@@ -9,7 +9,9 @@ set(KSHIM_PLATFORM_SOURCES
 # Every resource the other implementers need from the SM8650 boards.
 kshim_test(platform_dt_test io/platform_dt_test.c ${KSHIM_PLATFORM_SOURCES}
     "${KSHIM_ROOT}/kernel/dt/irq.c" "${KSHIM_ROOT}/kernel/dt/qcom_irq.c"
-    "${KSHIM_ROOT}/kernel/dt/keys.c" "${KSHIM_ROOT}/kernel/drivers/keys.c")
+    "${KSHIM_ROOT}/kernel/dt/keys.c" "${KSHIM_ROOT}/kernel/drivers/keys.c"
+    "${KSHIM_ROOT}/kernel/dt/storage.c")
+target_compile_definitions(platform_dt_test PRIVATE CONFIG_KSHIM_GPIO=1)
 add_test(NAME platform_dt_qrd_test COMMAND platform_dt_test qrd)
 # TLMM/PMIC GPIO registry and pinctrl over a register model.
 kshim_test(platform_gpio_test io/platform_gpio_test.c ${KSHIM_PLATFORM_SOURCES})

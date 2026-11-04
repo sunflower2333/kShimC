@@ -18,6 +18,7 @@
 #include <kshim/regulator.h>
 #include <kshim/soc_tables.h>
 #include <kshim_console.h>
+#include <kshim/storage_probe.h>
 #include <kshim_irq_dt.h>
 #include <qcom_irq.h>
 #include <qcom_keys_fdt.h>
@@ -151,6 +152,13 @@ static void soc_common(void *f, const char *se4_path)
     assert(!kshim_soc_pin_function(KSHIM_SOC_SM8650, 161, "qup1_se4", &mux));
     struct kshim_clk *pd;
     assert(kshim_clk_get_power_domain(f, se4, 0, &pd) == ERROR_NOT_SUPPORTED); /* rpmhpd CX */
+
+    /* UFS (firmware loader source): HCI and the mainline ufs_phy_gdsc
+     * GDSCR whose PWR_ON lets storage inherit the live controller. */
+    static struct kshim_storage_dt storage;
+    assert(!kshim_dt_storage(f, &storage) && storage.ufs_count == 1);
+    assert(storage.ufs[0].hci.base == 0x1d84000 && storage.ufs[0].gdsc == 0x100000 + 0x77004);
+    assert(storage.has_rpmh && storage.rpmh.rsc_base == 0x17a20000 && storage.rpmh.cmd_db_base == 0x81c60000);
 
     free(r);
 }
