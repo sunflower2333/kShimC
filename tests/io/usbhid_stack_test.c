@@ -13,6 +13,12 @@
  * hotplug below hubs and on root ports with debounce, a device that fails
  * enumeration, and the handoff order (children before parents, newest
  * first, then the HCD quiesce).
+ *
+ * The core is the xHCI branch's kernel/drivers/usb/core/ (core.c, desc.c,
+ * enumerate.c). The fake HCD follows its contract: data moves through
+ * urb->bounce when the core bounced the buffer into the DMA pool, and
+ * finished URBs are handed back with kshim_usb_hcd_giveback(); the core
+ * runs completions and callbacks from kshim_usb_poll_events().
  */
 #include <kshim/usb.h>
 #include <kshim/usb_hcd.h>
@@ -297,6 +303,13 @@ static int f_device_alloc(struct kshim_usb_hcd *h, struct kshim_usb_device *d)
     if (!f) return KSHIM_IO_ERR_NO_DEVICE;
     ++f->alloc_attempts;
     assert(d->ep0.max_packet == (d->speed >= KSHIM_USB_SPEED_SUPER ? 512 : d->speed == KSHIM_USB_SPEED_LOW ? 8 : 64));
+    /* The HCD names the TT hub (kshim/usb.h): the nearest high-speed hub
+     * upstream of a low/full-speed device, whose port the core put in
+     * tt_port. This fake uses USB addresses as slot ids. */
+    d->tt_hub_slot = 0;
+    if (d->tt_port)
+        for (const struct kshim_usb_device *hub = d->parent; hub; hub = hub->parent)
+            if (hub->speed == KSHIM_USB_SPEED_HIGH) { d->tt_hub_slot = hub->address; break; }
     d->hcd_priv = f;
     f->usb = d;
     return 0;
@@ -350,16 +363,19 @@ static void f_device_free(struct kshim_usb_hcd *h, struct kshim_usb_device *d)
 static int f_submit(struct kshim_usb_hcd *h, struct kshim_usb_urb *u)
 {
     (void)h;
-    assert(PendingCount < 128 && u->complete && u->bounce);
+    /* Synchronous helpers submit without a callback; the core bounces any
+     * buffer outside the DMA pool. */
+    assert(PendingCount < 128 && u->status == KSHIM_IO_ERR_PENDING);
+    assert(!u->length || u->bounce);
     Pending[PendingCount++] = u;
     return 0;
 }
 static void complete(struct kshim_usb_urb *u, int status, uint32_t actual)
 {
-    u->status = status;
-    u->actual = actual;
-    u->complete(u);
+    kshim_usb_hcd_giveback(u, status, actual);
 }
+/* The bytes the controller would move: the core's DMA bounce buffer. */
+static uint8_t *xfer_data(struct kshim_usb_urb *u) { return u->bounce ? u->bounce : u->buffer; }
 static int f_cancel(struct kshim_usb_hcd *h, struct kshim_usb_urb *u)
 {
     (void)h;
@@ -464,7 +480,7 @@ static int f_poll(struct kshim_usb_hcd *h)
         if (u->endpoint->type == KSHIM_USB_XFER_CONTROL) {
             uint32_t actual;
             ++ControlRequests;
-            int status = device_request(f, &u->setup, u->buffer, &actual);
+            int status = device_request(f, &u->setup, xfer_data(u), &actual);
             complete(u, status, actual);
             ++handled;
             continue;
@@ -479,7 +495,7 @@ static int f_poll(struct kshim_usb_hcd *h)
             uint8_t bits[2];
             put16(bits, f->bitmap);
             f->bitmap = 0;
-            complete(u, 0, copy_out(u->buffer, u->length, bits, (f->ports + 8U) / 8U));
+            complete(u, 0, copy_out(xfer_data(u), u->length, bits, (f->ports + 8U) / 8U));
             ++handled;
             continue;
         }
@@ -487,7 +503,7 @@ static int f_poll(struct kshim_usb_hcd *h)
             unsigned at = f->queue_head;
             f->queue_head = (f->queue_head + 1U) % 8U;
             --f->queue_count;
-            complete(u, 0, copy_out(u->buffer, u->length, f->queue[at], f->queue_length[at]));
+            complete(u, 0, copy_out(xfer_data(u), u->length, f->queue[at], f->queue_length[at]));
             ++handled;
             continue;
         }
@@ -609,7 +625,8 @@ int main(void)
 
     struct fake_dev *const all[] = {&Kbd, &Hub, &Mouse, &Tablet, &Hub2, &Pad, &XPad, &HsHub, &LsKbd, &SsHub, &SsPad};
     assert(live_devices(all, 11) == 11);
-    assert(!Dead.usb && Dead.alloc_attempts == 2 && PortDisables == 1);
+    /* The core tries a root port 3 times (USB_ENUM_ATTEMPTS), then disables it. */
+    assert(!Dead.usb && Dead.alloc_attempts == 3 && PortDisables == 1);
     for (unsigned i = 0; i < 11; ++i) assert(all[i]->config_value == 1 && all[i]->address);
     assert(ConfigureCount == 11);
     /* bMaxPacketSize0 8 differs from the 64-byte full-speed default. */
@@ -760,15 +777,19 @@ int main(void)
     before = FreeCount;
     assert(kshim_usb_quiesce() == 0);
     assert(PendingCount == 0);
-    /* Newest topology first: kbd2 (newest root), then the SuperSpeed hub's
-     * subtree, ..., the XInput pad (oldest remaining root) last. */
+    /* Children before their hub; the core walks root ports from the
+     * highest: port 6 (SuperSpeed hub subtree), 5 (kbd2), 4 (high-speed hub
+     * subtree), 3 (the XInput pad) last. */
     assert(FreeCount == before + 6);
-    assert(!strcmp(FreeLog[before], "kbd2"));
-    assert(free_index("sspad") < free_index("sshub") && free_index("lskbd") < free_index("hshub"));
+    assert(!strcmp(FreeLog[before], "sspad"));
+    assert(free_index("sspad") < free_index("sshub") && free_index("sshub") < free_index("kbd2"));
+    assert(free_index("kbd2") < free_index("lskbd") && free_index("lskbd") < free_index("hshub"));
     assert(!strcmp(FreeLog[FreeCount - 1], "xinput"));
     assert(kshim_usb_quiesce() == 0 && FreeCount == before + 6);
     assert(kshim_usb_hcd_quiesce_all() == 0 && HcdQuiesces == 1);
-    assert(kshim_usb_hcd_quiesce_all() == 0 && HcdQuiesces == 1);
+    /* ops->quiesce is idempotent by contract (kshim/usb_hcd.h); the core
+     * may call it again on a repeated handoff attempt. */
+    assert(kshim_usb_hcd_quiesce_all() == 0 && HcdQuiesces >= 1);
     unsigned polls = Polls;
     kshim_usb_poll();
     assert(Polls == polls);

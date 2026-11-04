@@ -242,13 +242,18 @@ static void port_service(struct hub *hub, uint8_t port)
     }
     if (hub->children[port] || (hub->failed & bit)) return;
     uint64_t now = get_current_time();
+    /* kshim_usb_settle() cannot see a hub port's debounce: keep it polling
+     * until the port is due, plus the reset (10 ms poll) that follows. */
     if (!hub->connect_since[port]) {
         hub->connect_since[port] = now ? now : 1U;
         hub->debounce |= bit;
+        kshim_usb_settle_extend(HUB_DEBOUNCE_MS + HUB_RESET_POLL_MS);
         return;
     }
     if (now - hub->connect_since[port] < HUB_DEBOUNCE_MS) {
         hub->debounce |= bit;
+        kshim_usb_settle_extend((uint32_t)(HUB_DEBOUNCE_MS - (now - hub->connect_since[port])) +
+                                HUB_RESET_POLL_MS);
         return;
     }
     hub->debounce &= (uint16_t)~bit;

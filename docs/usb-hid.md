@@ -13,7 +13,6 @@ input. Nothing here has run on hardware.
 | `kernel/drivers/hid/hid_input.c` | Report to menu-event mapping |
 | `kernel/drivers/usb/class/hub.c` | Hub class driver, USB 2.0 and SuperSpeed |
 | `kernel/drivers/usb/class/hid.c` | HID transport and the XInput gamepad fallback |
-| `kernel/drivers/usb/core/usb_core.c` | USB core (see "Core ownership" below) |
 
 ## Data path
 
@@ -83,20 +82,21 @@ need a start command and are not handled.
 
 ## Core ownership
 
-`docs/io-stack.md` gives `kernel/drivers/usb/core/` to the xhci implementer.
-The usbhid task also asked for the core, so this branch carries
-`usb_core.c` and builds it only while no other `kernel/drivers/usb/core/`
-source is listed (`cmake/io/usbhid.cmake`). After a merge, whichever core the
-xhci fragment lists wins, with no duplicate symbols.
+The USB core is the xhci implementer's `kernel/drivers/usb/core/` (`core.c`,
+`desc.c`, `enumerate.c`; see `docs/usb.md`). The usbhid branch carried a
+stand-in core (`usb_core.c`) until the merge; the integration removed it and
+moved the host tests onto the xhci core.
 
-The class drivers use only the public `kshim/usb.h` API, so they do not depend
-on which core wins. They do assume the core contract on two points:
+The class drivers use only the public `kshim/usb.h` API. They assume the core
+contract on these points:
 
 - the core disconnects children before their hub, and it calls the class
   driver's `disconnect` hook;
-- URB callbacks never run nested.
-
-The host tests link `usb_core.c` and need updating if the file is dropped.
+- URB callbacks never run nested;
+- `kshim_usb_settle()` cannot see a hub port's 100 ms connect debounce, so
+  the hub driver calls `kshim_usb_settle_extend()` while a port debounces;
+- the HCD, not the core, fills `tt_hub_slot` in `device_alloc` (the core
+  fills `tt_port`).
 
 ## Tests
 
@@ -104,8 +104,9 @@ The host tests link `usb_core.c` and need updating if the file is dropped.
   injection queue and the `kshim_key_source_poll()` hook. Its descriptors are
   the QEMU usb-kbd, usb-mouse and usb-tablet report descriptors, plus written
   Xbox-style, generic joystick and consumer descriptors.
-- `usbhid_stack_test` runs the core, the hub and HID over a fake HCD. It covers
+- `usbhid_stack_test` runs the xhci core, the hub and HID over a fake HCD
+  that hands URBs back with `kshim_usb_hcd_giveback()`. It covers
   nested hubs (full-speed, high-speed with TT, SuperSpeed), boot fallback,
   STALL recovery, hotplug with debounce, a dead device and the handoff order.
-- `tools/test_qemu_usb_input.py` is the end-to-end test. It needs the pci and
-  xhci drivers and reports SKIP (exit 77) without them.
+- `tools/test_qemu_usb_input.py` is the end-to-end test over the PCI core
+  (ECAM), xHCI, a usb-hub and HID devices.
