@@ -51,44 +51,6 @@ int kshim_resource_map(struct kshim_resources *r, uint64_t base, uint64_t size,
     r->mappings[r->mapping_count++] = (kshim_mmu_region_t){base, size, type, permissions};
     return 0;
 }
-/* Legacy FTM5/QUP touch windows. With the touch framework the GPIO, QUP and
- * regulator subsystems map what the controller uses (kshim_io_map_resources). */
-#if CONFIG_KSHIM_TOUCH && !CONFIG_KSHIM_TOUCH_FRAMEWORK
-static bool ram_contains(const void *f, uint64_t base, uint64_t size)
-{
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
-        const char *type = dt_string(f, n, "device_type");
-        if (!type || strcmp(type, "memory") || !dt_available(f, n)) continue;
-        struct dt_range r;
-        for (unsigned i = 0; dt_reg(f, n, i, &r) == 0; ++i)
-            if (dt_contains(r, base, size)) return true;
-    }
-    return false;
-}
-static int touch_maps(struct kshim_resources *r, const struct CrIo *io)
-{
-    struct CrQupResources *q = &r->touch.qup;
-    const struct dt_range mmio[] = {{q->geni, q->geni_size}, {q->vote, 4}, {q->rcg, 0x3c},
-        {q->ahb_halt[0], 4}, {q->ahb_halt[1], 4}, {q->serial_halt, 4},
-        {q->bus_pins[0], 16}, {q->bus_pins[1], 16}, {q->irq_pin, 16},
-        {q->reset_pin, 16}, {q->rsc_base, q->rsc_size}};
-    for (unsigned i = 0; i < sizeof(mmio) / sizeof(mmio[0]); ++i)
-        if (kshim_resource_map(r, mmio[i].base, mmio[i].size, KSHIM_MMU_DEVICE, KSHIM_MMU_READ | KSHIM_MMU_WRITE)) return -1;
-    if (q->gate_pin && kshim_resource_map(r, q->gate_pin, 16, KSHIM_MMU_DEVICE, KSHIM_MMU_READ | KSHIM_MMU_WRITE)) return -1;
-    if (q->cmd_db_dictionary) {
-        if (!io || !io->read32 || q->cmd_db_dictionary > UINTPTR_MAX - 8) return -1;
-        uint32_t base = io->read32(io->context, q->cmd_db_dictionary);
-        uint32_t size = io->read32(io->context, q->cmd_db_dictionary + 4);
-        if ((base & 3) || size < 144 || size > 0x20000 || !ram_contains(r->fdt, base, size)) return -1;
-        q->cmd_db_base = base; q->cmd_db_size = size;
-        /* Snapshot the descriptor once before the MMU; the shared library
-         * now queries this bounded read-only region directly. */
-        q->cmd_db_dictionary = 0;
-    }
-    if (!ram_contains(r->fdt, q->cmd_db_base, q->cmd_db_size)) return -1;
-    return kshim_resource_map(r, q->cmd_db_base, q->cmd_db_size, KSHIM_MMU_NORMAL_NC, KSHIM_MMU_READ);
-}
-#endif
 #if CONFIG_KSHIM_IRQ
 /* The GIC is optional: without it the runtime polls. A failed probe leaves
  * no partial mapping behind. */
@@ -138,7 +100,7 @@ int kshim_resources_init(const void *f, size_t available)
     initialized = false;
     memset(&resources, 0, sizeof(resources));
     resources.fdt = f;
-    resources.spmi_status = resources.touch_status = resources.splash_status = -1;
+    resources.spmi_status = resources.splash_status = -1;
     resources.gic_status = ERROR_NOT_SUPPORTED;
 #if CONFIG_QCOM_SPMI
     resources.spmi_status = kshim_dt_spmi(f, &resources);
@@ -163,21 +125,8 @@ int kshim_resources_init(const void *f, size_t available)
                     4, KSHIM_MMU_DEVICE, KEY_GPIO_PERMISSIONS)) return -1;
     }
 #endif
-#if CONFIG_KSHIM_TOUCH && !CONFIG_KSHIM_TOUCH_FRAMEWORK
-    resources.touch_status = kshim_dt_touch(f, &resources.touch);
-    if (!resources.touch_status) {
-        /* Failed optional probes must not leave partial mappings or upgraded
-         * permissions behind after device-page coalescing. */
-        kshim_mmu_region_t saved[KSHIM_RESOURCE_MAX];
-        size_t count = resources.mapping_count;
-        memcpy(saved, resources.mappings, count * sizeof(*saved));
-        resources.touch_status = touch_maps(&resources, CrIoDefault());
-        if (resources.touch_status) {
-            memcpy(resources.mappings, saved, count * sizeof(*saved));
-            resources.mapping_count = count;
-        }
-    }
-#endif
+    /* Touch controllers (CONFIG_KSHIM_TOUCH_FRAMEWORK) use the GPIO, QUP and
+     * regulator windows that kshim_io_map_resources() adds below. */
 #if CONFIG_KSHIM_FRAMEBUFFER
     kshim_mmu_region_t display;
     resources.splash_status = kshim_dt_splash(f, CrIoDefault(), &resources.framebuffer, &display);

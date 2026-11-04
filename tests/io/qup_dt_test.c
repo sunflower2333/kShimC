@@ -184,13 +184,12 @@ static void test_andromeda(void)
     assert(client.adapter == a && client.addr == 0x49 && !client.flags && client.node == fts);
     unsigned children = 0;
     assert(!kshim_i2c_for_each_child(f, a, count_child, &children) && children == 1);
-    /* The former FTM5 binding (kernel/dt/touch.c, CrQupResources) and the
-     * new layer name the same engine, address and bus rate. */
-    struct kshim_touch_resource legacy;
-    assert(!kshim_dt_touch(f, &legacy) && legacy.node == fts);
-    assert(legacy.address == client.addr && legacy.qup.geni == touch->base);
-    assert(legacy.qup.geni_size == touch->size && legacy.qup.speed_hz == a->bus_hz);
-    assert(legacy.qup.speed_hz == kshim_dt_qup_i2c_bus_hz(f, i2c));
+    /* The former FTM5 binding (kernel/dt/touch.c kshim_dt_touch(), retired
+     * by the touch framework) named engine 0xc80000/0x4000, address 0x49 at
+     * 400 kHz; this layer was checked equal to it before the retirement. */
+    assert(touch->base == 0xc80000 && touch->size == 0x4000);
+    assert(client.addr == 0x49 && a->bus_hz == 400000);
+    assert(a->bus_hz == kshim_dt_qup_i2c_bus_hz(f, i2c));
 }
 
 static void test_hdk8150(void)

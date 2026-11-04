@@ -6,7 +6,7 @@ config KSHIM_TOUCH_FRAMEWORK
     def_bool KSHIM_TOUCH_FTM4 || KSHIM_TOUCH_FTM5 || KSHIM_TOUCH_GT911 || KSHIM_TOUCH_GT9916
     help
         Touch controller framework (kshim/touch_driver.h). Without it,
-        KSHIM_TOUCH keeps the legacy FTM5/QUP path until touch-st retires it.
+        KSHIM_TOUCH only carries injected pointer events (USB HID).
 
 config KSHIM_TOUCH_FTM5
     bool "ST FingerTip FTM5 (I2C)"

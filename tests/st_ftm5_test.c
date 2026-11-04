@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /* Host regression tests; link with kernel/drivers/st_ftm5.c and kernel/drivers/touch.c. */
 #include <st_ftm5.h>
-#include <qcom_bus.h> /* the legacy GENI adapters under test */
 
 #include <assert.h>
 #include <stdio.h>
@@ -12,6 +11,8 @@
 #define SCRIPT_MAX_COMMAND 8U
 #define SCRIPT_MAX_RESPONSE 257U
 #define EVENT_LOG_SIZE 96U
+/* Any transport failure is passed through unchanged (CR_BUS_IO = -5 before). */
+#define TRANSPORT_IO_ERROR (-5)
 
 typedef struct script_step {
     uint8_t command[SCRIPT_MAX_COMMAND];
@@ -103,54 +104,6 @@ static void scripted_delay(void *context, uint32_t delay_us)
 
     assert(script->delay_count < ARRAY_SIZE(script->delays));
     script->delays[script->delay_count++] = delay_us;
-}
-
-/* These host stubs exercise the driver's Qualcomm transport adapters without
- * pulling MMIO bus code into the protocol unit test. */
-int kshim_i2c_transfer(struct kshim_qcom_bus *bus,
-                       const struct kshim_i2c_msg *messages, size_t count,
-                       uint32_t timeout_us)
-{
-    assert(bus != NULL);
-    assert(messages != NULL);
-    assert(count == 1U || count == 2U);
-    assert(timeout_us == 0U);
-    assert(messages[0].address == KSHIM_FTM5_I2C_ADDRESS);
-    assert(!messages[0].read);
-    if (count == 2U) {
-        assert(messages[1].address == KSHIM_FTM5_I2C_ADDRESS);
-        assert(messages[1].read);
-        return scripted_transfer(bus->io.context,
-                                 messages[0].data, messages[0].length,
-                                 messages[1].data, messages[1].length);
-    }
-    return scripted_transfer(bus->io.context,
-                             messages[0].data, messages[0].length,
-                             NULL, 0);
-}
-
-int kshim_spi_transfer(struct kshim_qcom_bus *bus,
-                       const struct kshim_spi_segment *segments, size_t count,
-                       uint32_t timeout_us)
-{
-    assert(bus != NULL);
-    assert(segments != NULL);
-    assert(count == 1U || count == 2U);
-    assert(timeout_us == 0U);
-    assert(segments[0].tx != NULL);
-    assert(segments[0].rx == NULL);
-    if (count == 2U) {
-        assert(segments[0].delay_us == 0U);
-        assert(segments[1].tx == NULL);
-        assert(segments[1].rx != NULL);
-        assert(segments[1].delay_us == KSHIM_FTM5_SPI_CS_HOLD_US);
-        return scripted_transfer(bus->io.context,
-                                 segments[0].tx, segments[0].length,
-                                 segments[1].rx, segments[1].length);
-    }
-    assert(segments[0].delay_us == KSHIM_FTM5_SPI_CS_HOLD_US);
-    return scripted_transfer(bus->io.context,
-                             segments[0].tx, segments[0].length, NULL, 0);
 }
 
 static void record_event(void *context, const kshim_touch_event_t *event)
@@ -261,11 +214,11 @@ static void assert_script_done(const transfer_script_t *script)
 
 static void test_exact_i2c_initialization(void)
 {
+    /* The I2C framing itself (repeated START, address 0x49) is the touch
+     * framework's (tests/io/touch_st_test.c); here the transport is direct. */
     transfer_script_t script = {.bus_kind = KSHIM_FTM5_BUS_I2C};
-    struct kshim_qcom_bus bus = {
-        .io = {.context = &script, .delay_us = scripted_delay},
-        .config = {.protocol = KSHIM_GENI_I2C, .speed_hz = 400000},
-        .initialized = true,
+    const kshim_ftm5_transport_t transport = {
+        &script, scripted_transfer, scripted_delay, KSHIM_FTM5_BUS_I2C,
     };
     kshim_ftm5_t device;
     kshim_touch_t touch;
@@ -273,7 +226,7 @@ static void test_exact_i2c_initialization(void)
 
     add_standard_init(&script);
     init_touch(&touch, &log);
-    assert(kshim_ftm5_init_i2c(&device, &bus, &touch) == KSHIM_FTM5_OK);
+    assert(kshim_ftm5_init(&device, &transport, &touch) == KSHIM_FTM5_OK);
     assert_script_done(&script);
     assert(script.delay_count == 0U);
     assert(device.initialized);
@@ -380,9 +333,9 @@ static void test_initialization_bus_failures(void)
         kshim_touch_t touch;
         event_log_t log;
 
-        add_init_until_failure(&script, stage, KSHIM_BUS_IO);
+        add_init_until_failure(&script, stage, TRANSPORT_IO_ERROR);
         init_touch(&touch, &log);
-        assert(kshim_ftm5_init(&device, &transport, &touch) == KSHIM_BUS_IO);
+        assert(kshim_ftm5_init(&device, &transport, &touch) == TRANSPORT_IO_ERROR);
         assert_script_done(&script);
         assert(script.delay_count == 0U);
         assert(!device.initialized);
@@ -391,11 +344,11 @@ static void test_initialization_bus_failures(void)
              * reported error; cleanup must retry an explicit stop. */
             assert(device.scanning_maybe);
             script_add(&script, stop_command, sizeof(stop_command), NULL, 0,
-                       KSHIM_BUS_IO);
+                       TRANSPORT_IO_ERROR);
             script_add(&script, stop_command, sizeof(stop_command), NULL, 0, 0);
             /* The first cleanup attempt is allowed to fail and must retain
              * the uncertain state for a caller retry. */
-            assert(kshim_ftm5_quiesce(&device) == KSHIM_BUS_IO);
+            assert(kshim_ftm5_quiesce(&device) == TRANSPORT_IO_ERROR);
             assert(device.scanning_maybe);
             assert(kshim_ftm5_quiesce(&device) == KSHIM_FTM5_OK);
             assert(!device.scanning_maybe);
@@ -644,13 +597,13 @@ static void test_protocol_and_mid_batch_failures(void)
         script_add_read(&script, &command, 1, enter, sizeof(enter), 0);
         script_add_read(&script, &command, 1, move, sizeof(move), 0);
         script_add_read(&script, &command, 1, unread, sizeof(unread),
-                        KSHIM_BUS_IO);
+                        TRANSPORT_IO_ERROR);
         script_add_read(&script, &command, 1, empty, sizeof(empty), 0);
 
         init_touch(&touch, &log);
         assert(kshim_ftm5_init(&device, &transport, &touch) == KSHIM_FTM5_OK);
         assert(kshim_ftm5_poll(&device) == KSHIM_FTM5_OK);
-        assert(kshim_ftm5_poll(&device) == KSHIM_BUS_IO);
+        assert(kshim_ftm5_poll(&device) == TRANSPORT_IO_ERROR);
         assert(log.count == 2U);
         expect_event(&log, 0, KSHIM_TOUCH_EVENT_PRESS, 3, 100, 200);
         expect_event(&log, 1, KSHIM_TOUCH_EVENT_CANCEL, 3, 100, 200);
@@ -687,14 +640,8 @@ static void test_protocol_and_mid_batch_failures(void)
 static void test_spi_opcodes_and_dummy_bytes(void)
 {
     transfer_script_t script = {.bus_kind = KSHIM_FTM5_BUS_SPI};
-    struct kshim_qcom_bus bus = {
-        .io = {.context = &script, .delay_us = scripted_delay},
-        .config = {
-            .protocol = KSHIM_GENI_SPI,
-            .speed_hz = KSHIM_FTM5_SPI_MAX_HZ,
-            .spi_mode = KSHIM_FTM5_SPI_MODE,
-        },
-        .initialized = true,
+    const kshim_ftm5_transport_t transport = {
+        &script, scripted_transfer, scripted_delay, KSHIM_FTM5_BUS_SPI,
     };
     kshim_ftm5_t device;
     kshim_touch_t touch;
@@ -706,7 +653,7 @@ static void test_spi_opcodes_and_dummy_bytes(void)
     make_event(enter, UINT8_C(0x13), 6, 444, 777, 0);
     script_add_read(&script, &command, 1, enter, sizeof(enter), 0);
     init_touch(&touch, &log);
-    assert(kshim_ftm5_init_spi(&device, &bus, &touch) == KSHIM_FTM5_OK);
+    assert(kshim_ftm5_init(&device, &transport, &touch) == KSHIM_FTM5_OK);
     assert(kshim_ftm5_poll(&device) == KSHIM_FTM5_OK);
     expect_event(&log, 0, KSHIM_TOUCH_EVENT_PRESS, 6, 444, 777);
     assert_script_done(&script);
@@ -714,14 +661,6 @@ static void test_spi_opcodes_and_dummy_bytes(void)
     assert(KSHIM_FTM5_SPI_MODE == 0U);
     assert(KSHIM_FTM5_SPI_MAX_HZ == UINT32_C(7000000));
     assert(KSHIM_FTM5_SPI_CS_HOLD_US == 10U);
-
-    bus.config.spi_mode = 1U;
-    assert(kshim_ftm5_init_spi(&device, &bus, &touch) ==
-           KSHIM_FTM5_ERR_INVALID);
-    bus.config.spi_mode = KSHIM_FTM5_SPI_MODE;
-    bus.config.speed_hz = KSHIM_FTM5_SPI_MAX_HZ + 1U;
-    assert(kshim_ftm5_init_spi(&device, &bus, &touch) ==
-           KSHIM_FTM5_ERR_INVALID);
 }
 
 static void test_quiesce(void)
@@ -762,13 +701,13 @@ static void test_quiesce(void)
 
         add_standard_init(&script);
         script_add(&script, stop_command, sizeof(stop_command), NULL, 0,
-                   KSHIM_BUS_IO);
+                   TRANSPORT_IO_ERROR);
         script_add(&script, stop_command, sizeof(stop_command), NULL, 0, 0);
         init_touch(&touch, &log);
         assert(kshim_ftm5_init(&device, &transport, &touch) == KSHIM_FTM5_OK);
         assert(kshim_touch_update(&touch, 4, KSHIM_TOUCH_CONTACT_ENTER,
                                   12, 34) == KSHIM_TOUCH_OK);
-        assert(kshim_ftm5_quiesce(&device) == KSHIM_BUS_IO);
+        assert(kshim_ftm5_quiesce(&device) == TRANSPORT_IO_ERROR);
         assert(device.initialized); /* A retry must still issue scan disable. */
         assert(log.count == 2U);
         expect_event(&log, 1, KSHIM_TOUCH_EVENT_CANCEL, 4, 12, 34);

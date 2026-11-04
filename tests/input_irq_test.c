@@ -2,9 +2,10 @@
 /*
  * Interrupt-driven input (docs/interrupts.md layer 3) through a fake GIC
  * core and the cascade register models: PMIC PON/PMIC-GPIO keys and a TLMM
- * key queue events from IRQ context, the FTM5 touch FIFO is drained by the
- * TLMM level handler, GENI console RX is queued by its handler, and every
- * path falls back to polling when its interrupt does not resolve.
+ * key queue events from IRQ context, GENI console RX is queued by its
+ * handler, and every path falls back to polling when its interrupt does not
+ * resolve. Touch (the framework's deferred IRQ on the same TLMM model) is
+ * tests/io/touch_st_test.c (touch_st_irq_test).
  */
 #include "irq_fake.h"
 
@@ -20,7 +21,6 @@
 #include <qcom_irq.h>
 #include <qcom_keys.h>
 #include <qcom_keys_fdt.h>
-#include <st_ftm5.h>
 #include <Library/cr_debug_uart_poll.h>
 #include <kshim/uart.h>
 
@@ -262,99 +262,6 @@ static void test_tlmm_key(const void *f)
     printf("tlmm key: ok\n");
 }
 
-/* ---- Touch: FTM5 FIFO drained by the TLMM level-low handler ------------ */
-
-static uint8_t Fifo[32][8];
-static unsigned FifoCount;
-static uintptr_t TouchPin;
-static struct kshim_touch_queue Queue;
-static kshim_ftm5_t Ftm5;
-
-static int fifo_transfer(void *context, const uint8_t *command, size_t command_size,
-                         uint8_t *response, size_t response_size)
-{
-    (void)context;
-    assert(FakeInHandler && command_size == 1 && command[0] == 0x86 && response_size % 8 == 0);
-    memset(response, 0, response_size);
-    for (size_t at = 0; at < response_size && FifoCount; at += 8) {
-        memcpy(response + at, Fifo[0], 8);
-        response[at + 7] = (uint8_t)(FifoCount - 1);
-        memmove(Fifo, Fifo + 1, --FifoCount * 8U);
-    }
-    return 0;
-}
-static void fifo_delay(void *context, uint32_t us) { (void)context; (void)us; }
-static void fifo_event(uint8_t type, unsigned x, unsigned y)
-{
-    uint8_t e[8] = {type, 0x01 /* contact 0, finger */, (uint8_t)x,
-                    (uint8_t)(((x >> 8) & 0xfU) | ((y & 0xfU) << 4)), (uint8_t)(y >> 4)};
-    memcpy(Fifo[FifoCount++], e, 8);
-}
-static void touch_emit(void *context, const kshim_touch_event_t *event)
-{
-    (void)context;
-    assert(FakeInHandler);
-    kshim_touch_queue_push(&Queue, event);
-}
-static void touch_irq(uint32_t pin, void *context)
-{
-    assert(pin == 122 && context == &Ftm5);
-    assert(!kshim_ftm5_poll(&Ftm5));
-    if (!FifoCount) fake_tlmm_set(TouchPin, true); /* FTM5 releases the line */
-}
-
-static void test_touch(const void *f)
-{
-    struct kshim_touch_resource t;
-    uint32_t pin;
-    unsigned trigger;
-    fake_reset();
-    fake_gic_line(FAKE_TLMM_SUMMARY, fake_tlmm_line);
-    assert(!kshim_dt_touch(f, &t));
-    assert(!kshim_touch_irq_resolve(f, t.node, t.qup.irq_pin, t.qup.irq_active_low, &pin, &trigger));
-    assert(pin == 122 && trigger == KSHIM_IRQ_TYPE_LEVEL_LOW);
-    /* The interrupt must be the IRQ GPIO kShimC power-sequences. */
-    assert(kshim_touch_irq_resolve(f, t.node, t.qup.reset_pin, true, &pin, &trigger) ==
-           ERROR_INVALID_PARAMETER);
-
-    static kshim_touch_t touch;
-    kshim_touch_config_t config = {.source_width = 1440, .source_height = 2880,
-        .output_width = 1440, .output_height = 2880, .emit = touch_emit};
-    assert(!kshim_touch_init(&touch, &config));
-    Ftm5 = (kshim_ftm5_t){.transport = {NULL, fifo_transfer, fifo_delay, KSHIM_FTM5_BUS_I2C},
-                          .touch = &touch, .initialized = true};
-    TouchPin = t.qup.irq_pin;
-    fake_tlmm_pin(TouchPin, true);
-    kshim_touch_queue_reset(&Queue);
-    assert(!kshim_gpio_irq_request(122, trigger, touch_irq, &Ftm5));
-
-    /* One FIFO batch: enter and two moves; the queue coalesces the moves. */
-    fifo_event(0x13, 100, 200); fifo_event(0x23, 110, 210); fifo_event(0x23, 120, 220);
-    fake_tlmm_set(TouchPin, false);
-    assert(fake_gic_run() == 1 && !FifoCount);
-    kshim_touch_event_t e;
-    assert(kshim_touch_queue_pop(&Queue, &e) && e.type == KSHIM_TOUCH_EVENT_PRESS && e.x == 100 && e.y == 200);
-    assert(kshim_touch_queue_pop(&Queue, &e) && e.type == KSHIM_TOUCH_EVENT_MOVE && e.x == 120 && e.y == 220);
-    assert(!kshim_touch_queue_pop(&Queue, &e));
-    fifo_event(0x33, 120, 220);
-    fake_tlmm_set(TouchPin, false);
-    assert(fake_gic_run() == 1);
-    assert(kshim_touch_queue_pop(&Queue, &e) && e.type == KSHIM_TOUCH_EVENT_RELEASE);
-    assert(!kshim_touch_queue_pop(&Queue, &e));
-    assert(!kshim_gpio_irq_free(122) && fake_peek(TouchPin + 8) == 0);
-
-    /* Full queue: presses/releases outrank a trailing move, the rest drop. */
-    kshim_touch_event_t press = {.type = KSHIM_TOUCH_EVENT_PRESS}, move = {.type = KSHIM_TOUCH_EVENT_MOVE};
-    for (unsigned i = 0; i < KSHIM_TOUCH_QUEUE_DEPTH - 1; ++i) kshim_touch_queue_push(&Queue, &press);
-    kshim_touch_queue_push(&Queue, &move);
-    kshim_touch_queue_push(&Queue, &press);
-    kshim_touch_queue_push(&Queue, &press);
-    assert(Queue.count == KSHIM_TOUCH_QUEUE_DEPTH && Queue.dropped == 2);
-    kshim_touch_queue_reset(&Queue);
-    assert(!FakeIrqMasked);
-    printf("touch: ok\n");
-}
-
 /* ---- GENI console RX -------------------------------------------------- */
 
 static uintptr_t Se;
@@ -487,7 +394,6 @@ int main(void)
     test_keys(andromeda);
     test_keys(hdk);
     test_tlmm_key(andromeda);
-    test_touch(andromeda);
     test_console(andromeda);
     test_keys_fallback(hdk);
     free(andromeda); free(hdk);

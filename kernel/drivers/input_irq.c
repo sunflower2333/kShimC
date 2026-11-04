@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Interrupt wiring for Qualcomm keys and the touch event queue
- * (CONFIG_KSHIM_INPUT_IRQ). Key levels are sampled by the handlers through
+ * Interrupt wiring for Qualcomm keys (CONFIG_KSHIM_INPUT_IRQ). Touch
+ * controllers take their TLMM interrupt through the touch framework
+ * (kernel/drivers/input/touch/core.c). Key levels are sampled by the handlers through
  * the same QcomKeys read path as the poller (SPMI RT_STS, TLMM GPIO_IN), so
  * polarity and gen3 bit selection are unchanged.
  */
@@ -167,64 +168,4 @@ int kshim_keys_irq_stop(QcomKeys *keys)
     }
     if (keys && !first) { keys->IrqAlive = NULL; keys->IrqContext = NULL; }
     return first;
-}
-
-/* ---- Touch ------------------------------------------------------------- */
-
-void kshim_touch_queue_reset(struct kshim_touch_queue *q)
-{
-    unsigned long flags = kshim_irq_save();
-    q->head = q->count = q->dropped = 0;
-    kshim_irq_restore(flags);
-}
-
-void kshim_touch_queue_push(struct kshim_touch_queue *q, const kshim_touch_event_t *e)
-{
-    unsigned long flags = kshim_irq_save();
-    kshim_touch_event_t *last = q->count ?
-        &q->events[(q->head + q->count - 1U) % KSHIM_TOUCH_QUEUE_DEPTH] : NULL;
-    if (last && last->type == KSHIM_TOUCH_EVENT_MOVE &&
-        (e->type != KSHIM_TOUCH_EVENT_MOVE || last->contact_id == e->contact_id) &&
-        (e->type == KSHIM_TOUCH_EVENT_MOVE || q->count == KSHIM_TOUCH_QUEUE_DEPTH)) {
-        /* Coalesce moves; when full a press/release outranks the move. */
-        if (e->type != KSHIM_TOUCH_EVENT_MOVE) ++q->dropped;
-        *last = *e;
-    } else if (q->count < KSHIM_TOUCH_QUEUE_DEPTH) {
-        q->events[(q->head + q->count++) % KSHIM_TOUCH_QUEUE_DEPTH] = *e;
-    } else {
-        ++q->dropped;
-    }
-    kshim_irq_restore(flags);
-}
-
-bool kshim_touch_queue_pop(struct kshim_touch_queue *q, kshim_touch_event_t *e)
-{
-    unsigned long flags = kshim_irq_save();
-    bool any = q->count != 0;
-    if (any) {
-        *e = q->events[q->head];
-        q->head = (q->head + 1U) % KSHIM_TOUCH_QUEUE_DEPTH;
-        --q->count;
-    }
-    kshim_irq_restore(flags);
-    return any;
-}
-
-int kshim_touch_irq_resolve(const void *fdt, int node, uintptr_t irq_control,
-                            bool active_low, uint32_t *pin, unsigned *trigger)
-{
-    struct kshim_dt_irq spec;
-    uint32_t expected;
-    if (!fdt || !pin || !trigger || kshim_dt_irq(fdt, node, 0, &spec) ||
-        kshim_dt_irq_kind(fdt, spec.parent) != KSHIM_DT_IRQ_TLMM || spec.count != 2)
-        return ERROR_NOT_FOUND;
-    int status = kshim_tlmm_irq_init(fdt);
-    if (!status) status = kshim_tlmm_pin(irq_control, &expected);
-    if (status) return status;
-    if (spec.cells[0] != expected) return ERROR_INVALID_PARAMETER;
-    *pin = expected;
-    *trigger = kshim_dt_irq_trigger(spec.cells[1]);
-    if (*trigger == KSHIM_IRQ_TYPE_NONE)
-        *trigger = active_low ? KSHIM_IRQ_TYPE_LEVEL_LOW : KSHIM_IRQ_TYPE_LEVEL_HIGH;
-    return 0;
 }

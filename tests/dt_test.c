@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <qcom_dt.h>
+#include <kshim/touch_driver.h>
 #include <qcom_keys_fdt.h>
 #include <kshim_console.h>
 static void *fixture(const char *name, size_t *bytes)
@@ -36,16 +37,15 @@ static void test_real(const char *name, bool touch)
     fprintf(stderr, "%s key count=%zu\n", name, count);
     for(size_t i=0;i<count;++i) fprintf(stderr, "key: %u base=%llx\n",keys[i].Action,(unsigned long long)keys[i].Base);
     assert(count == 3);
-    int status = kshim_dt_touch(f, &r->touch);
-    fprintf(stderr, "%s touch=%d keys=%zu\n", name, status, count);
+    /* Touch board selection (the ST drivers' match hooks; tests/io/
+     * touch_st_test.c resolves the bus, GPIOs and supplies). */
+    int touch_node = fdt_node_offset_by_compatible(f, -1, "st,fts");
+    fprintf(stderr, "%s touch=%d keys=%zu\n", name, touch_node, count);
     if (touch) {
-        assert(!status); assert(r->touch.generation == 5 && r->touch.address == 0x49);
-        assert(r->touch.qup.geni == 0xc80000 && r->touch.qup.irq_pin == 0x3d7a000);
-        assert(r->touch.qup.cmd_db_dictionary == 0xc3f000c);
-        assert(r->touch.qup.tcs_offset == 0xd00 && r->touch.qup.active_count == 2);
-        int bus = fdt_parent_offset(f, r->touch.node);
-        assert(!fdt_setprop_string(f, bus, "status", "disabled"));
-        assert(kshim_dt_touch(f, &r->touch));
+        uint64_t address, size;
+        assert(touch_node >= 0 && kshim_touch_dt_selected(f, touch_node, "st,fts"));
+        assert(!dt_raw_reg(f, touch_node, 0, &address, &size) && address == 0x49 && !size);
+        assert(!strcmp(fdt_get_name(f, fdt_parent_offset(f, touch_node), NULL), "i2c@0xc80000"));
     }
     struct dt_range ranges[128]; bool nomap[128]; size_t nr;
     assert(!dt_reservations(f, ranges, nomap, 128, &nr)); assert(nr > 10);
@@ -100,12 +100,13 @@ static void test_common(void)
 static void test_kona(void)
 {
     size_t size; void *f=fixture("kona-resources.dtb",&size);
-    struct kshim_touch_resource t;
-    assert(kshim_dt_touch(f,&t)); /* Stock HDK selection intentionally empty. */
+    int touch=fdt_path_offset(f,"/i2c@a94000/touch@49");
+    assert(!kshim_touch_dt_selected(f,touch,"st,fts")); /* Stock HDK selection intentionally empty. */
     int bus=fdt_path_offset(f,"/i2c@a94000");
     assert(!fdt_setprop_string(f,bus,"qcom,i2c-touch-active","st,fts"));
-    /* The kona fixture is an ST FTM4 node; the FTM5-only prober rejects it. */
-    assert(kshim_dt_touch(f,&t));
+    touch=fdt_path_offset(f,"/i2c@a94000/touch@49");
+    assert(kshim_touch_dt_selected(f,touch,"st,fts"));
+    assert(!kshim_touch_dt_selected(f,touch,"goodix,gt9916")); /* the bus names another one */
     struct kshim_resources *r=calloc(1,sizeof(*r)); assert(r);
     assert(!kshim_dt_spmi(f,r) && r->spmi_count==2);
     uint8_t controller,bus_id,sid;
@@ -114,10 +115,12 @@ static void test_kona(void)
     assert(controller==1 && bus_id==1 && sid==0);
     int display=fdt_path_offset(f,"/display");
     assert(!fdt_setprop_string(f,display,"status","disabled"));
-    assert(kshim_dt_touch(f,&t));
+    touch=fdt_path_offset(f,"/i2c@a94000/touch@49");
+    assert(!kshim_touch_dt_selected(f,touch,"st,fts")); /* panel not on an active display */
+    display=fdt_path_offset(f,"/display");
     assert(!fdt_delprop(f,display,"status"));
-    bus=fdt_path_offset(f,"/i2c@a94000");
-    assert(!fdt_delprop(f,bus,"clocks")); assert(kshim_dt_touch(f,&t));
+    touch=fdt_path_offset(f,"/i2c@a94000/touch@49");
+    assert(kshim_touch_dt_selected(f,touch,"st,fts"));
     struct dt_range reservations[8]; bool no_map[8]; size_t nr;
     assert(!dt_reservations(f,reservations,no_map,8,&nr) && nr==2);
     assert(no_map[1] && reservations[1].base==0x80860000);
