@@ -107,6 +107,12 @@ struct kshim_usb_hcd {
 int kshim_usb_hcd_register(struct kshim_usb_hcd *hcd);
 /* IRQ-safe: root port `port` (1-based) changed; handled by kshim_usb_poll(). */
 void kshim_usb_hcd_port_changed(struct kshim_usb_hcd *hcd, uint8_t port);
+/* Additive (xhci): the HCD hands a finished URB back to the core (thread
+ * context: ops->poll, ops->cancel, ops->device_free, or a failed submit
+ * path after it was accepted). The core records status/actual, copies a
+ * bounced IN buffer back, and runs urb->complete and the completion from
+ * kshim_usb_poll_events(), never nested inside an HCD op. */
+void kshim_usb_hcd_giveback(struct kshim_usb_urb *urb, int status, uint32_t actual);
 
 /* xHCI glue (CONFIG_KSHIM_USB_XHCI): registers the PCI driver for class
  * 0x0c0330 and the Renesas uPD720201/uPD720202 IDs 1912:0014/1912:0015

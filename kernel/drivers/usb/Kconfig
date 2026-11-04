@@ -10,6 +10,16 @@ config KSHIM_USB
         kshim/usb_hcd.h). Host controllers are stopped and reset before
         payload handoff.
 
+config KSHIM_DMA_POOL_SIZE
+    hex "DMA pool size for bus-master devices"
+    depends on KSHIM_USB
+    default 0x40000
+    help
+        Static, page-aligned pool in the runtime image (kshim/dma.h) for the
+        xHCI rings, device contexts, scratchpads, transfer bounce buffers
+        and the Renesas firmware image while it is downloaded. About 8 KiB
+        per enumerated device plus the controller's scratchpad pages.
+
 config KSHIM_USB_XHCI
     bool "xHCI host controllers on PCI"
     depends on KSHIM_USB && KSHIM_PCI
@@ -20,6 +30,14 @@ config KSHIM_USB_XHCI
         the PCI core (INTx/MSI) with event-ring polling as the fallback.
         A controller left running by the previous firmware is taken over
         after a clean halt and reset.
+
+config KSHIM_USB_XHCI_FORCE_POLL
+    bool "Poll the xHCI event ring instead of using its interrupt"
+    depends on KSHIM_USB_XHCI
+    default n
+    help
+        Bring-up and test aid: never request the PCI interrupt, so every
+        event is found by the polling fallback.
 
 config KSHIM_USB_XHCI_RENESAS
     bool "Renesas uPD720201/uPD720202 firmware download"
@@ -35,3 +53,39 @@ config KSHIM_USB_XHCI_RENESAS_FW
     string "Renesas firmware file name"
     depends on KSHIM_USB_XHCI_RENESAS
     default "renesas_usb_fw.mem"
+
+config KSHIM_USB_XHCI_RENESAS_FW_EMBED
+    string "Optional Renesas firmware image to link into the runtime"
+    depends on KSHIM_USB_XHCI_RENESAS
+    default ""
+    help
+        Path, at build time, of a firmware image to embed. Empty (the
+        default) embeds nothing. With the firmware loader the embedded image
+        is only a fallback after the Android partitions confirmed absence;
+        without the loader it is the only source. The image is Renesas'
+        proprietary firmware: never commit it, and check its redistribution
+        terms before distributing a runtime that embeds it.
+
+config KSHIM_USB_XHCI_TEST_PCI
+    bool "Test-only PCI bus-0 ECAM enumerator for the xHCI QEMU test"
+    depends on KSHIM_USB_XHCI && KSHIM_QEMU_PLATFORM
+    default n
+    help
+        Weak, minimal implementation of kshim/pci.h for QEMU virt's
+        pci-host-ecam-generic (bus 0, memory BARs, INTx, config journal).
+        It lets tools/test_qemu_xhci.py run before the PCI core is merged;
+        the real PCI core overrides every symbol. Not for hardware.
+
+config KSHIM_USB_SELFTEST
+    bool "USB core self-test class driver (QEMU test)"
+    depends on KSHIM_USB
+    default n
+    help
+        Binds HID interfaces, fetches their report descriptor, submits an
+        interrupt-IN URB and logs reports; kshim_usb_settle() then waits up
+        to KSHIM_USB_SELFTEST_MS for two reports. Test builds only.
+
+config KSHIM_USB_SELFTEST_MS
+    int "Self-test report wait (ms)"
+    depends on KSHIM_USB_SELFTEST
+    default 5000

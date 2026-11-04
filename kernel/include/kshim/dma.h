@@ -17,6 +17,7 @@
  * The pool is never handed to the payload: kshim_io_quiesce() stops every
  * DMA master before the runtime memory is released.
  */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -34,3 +35,11 @@ void kshim_dma_sync_for_device(const void *va, size_t len);
 /* Device wrote [va, va+len): drop stale CPU lines before reading
  * (clean+invalidate; callers own whole cache lines of the range). */
 void kshim_dma_sync_for_cpu(void *va, size_t len);
+
+/* Additive (xhci): true when [va, va+len) lies inside one live pool
+ * allocation's memory, i.e. it may be handed to a device without bouncing
+ * (whole cache lines owned by the allocation). */
+bool kshim_dma_owns(const void *va, size_t len);
+/* Additive (xhci): bytes currently allocated / pool size, for diagnostics. */
+size_t kshim_dma_in_use(void);
+size_t kshim_dma_pool_size(void);
