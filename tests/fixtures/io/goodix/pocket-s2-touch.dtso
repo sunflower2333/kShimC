@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * AYANEO Pocket S2 / S2 Pro touchscreen, as a devicetree overlay on the
+ * mainline sm8650-ayaneo-pocket-s2.dtb (which has no touch node yet).
+ *
+ * Facts transcribed from "[PATCH RFC] arm64: dts: qcom: sm8650-ayaneo-pocket-s2:
+ * add display nodes" (lkml.iu.edu/hypermail/linux/kernel/2604.3/08167.html,
+ * from a patch by Kancy Joe); unchanged up to v5 (lkml.iu.edu/2607.3/07518.html).
+ * Linux DTS files are BSD-3-Clause. Numeric constants replace the
+ * dt-bindings macros so no preprocessor is needed:
+ * IRQ_TYPE_EDGE_FALLING = 2, GPIO_ACTIVE_HIGH = 0.
+ *
+ * Compiled by tests/io/touch_goodix.cmake with "dtc -@ -I dts -O dtb" and
+ * applied at test time with libfdt fdt_overlay_apply().
+ */
+/dts-v1/;
+/plugin/;
+
+&i2c4 {
+	/* Already in sm8650.dtsi; repeated so dtc can check reg in isolation. */
+	#address-cells = <1>;
+	#size-cells = <0>;
+	clock-frequency = <400000>;
+	status = "okay";
+
+	touchscreen@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <162 2>;
+
+		reset-gpios = <&tlmm 161 0>;
+		VDDIO-supply = <&vreg_l14b_3p2>;
+		AVDD28-supply = <&vreg_l14b_3p2>;
+
+		touchscreen-size-x = <1440>;
+		touchscreen-size-y = <2560>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&ts_reset_default>, <&ts_irq_default>;
+	};
+};
+
+&tlmm {
+	ts_irq_default: ts-irq-active-state {
+		pins = "gpio162";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+	ts_reset_default: ts-reset-active-state {
+		pins = "gpio161";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-down;
+	};
+};
