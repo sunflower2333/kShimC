@@ -14,4 +14,6 @@ if(CONFIG_KSHIM_PCI_SELFTEST)
 endif()
 if(CONFIG_KSHIM_PCI_QCOM)
     set(CRDK_PCIE ON CACHE BOOL "" FORCE)
+    list(APPEND KERNEL_SOURCES kernel/drivers/pci/qcom.c kernel/drivers/pci/qcom_pcielib.c
+        kernel/drivers/pci/qcom_sm8650.c)
 endif()
