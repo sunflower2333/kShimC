@@ -87,8 +87,10 @@ struct kshim_qup_se {
  * (kshim_console_base()) for KSHIM_QUP_OWNER_CONSOLE. Idempotent, no MMIO. */
 int kshim_qup_init(const void *fdt);
 struct kshim_resources;
-/* Map the SE window, wrapper window and pinctrl pins of every SE that has
- * an available DT node with available children or a console role. */
+/* Map the SE window (device, RW) of every SE with a user: an available I2C
+ * or SPI controller node with an available child, or an available UART node
+ * (kshim_dt_qup_window_used). The wrapper common window is never accessed
+ * and the pins are in the TLMM window kshim_gpio_map_resources() maps. */
 int kshim_qup_map_resources(struct kshim_resources *resources);
 
 unsigned kshim_qup_se_count(void);

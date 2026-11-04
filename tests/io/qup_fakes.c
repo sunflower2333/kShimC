@@ -4,6 +4,7 @@
 #include "../irq_fake.h"
 
 #include <kshim/pinctrl.h>
+#include <pl011_uart.h>
 #include <kshim/smp.h>
 #include <kshim/time.h>
 #include <Library/cr_geni_regs.h>
@@ -149,6 +150,28 @@ int kshim_pinctrl_apply(const void *fdt, int node, const char *name)
     assert(name && !strcmp(name, "default"));
     if (!fdt_getprop(fdt, node, "pinctrl-0", NULL)) return ERROR_NOT_FOUND;
     return FakePinctrlStatus;
+}
+
+/* ---- PL011 --------------------------------------------------------------- */
+
+uint64_t FakePl011Base;
+char FakePl011Out[64], FakePl011In;
+unsigned FakePl011OutLen;
+
+void pl011_init(uint64_t base) { FakePl011Base = base; }
+void pl011_write(uint64_t base, char *s, int n)
+{
+    assert(base == FakePl011Base && n >= 0 && FakePl011OutLen + (unsigned)n <= sizeof(FakePl011Out));
+    memcpy(FakePl011Out + FakePl011OutLen, s, (size_t)n);
+    FakePl011OutLen += (unsigned)n;
+}
+int pl011_try_read(uint64_t base, char *c)
+{
+    assert(base == FakePl011Base);
+    if (!FakePl011In) return 0;
+    *c = FakePl011In;
+    FakePl011In = 0;
+    return 1;
 }
 
 /* ---- Console and time --------------------------------------------------- */

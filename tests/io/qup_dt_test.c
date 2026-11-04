@@ -15,6 +15,7 @@
 #include <kshim/time.h>
 #include <kshim_irq_dt.h>
 #include <qcom_irq.h>
+#include <qcom_dt.h>
 #include <dt.h>
 
 #include <assert.h>
@@ -119,10 +120,11 @@ static const struct kshim_spi_controller_ops FakeSpiOps = {fake_transfer, NULL};
 static struct kshim_spi_controller Controllers[4];
 static unsigned ControllerCount;
 
-static struct kshim_i2c_adapter *fake_adapter(int node)
+static struct kshim_i2c_adapter *fake_adapter(const void *f, int node)
 {
     struct kshim_i2c_adapter *a = &Adapters[AdapterCount++];
-    *a = (struct kshim_i2c_adapter){.name = "fake", .node = node, .ops = &FakeI2cOps};
+    *a = (struct kshim_i2c_adapter){.name = "fake", .node = node, .ops = &FakeI2cOps,
+                                    .bus_hz = kshim_dt_qup_i2c_bus_hz(f, node)};
     assert(!kshim_i2c_adapter_register(a));
     assert(kshim_i2c_adapter_register(a) == KSHIM_IO_ERR_EXISTS);
     return a;
@@ -175,13 +177,20 @@ static void test_andromeda(void)
     assert(!kshim_dt_irq(f, i2c, 0, &irq) && irq.count == 3 && irq.cells[1] == 0x175);
     assert(kshim_dt_irq_kind(f, irq.parent) == KSHIM_DT_IRQ_PDC);
     /* FTM5 client. */
-    struct kshim_i2c_adapter *a = fake_adapter(i2c);
+    struct kshim_i2c_adapter *a = fake_adapter(f, i2c);
     struct kshim_i2c_client client;
     int fts = child_named(f, i2c, "fts@49");
     assert(fts >= 0 && !kshim_i2c_client_from_node(f, fts, &client));
     assert(client.adapter == a && client.addr == 0x49 && !client.flags && client.node == fts);
     unsigned children = 0;
     assert(!kshim_i2c_for_each_child(f, a, count_child, &children) && children == 1);
+    /* The former FTM5 binding (kernel/dt/touch.c, CrQupResources) and the
+     * new layer name the same engine, address and bus rate. */
+    struct kshim_touch_resource legacy;
+    assert(!kshim_dt_touch(f, &legacy) && legacy.node == fts);
+    assert(legacy.address == client.addr && legacy.qup.geni == touch->base);
+    assert(legacy.qup.geni_size == touch->size && legacy.qup.speed_hz == a->bus_hz);
+    assert(legacy.qup.speed_hz == kshim_dt_qup_i2c_bus_hz(f, i2c));
 }
 
 static void test_hdk8150(void)
@@ -215,7 +224,7 @@ static void test_kona(void)
     unsigned trigger;
     assert(!kshim_irq_from_fdt(f, touch->node, 0, &intid, &trigger));
     assert(intid == KSHIM_IRQ_SPI(358) && trigger == KSHIM_IRQ_TYPE_LEVEL_HIGH);
-    struct kshim_i2c_adapter *a = fake_adapter(touch->node);
+    struct kshim_i2c_adapter *a = fake_adapter(f, touch->node);
     struct kshim_i2c_client client;
     int fts = child_named(f, touch->node, "st_fts@49");
     assert(!kshim_i2c_client_from_node(f, fts, &client) && client.adapter == a && client.addr == 0x49);
@@ -270,7 +279,7 @@ static void test_pocket_s2(void)
     unsigned trigger;
     assert(!kshim_irq_from_fdt(f, i2c, 0, &intid, &trigger) && intid == KSHIM_IRQ_SPI(357));
     /* GT911 at 0x5d. */
-    struct kshim_i2c_adapter *a = fake_adapter(i2c);
+    struct kshim_i2c_adapter *a = fake_adapter(f, i2c);
     struct kshim_i2c_client client;
     int ts = child_named(f, i2c, "touchscreen@5d");
     assert(ts >= 0 && !kshim_i2c_client_from_node(f, ts, &client));

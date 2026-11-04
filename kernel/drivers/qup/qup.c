@@ -17,6 +17,7 @@
 #include <kshim/clk.h>
 #include <kshim/io.h>
 #include <kshim/pinctrl.h>
+#include <kshim/uart.h>
 #include <Library/cr_geni.h>
 #include <config.h>
 #include <dt.h>
@@ -372,7 +373,9 @@ int kshim_qup_se_irq_free(struct kshim_qup_se *se)
 
 int kshim_qup_quiesce_all(void)
 {
-    int result = 0;
+    /* DT UART instances restore DebugUartLib's snapshot and release their
+     * engines themselves; I2C/SPI quiesced theirs before this step. */
+    int result = kshim_uart_quiesce_all();
     bool tried[KSHIM_QUP_MAX_SE] = {false};
     /* Newest acquisition first. */
     for (;;) {

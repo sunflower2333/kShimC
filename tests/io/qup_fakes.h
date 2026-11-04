@@ -43,6 +43,11 @@ extern int FakePinctrlStatus;
 extern unsigned FakePinctrlCalls;
 extern int FakePinctrlNode;
 
+/* ---- PL011 (kernel/drivers/pl011.c entry points) ------------------------ */
+extern uint64_t FakePl011Base;
+extern char FakePl011Out[64], FakePl011In;
+extern unsigned FakePl011OutLen;
+
 /* ---- Console and time --------------------------------------------------- */
 extern uint64_t FakeConsoleBase;
 extern unsigned FakeWaits;

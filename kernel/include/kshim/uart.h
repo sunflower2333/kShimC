@@ -88,6 +88,11 @@ struct CrIo;
 /* Register access and time for GENI instances opened after this call
  * (CrIoDefault() unless a host register model is injected). */
 void kshim_uart_set_io(const struct CrIo *io);
+/* Handoff: kshim_uart_quiesce() every instance still open through
+ * kshim_uart_open_dt(), newest first (the console's MMIO instance is
+ * kshim_console_quiesce()'s). kshim_qup_quiesce_all() runs it before it
+ * releases the engines. Idempotent. */
+int kshim_uart_quiesce_all(void);
 
 /* GENI RX interrupt engine (kernel/drivers/geni_rx_irq.c, CONFIG_QCOM_IRQCHIP),
  * used by kshim_uart_rx_irq_start/stop/read_byte. Only SE_IRQ_EN.GENI_S and

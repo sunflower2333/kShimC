@@ -26,7 +26,11 @@
 #define GENI_UART_MIN_WINDOW 0xe2cU /* DebugUartLib's highest register + 4 */
 #define PL011_MIN_WINDOW 0x100U
 
+#define UART_DT_MAX 4U
+
 static const struct CrIo *Io;
+/* Instances opened through kshim_uart_open_dt(), for kshim_uart_quiesce_all(). */
+static struct kshim_uart *DtInstances[UART_DT_MAX];
 
 void kshim_uart_set_io(const struct CrIo *io) { Io = io; }
 
@@ -98,6 +102,8 @@ int kshim_uart_open_dt(struct kshim_uart *uart, const void *fdt, int node, uint3
         return status;
     }
     uart->se = se;
+    for (unsigned i = 0; i < UART_DT_MAX; ++i)
+        if (!DtInstances[i]) { DtInstances[i] = uart; break; }
     return status;
 #else
     return ERROR_NOT_SUPPORTED;
@@ -194,6 +200,20 @@ int kshim_uart_quiesce(struct kshim_uart *uart)
         uart->se = NULL;
     }
 #endif
+    for (unsigned i = 0; i < UART_DT_MAX; ++i)
+        if (DtInstances[i] == uart) DtInstances[i] = NULL;
     uart->open = false;
     return 0;
+}
+
+int kshim_uart_quiesce_all(void)
+{
+    int result = 0;
+    for (unsigned i = UART_DT_MAX; i > 0; --i) {
+        struct kshim_uart *uart = DtInstances[i - 1];
+        if (!uart) continue;
+        int status = kshim_uart_quiesce(uart);
+        if (status && !result) result = status;
+    }
+    return result;
 }

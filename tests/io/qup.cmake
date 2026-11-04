@@ -18,6 +18,7 @@ set(QUP_TEST_DEFINITIONS
     "QUP_GENERATED=\"${QUP_GENERATED_DIR}\"")
 set(QUP_CORE_SOURCES io/qup_fakes.c ${KSHIM_IRQCHIP_SOURCES}
     "${KSHIM_ROOT}/kernel/dt/qup.c" "${KSHIM_ROOT}/kernel/drivers/qup/qup.c"
+    "${KSHIM_ROOT}/kernel/drivers/qup/geni_uart.c" "${KSHIM_ROOT}/kernel/drivers/geni_rx_irq.c"
     "${KSHIM_ROOT}/kernel/core/io.c")
 
 # Pure DT: discovery, bus rates, windows, SE interrupts, I2C/SPI children.
@@ -44,8 +45,7 @@ kshim_test(qup_spi_test io/qup_spi_test.c ${QUP_CORE_SOURCES}
 target_compile_definitions(qup_spi_test PRIVATE ${QUP_TEST_DEFINITIONS}
     CONFIG_QCOM_IRQCHIP=1 CONFIG_KSHIM_QUP=1 CONFIG_KSHIM_SPI=1 CONFIG_KSHIM_SPI_GENI=1)
 
-kshim_test(qup_uart_test io/qup_uart_test.c ${QUP_CORE_SOURCES}
-    "${KSHIM_ROOT}/kernel/drivers/qup/geni_uart.c" "${KSHIM_ROOT}/kernel/drivers/geni_rx_irq.c")
+kshim_test(qup_uart_test io/qup_uart_test.c ${QUP_CORE_SOURCES})
 target_compile_definitions(qup_uart_test PRIVATE ${QUP_TEST_DEFINITIONS}
     CONFIG_QCOM_IRQCHIP=1 CONFIG_KSHIM_QUP=1)
 

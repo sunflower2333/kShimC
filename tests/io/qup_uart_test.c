@@ -21,26 +21,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ---- PL011 fake ---------------------------------------------------------- */
-static uint64_t Pl011Base;
-static char Pl011Out[64], Pl011In;
-static unsigned Pl011OutLen;
-void pl011_init(uint64_t base) { Pl011Base = base; }
-void pl011_write(uint64_t base, char *s, int n)
-{
-    assert(base == Pl011Base && n >= 0 && Pl011OutLen + (unsigned)n <= sizeof(Pl011Out));
-    memcpy(Pl011Out + Pl011OutLen, s, (size_t)n);
-    Pl011OutLen += (unsigned)n;
-}
-int pl011_try_read(uint64_t base, char *c)
-{
-    assert(base == Pl011Base);
-    if (!Pl011In) return 0;
-    *c = Pl011In;
-    Pl011In = 0;
-    return 1;
-}
-
 /* ---- GENI UART model (DebugUartLib's register use) ------------------------ */
 static uintptr_t Se;
 static uint32_t RxWords[64], RxLast;
@@ -210,9 +190,12 @@ static void test_dt_instance(const void *f)
     assert(!kshim_uart_write(&uart, "at", 2));
     /* interrupts-extended <&intc 0 0x249 0>, <&tlmm 55 0>: the GIC entry. */
     assert(!kshim_uart_rx_irq_start(&uart, f, se->node) && uart.intid == KSHIM_IRQ_SPI(0x249));
-    assert(!kshim_uart_quiesce(&uart));
+    /* Left open: the QUP handoff step quiesces it before releasing. */
+    assert(!kshim_qup_quiesce_all());
+    assert(!uart.open && !uart.se && fake_peek(Se + 0xe1c) == 4U && fake_peek(Se + 0x614) == 1U);
     assert(!se->acquired && se->owner == KSHIM_QUP_OWNER_NONE && !fake_clk_enabled_by_us());
     assert(!FakeGic[KSHIM_IRQ_SPI(0x249)].requested);
+    assert(!kshim_uart_quiesce(&uart) && !kshim_uart_quiesce_all());
     printf("DT instance: ok\n");
 }
 
@@ -223,9 +206,9 @@ static void test_pl011(const void *f)
     world();
     assert(kshim_uart_open_mmio(&uart, KSHIM_UART_PL011, 0x9000000, 0x80) == ERROR_INVALID_PARAMETER);
     memset(&uart, 0, sizeof(uart));
-    assert(!kshim_uart_open_mmio(&uart, KSHIM_UART_PL011, 0x9000000, 0x1000) && Pl011Base == 0x9000000);
-    assert(!kshim_uart_write(&uart, "pl", 2) && Pl011OutLen == 2 && !memcmp(Pl011Out, "pl", 2));
-    Pl011In = 'k';
+    assert(!kshim_uart_open_mmio(&uart, KSHIM_UART_PL011, 0x9000000, 0x1000) && FakePl011Base == 0x9000000);
+    assert(!kshim_uart_write(&uart, "pl", 2) && FakePl011OutLen == 2 && !memcmp(FakePl011Out, "pl", 2));
+    FakePl011In = 'k';
     assert(kshim_uart_read_byte(&uart, &c) == 1 && c == 'k' && kshim_uart_read_byte(&uart, &c) == 0);
     assert(kshim_uart_rx_irq_start(&uart, f, -1) == ERROR_NOT_SUPPORTED);
     assert(!kshim_uart_quiesce(&uart) && !uart.open);
