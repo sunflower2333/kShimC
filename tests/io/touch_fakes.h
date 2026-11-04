@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 #pragma once
 /*
- * Host fakes for the touch framework's dependencies until the sm8650 and qup
- * branches are merged: kshim/gpio.h (TLMM pins by number, DT-resolved),
+ * Host fakes for the touch framework's dependencies, so the framework and the
+ * drivers are tested in isolation from the platform layers: kshim/gpio.h (TLMM pins by number, DT-resolved),
  * kshim/pinctrl.h, kshim/regulator.h (one object per provider node),
  * kshim/i2c.h and kshim/spi.h (adapters probed from "qcom,geni-i2c" /
  * "qcom,i2c-geni" / "qcom,geni-spi" parents, transfers handed to a device

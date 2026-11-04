@@ -142,7 +142,7 @@ active level, else every 10 ms. Quiesce works as for the GT911.
 
 ## Assumptions about the framework (touch-st)
 
-The framework is not on this branch, so the tests fake it
+The unit tests fake the framework helpers
 (`tests/io/touch_goodix_fake.c`). The drivers rely on these points of the
 `touch_driver.h` contract:
 
@@ -159,6 +159,20 @@ The framework is not on this branch, so the tests fake it
    before `probe`. `dev->probed` is true only after a successful `probe`.
    `dev->max_x/max_y` already hold the DT size when it is given.
 6. `quiesce` may run more than once and after a failed probe.
+
+Integration check (merged tree): all six points hold in
+`kernel/drivers/input/touch/core.c`, and `touch_goodix_framework_test`
+runs both drivers on the real framework (see Tests). One interplay is
+worth knowing: on stop the framework's `release()` drives the reset GPIO's
+logical "asserted" value (`true`) while it drops the rail references, then
+the GPIO registry restores the pad. Under the goodix,gt9xx convention used
+by the GT911 (logical value = RSTB level) that is RSTB *high*. So there is
+no reset pulse at handoff, and an inherited controller keeps its I2C
+address (useful, since the RFC node has no `irq-gpios` for a payload to
+redo the address select). On the cold path, though, RSTB stays driven
+high for the moment between kShimC dropping its rail vote and the pad
+restore. The GT9916 (active-low reset, generic convention) is held in reset
+as intended.
 
 ## Tests
 
@@ -180,6 +194,15 @@ SPI segments through, as the real helpers will.
   bus), events with one and two reads, stylus slots, header/point checksum
   errors, more than 10 points, bus errors, the level IRQ deasserting on
   release, reset requests, inheritance, polling and quiesce.
+- `touch_goodix_framework_test` (added by the integration): the real
+  framework (`core.c`, `registry.c`) with both drivers on the SM8650
+  fixtures in `tests/fixtures/io/`, over touch-st's platform fakes and
+  small chip models. It checks driver selection, the shared l14b rail
+  referenced twice for AVDD28/VDDIO, the GT911 address latched at the RSTB
+  edge, the IRQ requested after probe with probe's trigger, deferred
+  handling (mask, handle, status released, unmask), the GT9916 level IRQ
+  deasserting before the unmask and the 100 ms stuck-level fallback to
+  polling, and the stop order and pad restore.
 - `touch_goodix_dt_test`: resolves both boards from the real mainline DTBs.
   The Pocket S2 RFC node is applied as an overlay with libfdt. The test
   checks the SE window, the bus parameters, the TLMM interrupt through

@@ -2,8 +2,8 @@
 # Owner: touch-st. Host register-model tests (docs/io-stack.md "Test plan").
 #
 # The framework and the ST drivers run over tests/io/touch_fakes.c, which
-# stands in for kshim/gpio.h, pinctrl.h, regulator.h, i2c.h and spi.h until
-# the sm8650 and qup branches are merged, and for the TLMM interrupt API
+# stands in for kshim/gpio.h, pinctrl.h, regulator.h, i2c.h and spi.h (unit
+# isolation from the sm8650 and qup layers), and for the TLMM interrupt API
 # (TOUCH_FAKE_TLMM=1) or, in touch_st_irq_test, the real TLMM cascade over
 # the irq_fake.c register model.
 set(KSHIM_TOUCH_TEST_DEFS CONFIG_KSHIM_TOUCH=1 CONFIG_KSHIM_TOUCH_FRAMEWORK=1

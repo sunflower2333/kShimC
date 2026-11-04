@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Owner: touch-goodix. Host register-model tests (docs/io-stack.md "Test plan",
-# docs/touch-goodix.md). The touch framework helpers (touch-st) and the
-# regulator/GPIO calls (sm8650) are faked in io/touch_goodix_fake.c until
-# those branches merge.
+# docs/touch-goodix.md). The unit tests fake the touch framework helpers
+# (touch-st) and the regulator/GPIO calls (sm8650) in io/touch_goodix_fake.c;
+# touch_goodix_framework_test runs the drivers on the real framework.
 set(GOODIX_DRIVERS
     "${KSHIM_ROOT}/kernel/drivers/input/touch/goodix_gt911.c"
     "${KSHIM_ROOT}/kernel/drivers/input/touch/goodix_gt9916.c")
@@ -40,3 +40,20 @@ set_source_files_properties("${KSHIM_ROOT}/lib/libfdt/fdt_overlay.c" PROPERTIES
 target_compile_definitions(touch_goodix_dt_test PRIVATE
     "GOODIX_FIXTURES=\"${GOODIX_FIXTURES}\"" "GOODIX_GENERATED=\"${GOODIX_GENERATED}\"")
 add_dependencies(touch_goodix_dt_test touch_goodix_fixtures)
+
+# Integration (merged tree): the real touch framework (core.c, registry.c)
+# with both Goodix drivers on the mainline SM8650 fixtures, over touch-st's
+# platform fakes (GPIO, pinctrl, regulators, I2C/SPI clients, TLMM IRQ) and
+# chip models written from the same protocol facts.
+kshim_test(touch_goodix_framework_test io/touch_goodix_framework_test.c ${GOODIX_DRIVERS}
+    "${KSHIM_ROOT}/kernel/drivers/input/touch/core.c"
+    "${KSHIM_ROOT}/kernel/drivers/input/touch/registry.c"
+    "${KSHIM_ROOT}/kernel/drivers/touch.c" "${KSHIM_ROOT}/kernel/dt/qcom_irq.c"
+    "${CMAKE_CURRENT_LIST_DIR}/touch_fakes.c")
+target_compile_definitions(touch_goodix_framework_test PRIVATE CONFIG_KSHIM_TOUCH=1
+    CONFIG_KSHIM_TOUCH_FRAMEWORK=1 CONFIG_KSHIM_I2C=1 CONFIG_KSHIM_SPI=1
+    CONFIG_KSHIM_REGULATOR=1 CONFIG_KSHIM_GPIO=1 CONFIG_QCOM_IRQCHIP=1 CONFIG_KSHIM_INPUT_IRQ=1
+    CONFIG_KSHIM_TOUCH_GT911=1 CONFIG_KSHIM_TOUCH_GT9916=1 TOUCH_FAKE_TLMM=1
+    "FIXTURES=\"${KSHIM_ROOT}/tests/fixtures\"")
+target_include_directories(touch_goodix_framework_test PRIVATE "${KSHIM_ROOT}/tests/include")
+target_link_libraries(touch_goodix_framework_test PRIVATE kshim_dt)
