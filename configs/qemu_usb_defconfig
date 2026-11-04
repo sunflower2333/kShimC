@@ -1,0 +1,23 @@
+# QEMU virt (GICv3) USB end-to-end runtime: tools/test_qemu_usb.py.
+# Serial Manifest menu driven by USB HID only: gpex PCIe (generic ECAM host)
+# -> qemu-xhci / nec-usb-xhci -> usb-hub -> usb-kbd + usb-mouse.
+# Unlike configs/qemu_io_defconfig (the minimal usbhid profile), this one
+# also builds the Renesas firmware download and the Android firmware loader
+# with storage, so the full xHCI probe path runs (QEMU has no Renesas
+# controller, so it only checks that nothing else is touched).
+CONFIG_KSHIM_QEMU_PLATFORM=y
+CONFIG_KSHIM_SMP=n
+CONFIG_KSHIM_FRAMEBUFFER=n
+CONFIG_KSHIM_LVGL=n
+CONFIG_QCOM_KEYS=n
+CONFIG_QCOM_SPMI=n
+CONFIG_BLOCK=y
+CONFIG_FS_EXT4=y
+CONFIG_FIRMWARE_LOADER=y
+CONFIG_KSHIM_PCI=y
+CONFIG_KSHIM_PCI_ECAM=y
+CONFIG_KSHIM_USB=y
+CONFIG_KSHIM_USB_XHCI=y
+CONFIG_KSHIM_USB_XHCI_RENESAS=y
+CONFIG_KSHIM_USB_HUB=y
+CONFIG_KSHIM_USB_HID=y

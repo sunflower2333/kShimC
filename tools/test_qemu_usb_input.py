@@ -19,9 +19,9 @@ Cases:
                      the LVGL keypad group moves with Down and Enter boots
                      (--lvgl)
 
-The runtime config adds CONFIG_KSHIM_PCI, CONFIG_KSHIM_PCI_ECAM and
-CONFIG_KSHIM_USB_XHCI. Those drivers belong to the pci and xhci branches;
-without them in the tree the script reports SKIP and exits 77.
+configs/qemu_io_defconfig carries the PCI (ECAM), xHCI, hub and HID options;
+the script appends them again for the LVGL case. Without kernel/drivers/pci
+and kernel/drivers/usb/host in the tree the script reports SKIP (exit 77).
 """
 import argparse
 import hashlib

@@ -4,10 +4,12 @@ CONFIG_KSHIM_FRAMEBUFFER=n
 CONFIG_KSHIM_LVGL=n
 CONFIG_QCOM_KEYS=n
 CONFIG_QCOM_SPMI=n
-# USB input stack (docs/io-stack.md): USB core, hub and HID class drivers,
-# input injection. tools/test_qemu_usb_input.py adds the PCI host and xHCI
-# options (CONFIG_KSHIM_PCI, CONFIG_KSHIM_PCI_ECAM, CONFIG_KSHIM_USB_XHCI)
-# once those drivers are in the tree.
+# USB input stack (docs/io-stack.md): gpex PCIe (generic ECAM host), xHCI,
+# USB core, hub and HID class drivers, input injection.
+# tools/test_qemu_usb_input.py runs it end to end.
+CONFIG_KSHIM_PCI=y
+CONFIG_KSHIM_PCI_ECAM=y
 CONFIG_KSHIM_USB=y
+CONFIG_KSHIM_USB_XHCI=y
 CONFIG_KSHIM_USB_HUB=y
 CONFIG_KSHIM_USB_HID=y

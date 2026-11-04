@@ -174,6 +174,13 @@ invalidates; with the MMU off both reduce to barriers in effect.
   xHCI function a payload finds after handoff with a direct boot. It runs
   on the real PCI core (`KSHIM_PCI_ECAM`, QEMU gpex); the test-only bus-0
   enumerator it used before the PCI merge was removed.
+- QEMU end to end: `tools/test_qemu_usb.py` (`configs/qemu_usb_defconfig`)
+  drives the serial menu through usb-hub, usb-kbd and usb-mouse on
+  qemu-xhci and nec-usb-xhci with HMP `sendkey down` / `sendkey ret`, at EL1
+  and EL2. The booted entry dumps the GIC, every bus-0 PCI function and the
+  xHCI registers; the dump must equal a direct boot and show bus mastering
+  off, no SPI enabled and the xHCI halted. `tools/test_qemu_usb_input.py`
+  (usbhid) covers the same path with QMP input plus the LVGL menu.
 
 ## Hardware risks (unverified)
 
