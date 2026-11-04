@@ -170,8 +170,8 @@ SPI segments through, as the real helpers will.
 - `touch_goodix_gt911_test`: an I2C register model that latches its
   address from INT at the RSTB edge and flags every T2-T5 violation. It
   covers both addresses, the product and config reads (valid, bad checksum,
-  unreadable), the trigger correction, DT size precedence, one-, two- and
-  three-read frames, ENTER/MOVE/LEAVE diffing, the status handshake,
+  unreadable), the trigger correction, DT size precedence, frames read in
+  one or two transfers, ENTER/MOVE/LEAVE diffing, the status handshake,
   protocol and bus errors, inherited and mis-addressed controllers, no
   IRQ/reset GPIO fallbacks, polling cadence and quiesce.
 - `touch_goodix_gt9916_test`: an SPI model of the Berlin-D map. It checks

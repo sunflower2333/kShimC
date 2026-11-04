@@ -356,6 +356,15 @@ static void test_reports(void)
     assert(fake.event_count == 0 && *reg(0x814e) == 0x81);
     assert(drv->handle(&dev) == 0);
     fake_expect_event(0, 3, KSHIM_TOUCH_CONTACT_ENTER, 1, 2);
+
+    /* Track IDs beyond the framework's 10 contacts and repeated IDs are
+     * dropped; contact 3 lifts. */
+    fake_events_clear();
+    model_frame((const struct point[]){ { 12, 9, 9 }, { 4, 40, 41 }, { 4, 50, 51 } }, 3);
+    assert(drv->handle(&dev) == 0);
+    assert(fake.event_count == 2);
+    fake_expect_event(0, 4, KSHIM_TOUCH_CONTACT_ENTER, 40, 41);
+    fake_expect_event(1, 3, KSHIM_TOUCH_CONTACT_LEAVE, 1, 2);
 }
 
 /* UEFI left it powered, addressed and running: no reset sequence. */
