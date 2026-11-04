@@ -25,6 +25,12 @@ ECAM, and powers off. The same payload booted directly, without kShimC,
 must produce an identical dump: the config journal must have put back every
 BAR, command register, bridge bus number and window, at EL1 (hvc) and EL2
 (smc).
+
+The serial runtime never enables the MMU. To run the same checks with the
+MMU on at handoff, build configs/qemu_manifest_ui_defconfig plus
+CONFIG_KSHIM_PCI=y, CONFIG_KSHIM_PCI_ECAM=y and CONFIG_KSHIM_PCI_SELFTEST=y
+and pass it with --smp 4 --timeout 300 (the LVGL menu boots the default
+entry after its Manifest timeout).
 """
 import argparse
 import json
@@ -218,6 +224,8 @@ def main():
     parser.add_argument("--out", type=Path, default=Path("build/pci-qemu"))
     parser.add_argument("--packer", type=Path, default=None,
                         help="MultiBootKernelPatcher checkout (default: ../MultiBootKernelPatcher)")
+    parser.add_argument("--smp", type=int, default=2)
+    parser.add_argument("--timeout", type=float, default=120.0)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     packer_root = (args.packer or root.parent / "MultiBootKernelPatcher").resolve()
@@ -272,11 +280,11 @@ Type=Manifest
         dumps, logs = {}, {}
         for case, image in (("direct", out / "payload.bin"), ("kshimc", packed)):
             command = ["qemu-system-aarch64", "-machine", f"virt,gic-version=3,virtualization={virt}",
-                       "-accel", "tcg", "-cpu", "cortex-a76", "-smp", "2", "-m", "256M",
+                       "-accel", "tcg", "-cpu", "cortex-a76", "-smp", str(args.smp), "-m", "256M",
                        "-display", "none", "-monitor", "none", "-serial", "stdio",
                        "-no-reboot", *DEVICES, "-kernel", image]
             output = run(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, timeout=120).stdout.decode(errors="replace")
+                         stderr=subprocess.STDOUT, timeout=args.timeout).stdout.decode(errors="replace")
             (out / f"{el}-{case}.log").write_text(output)
             logs[case] = output
             dumps[case] = dump(output)
