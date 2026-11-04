@@ -336,6 +336,12 @@ static void run_ep(unsigned s, unsigned dci)
             n = len < sizeof(d->bulk) ? len : (uint32_t)sizeof(d->bulk);
             memcpy(d->bulk, ptr(buf), n);
             d->bulk_len = n;
+            ep->deq += 16;
+            if (c & T_IOC) post_transfer(here, CC_SUCCESS, 0, s, dci);
+            /* Data for the echo: serve a bulk IN TD that is waiting. */
+            for (unsigned other = 2; other < 32; ++other)
+                if (slot->ep[other].enabled && slot->ep[other].type == 6) run_ep(s, other);
+            continue;
         } else if (ep->type == 6) { /* bulk IN: echo */
             if (!d->bulk_len) return;
             n = len < d->bulk_len ? len : d->bulk_len;

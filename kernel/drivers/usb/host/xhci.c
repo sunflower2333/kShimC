@@ -134,9 +134,13 @@ void xhci_ring_free(struct xhci_ring *ring)
 
 unsigned xhci_ring_free_trbs(const struct xhci_ring *ring)
 {
-    /* One TRB stays spare so a full ring never looks empty. */
-    unsigned usable = XHCI_RING_TRBS - 2U;
-    return ring->used >= usable ? 0 : usable - ring->used;
+    /* From positions, not a count: TRBs between the software dequeue and
+     * the enqueue (cancelled TDs turned into No Ops included) still belong
+     * to the controller. One TRB stays spare so a full ring never looks
+     * empty; the Link TRB is not a position. */
+    unsigned positions = XHCI_RING_TRBS - 1U;
+    unsigned in_flight = (ring->enqueue + positions - ring->dequeue) % positions;
+    return in_flight >= positions - 1U ? 0 : positions - 1U - in_flight;
 }
 
 uint64_t xhci_ring_trb_dma(const struct xhci_ring *ring, unsigned index)
@@ -407,7 +411,7 @@ static void free_memory(struct xhci *x)
     memset(x->scratch_pages, 0, sizeof(x->scratch_pages));
     if (x->scratch_array) kshim_dma_free(x->scratch_array, x->scratchpads * sizeof(uint64_t));
     x->scratch_array = NULL;
-    if (x->dcbaa) kshim_dma_free(x->dcbaa, (XHCI_MAX_SLOTS + 1U) * sizeof(uint64_t));
+    if (x->dcbaa) kshim_dma_free(x->dcbaa, (x->max_slots + 1U) * sizeof(uint64_t));
     x->dcbaa = NULL;
 }
 

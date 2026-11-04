@@ -249,6 +249,29 @@ static void check_control_and_bulk(void)
     /* The ring is usable after the cancel. */
     assert(kshim_usb_bulk(ss, bo, out, 64, 100, &actual) == 0);
     assert(kshim_usb_bulk(ss, bi, in, 64, 100, &actual) == 0 && actual == 64);
+    /* Two queued bulk IN URBs; cancelling the second (not the controller's
+     * current TD) turns it into No Ops, the first still completes, and the
+     * ring keeps working across several wraps afterwards. */
+    static struct kshim_usb_urb a, b;
+    static uint8_t abuf[64], bbuf[64];
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    a.device = b.device = ss;
+    a.endpoint = b.endpoint = bi;
+    a.buffer = abuf; b.buffer = bbuf;
+    a.length = b.length = 64;
+    assert(kshim_usb_submit_urb(&a) == 0 && kshim_usb_submit_urb(&b) == 0);
+    stops = Xm.commands[15];
+    assert(kshim_usb_cancel_urb(&b) == 0 && b.status == KSHIM_IO_ERR_CANCELLED);
+    assert(Xm.commands[15] == stops + 1 && a.status == KSHIM_IO_ERR_PENDING);
+    assert(kshim_usb_bulk(ss, bo, out, 64, 100, &actual) == 0);
+    kshim_usb_poll_events();
+    assert(a.status == 0 && a.actual == 64 && !memcmp(abuf, out, 64));
+    for (unsigned i = 0; i < 150; ++i) {
+        out[0] = (uint8_t)i;
+        assert(kshim_usb_bulk(ss, bo, out, 32, 100, &actual) == 0);
+        assert(kshim_usb_bulk(ss, bi, in, 64, 100, &actual) == 0 && actual == 32 && in[0] == (uint8_t)i);
+    }
     /* The interrupt endpoint refuses a bulk helper. */
     assert(kshim_usb_bulk(hs, &hs->interfaces[0].endpoints[0], in, 8, 10, NULL) == ERROR_INVALID_PARAMETER);
 }
