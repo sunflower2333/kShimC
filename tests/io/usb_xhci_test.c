@@ -9,7 +9,8 @@
  *   poll      no interrupt: everything through the polling path
  *   lostirq   interrupt enabled but never delivered: polling fallback
  *   takeover  controller left running by the previous firmware, 64-byte
- *             contexts, a BIOS that never releases its semaphore
+ *             contexts, a BIOS that never releases its semaphore, port
+ *             power control (ports off after HCRST)
  *   dead      commands never complete: bounded timeout, controller halted,
  *             handoff still resets it
  */
@@ -386,6 +387,7 @@ static void scenario_takeover(void)
 {
     xm_init(64, 1, true);
     Xm.bios_releases = false;
+    Xm.ppc = true;
     Xm.irq = line;
     Xm.irq_context = &X;
     IrqReady = true;
@@ -396,6 +398,8 @@ static void scenario_takeover(void)
     /* Halted first (R/S cleared), then reset, then our own rings. */
     assert(X.inherited_running && Xm.stop_count == 1 && Xm.rs_clear_seq < Xm.hcrst_seq);
     assert(Xm.dcbaap_lo != 0xdead0000U && X.ctx_size == 64);
+    /* PPC: every port was powered after the reset (4.19.1.1). */
+    for (unsigned p = 1; p <= XM_PORTS; ++p) assert(Xm.portsc[p] & (1U << 9));
     /* The BIOS never answered: ownership taken. */
     assert((Xm.legsup & (1U << 24)) && !(Xm.legsup & (1U << 16)));
     assert(kshim_usb_settle(3000) == 0);

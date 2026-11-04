@@ -56,6 +56,7 @@ struct xm_slot {
 
 struct xm {
     unsigned ctx_size;             /* 32 or 64 (HCCPARAMS1.CSZ) */
+    bool ppc;                      /* port power control: ports unpowered after HCRST */
     unsigned scratchpads;
     uint32_t usbcmd, usbsts, dnctrl, crcr_lo, crcr_hi, dcbaap_lo, dcbaap_hi, config;
     uint32_t portsc[XM_PORTS + 1];

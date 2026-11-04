@@ -123,7 +123,7 @@ static void set_state(unsigned slot, unsigned dci, uint8_t state)
 
 /* ---- Ports -------------------------------------------------------------------- */
 
-static uint32_t port_idle(unsigned port)
+static uint32_t port_powered(unsigned port)
 {
     const struct xm_dev *d = &Xm.devs[port];
     uint32_t v = P_PP;
@@ -133,11 +133,17 @@ static uint32_t port_idle(unsigned port)
     return v;
 }
 
+/* With PPC a port is off (no PP, no connect) until software powers it. */
+static uint32_t port_idle(unsigned port)
+{
+    return Xm.ppc ? 0 : port_powered(port);
+}
+
 void xm_attach(unsigned port, const struct xm_dev *dev)
 {
     Xm.devs[port] = *dev;
     Xm.devs[port].present = true;
-    Xm.portsc[port] = port_idle(port);
+    Xm.portsc[port] = Xm.ppc && !(Xm.portsc[port] & P_PP) ? 0 : port_powered(port);
     post_port(port);
     deliver();
 }
@@ -160,6 +166,15 @@ struct xm_slot *xm_slot_of_port(unsigned port)
 static void port_write(unsigned port, uint32_t v)
 {
     uint32_t old = Xm.portsc[port], nv = old;
+    if (Xm.ppc && (v & P_PP) && !(old & P_PP)) {
+        Xm.portsc[port] = port_powered(port);
+        if (Xm.devs[port].present) post_port(port);
+        return;
+    }
+    if (Xm.ppc && !(v & P_PP)) {
+        Xm.portsc[port] = 0; /* powered off */
+        return;
+    }
     nv &= ~(v & P_CHANGES);
     if ((v & P_PED) && !usb3(port)) nv &= ~P_PED;
     bool reset = false;
@@ -548,7 +563,7 @@ uint32_t xm_read32(void *context, uintptr_t address)
         case 0x00: return CAPLEN | 0x0110U << 16;
         case 0x04: return XM_SLOTS | 1U << 8 | XM_PORTS << 24;
         case 0x08: return 1U << 4 | ((Xm.scratchpads >> 5) & 0x1fU) << 21 | (Xm.scratchpads & 0x1fU) << 27;
-        case 0x10: return 1U | (Xm.ctx_size == 64 ? 4U : 0U) | (XECP / 4U) << 16;
+        case 0x10: return 1U | (Xm.ctx_size == 64 ? 4U : 0U) | (Xm.ppc ? 8U : 0U) | (XECP / 4U) << 16;
         case 0x14: return DB;
         case 0x18: return RT;
         default: return 0;
