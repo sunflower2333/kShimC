@@ -383,7 +383,7 @@ static void TestFdt(void)
 
     /* Recognizing "tlmm" in a string does not prove a linear GPIO layout. */
     const char *UnsupportedTlmm[] = {
-        "vendor,unknown-tlmm", "qcom,sdm845-pinctrl", "qcom,sm8650-tlmm",
+        "vendor,unknown-tlmm", "qcom,sdm845-pinctrl",
         "vendor,qcom,sm8450-tlmm", "qcom,sm8450-tlmm-unknown"
     };
     for (size_t Index = 0; Index < ARRAY_SIZE(UnsupportedTlmm); Index++) {
@@ -393,8 +393,9 @@ static void TestFdt(void)
         ExpectActions(Blob, Up | Power);
     }
 
-    /* Both supported layouts end at GPIO209; GPIO210 is UFS reset. */
-    const char *SupportedTlmm[] = {"qcom,sm8450-tlmm", "qcom,sm8550-tlmm"};
+    /* The supported linear layouts end at GPIO209; GPIO210 is UFS reset.
+     * SM8650 (kshim_dt_gpio, CrDK Target/Sm8650) has the same pad range. */
+    const char *SupportedTlmm[] = {"qcom,sm8450-tlmm", "qcom,sm8550-tlmm", "qcom,sm8650-tlmm"};
     const uint32_t GpioBoundaries[] = {0U, 209U, 210U, UINT32_MAX};
     for (size_t Platform = 0; Platform < ARRAY_SIZE(SupportedTlmm); Platform++) {
         for (size_t Index = 0; Index < ARRAY_SIZE(GpioBoundaries); Index++) {

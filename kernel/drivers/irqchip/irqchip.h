@@ -7,15 +7,20 @@
 #include <Library/gpio.h>
 
 /* TLMM interrupt layout (tlmm.c): CrDK's TLMM target RegCfg[0] and, per
- * SoC, the normal (interrupt-capable) pin count and the reserved pins.
- * irqchip_test compares both with CrDK Target/<Soc>/CrGpioTarget.c. */
-#define KSHIM_TLMM_SOCS 4U
+ * SoC, the normal (interrupt-capable) pin count, the reserved pins and the
+ * INTR_CFG target field. irqchip_test compares them with CrDK
+ * Target/<Soc>/CrGpioTarget.c. Board reservations ("gpio-reserved-ranges")
+ * are read from the DT on top of the static list. */
+#define KSHIM_TLMM_SOCS 5U
 struct kshim_tlmm_soc {
     const char *compatible;
     uint16_t pins;
     bool linear; /* base + pin * 0x1000; otherwise Android binding offsets */
     uint16_t reserved[8];
     uint8_t reserved_count;
+    /* INTR_CFG apps-target field; 0 means KshimTlmmLayout's (bits 7:5).
+     * SM8650 moved it to bits 10:8 (wake present/enable sit at 6/7). */
+    uint32_t target_mask;
 };
 extern const GpioConfigRegInfo KshimTlmmLayout;
 extern const struct kshim_tlmm_soc KshimTlmmSocs[KSHIM_TLMM_SOCS];

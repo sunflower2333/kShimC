@@ -5,8 +5,9 @@
  * dispatches by INTR_STATUS. Pin addresses come from the DT TLMM region.
  *
  * The register layout is CrDK's TLMM target data (Target/Sm8150, Sm8250,
- * Sm8450 CrGpioTarget.c RegCfg[0], identical on the three) carried as one
- * GpioConfigRegInfo, with each SoC's reserved and special pads; irqchip_test
+ * Sm8450, Sm8650 CrGpioTarget.c RegCfg[0], identical except for the SM8650
+ * apps-target field at bits 10:8) carried as one GpioConfigRegInfo plus a
+ * per-SoC target mask, with each SoC's reserved and special pads; irqchip_test
  * checks both against those tables field by field. The tables are not
  * linked: each is a 13.5 KiB GpioDeviceContext, as is the context CrDK
  * GpioLib's per-pin calls need, and the 4 MiB runtime slot has under 90 KiB
@@ -44,10 +45,13 @@ const GpioConfigRegInfo KshimTlmmLayout = {
 };
 /* Normal pins are 0..pins-1; the special pads after them have no interrupt. */
 const struct kshim_tlmm_soc KshimTlmmSocs[KSHIM_TLMM_SOCS] = {
-    {"qcom,sm8150-pinctrl", 175, false, {0, 1, 2, 3, 126, 127, 128, 129}, 8},
-    {"qcom,kona-pinctrl", 180, false, {28, 29, 30, 31, 40, 41, 42, 43}, 8},
-    {"qcom,sm8250-tlmm", 180, false, {28, 29, 30, 31, 40, 41, 42, 43}, 8},
-    {"qcom,sm8450-tlmm", 210, true, {0}, 0},
+    {"qcom,sm8150-pinctrl", 175, false, {0, 1, 2, 3, 126, 127, 128, 129}, 8, 0},
+    {"qcom,kona-pinctrl", 180, false, {28, 29, 30, 31, 40, 41, 42, 43}, 8, 0},
+    {"qcom,sm8250-tlmm", 180, false, {28, 29, 30, 31, 40, 41, 42, 43}, 8, 0},
+    {"qcom,sm8450-tlmm", 210, true, {0}, 0, 0},
+    /* CrDK Target/Sm8650 CrGpioTarget.c: InterruptTargetMsk 0x700, 210
+     * normal pads; QRD/Pocket S2 NFC reservations come from the DT. */
+    {"qcom,sm8650-tlmm", 210, true, {0}, 0, 0x700},
 };
 
 struct tlmm_slot {
@@ -76,6 +80,10 @@ static struct {
 static uint32_t rd(uintptr_t a) { return Tlmm.io->read32(Tlmm.io->context, a); }
 static void wr(uintptr_t a, uint32_t v) { Tlmm.io->write32(Tlmm.io->context, a, v); }
 static uint32_t field(uint32_t value, uint32_t mask) { return (value << __builtin_ctz(mask)) & mask; }
+static uint32_t target_mask(void)
+{
+    return Tlmm.layout && Tlmm.layout->target_mask ? Tlmm.layout->target_mask : L.InterruptTargetMsk;
+}
 static uintptr_t cfg_reg(const struct tlmm_slot *s) { return s->control + L.IntCfgRegOffset; }
 static uintptr_t target_reg(const struct tlmm_slot *s) { return s->control + L.IntTargetRegOffset; }
 static uintptr_t status_reg(const struct tlmm_slot *s) { return s->control + L.IntStatusRegOffset; }
@@ -118,10 +126,22 @@ int kshim_tlmm_irq_init(const void *f)
     return 0;
 }
 
+/* "gpio-reserved-ranges" <start count> pairs: pads owned by another EE. */
+static bool dt_reserved(uint32_t pin)
+{
+    int len;
+    const fdt32_t *p = fdt_getprop(Tlmm.fdt, Tlmm.node, "gpio-reserved-ranges", &len);
+    for (int i = 0; p && i + 1 < len / 4; i += 2) {
+        uint32_t start = fdt32_to_cpu(p[i]), count = fdt32_to_cpu(p[i + 1]);
+        if (pin >= start && pin - start < count) return true;
+    }
+    return false;
+}
+
 static int pin_address(uint32_t pin, uintptr_t *address)
 {
     const struct kshim_tlmm_soc *soc = Tlmm.layout;
-    if (pin >= soc->pins) return -1;
+    if (pin >= soc->pins || dt_reserved(pin)) return -1;
     for (unsigned i = 0; i < soc->reserved_count; ++i) if (soc->reserved[i] == pin) return -1;
     /* kshim_dt_gpio() without re-reading the TLMM reg for every pin. */
     uint64_t at = Tlmm.reg.base + (uint64_t)pin * 0x1000U;
@@ -176,7 +196,7 @@ static uint32_t config_fields(void)
 {
     uint32_t m = L.InterruptEnMsk | L.InterruptRawStatusMsk | L.InterruptDetectionMsk |
                  L.InterruptPolarityMsk;
-    return L.IntTargetRegOffset == L.IntCfgRegOffset ? m | L.InterruptTargetMsk : m;
+    return L.IntTargetRegOffset == L.IntCfgRegOffset ? m | target_mask() : m;
 }
 
 static void restore_slot(unsigned i)
@@ -187,7 +207,7 @@ static void restore_slot(unsigned i)
     wr(cfg, rd(cfg) & ~L.InterruptEnMsk);
     wr(cfg, (rd(cfg) & ~mask) | (s->saved_config & mask));
     if (target != cfg)
-        wr(target, (rd(target) & ~L.InterruptTargetMsk) | (s->saved_target & L.InterruptTargetMsk));
+        wr(target, (rd(target) & ~target_mask()) | (s->saved_target & target_mask()));
     /* A latch produced by kShimC's configuration must not reach the payload. */
     ack(s);
     *s = (struct tlmm_slot){0};
@@ -225,9 +245,9 @@ int kshim_gpio_irq_request(uint32_t pin, unsigned trigger,
     s->saved_target = rd(target);
     /* Route to the apps processor first, with the pin disabled. */
     uint32_t value = s->saved_config & ~L.InterruptEnMsk;
-    if (target != cfg) wr(target, (s->saved_target & ~L.InterruptTargetMsk) |
-                                  field(L.TargetKpssVal, L.InterruptTargetMsk));
-    else value = (value & ~L.InterruptTargetMsk) | field(L.TargetKpssVal, L.InterruptTargetMsk);
+    if (target != cfg) wr(target, (s->saved_target & ~target_mask()) |
+                                  field(L.TargetKpssVal, target_mask()));
+    else value = (value & ~target_mask()) | field(L.TargetKpssVal, target_mask());
     /* RAW_STATUS_EN stays on while the pin is requested: toggling it can set
      * an edge status (pinctrl-msm). Enabling it can latch a stale event,
      * which is acknowledged before the pin is enabled. */
