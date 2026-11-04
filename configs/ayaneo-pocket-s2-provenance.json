@@ -1,0 +1,27 @@
+{
+  "board": "AYANEO Pocket S2 / S2 Pro (SM8650)",
+  "runtime_dt": "Linux arch/arm64/boot/dts/qcom/sm8650-ayaneo-pocket-s2.dts (+ RFC touch node, see fixture)",
+  "repository": "Linux mainline (/home/sunf/mu_aloha_platforms/linux)",
+  "revision": "40288c9206c17eb66a603262e06a58d300d0f279",
+  "fixture": "tests/fixtures/io/sm8650-ayaneo-pocket-s2.dtb (sha256 7f35daf356d8adee29ba78b70b11b7cdd71dc176b72bedafbe97b566251d58ea)",
+  "files": {
+    "arch/arm64/boot/dts/qcom/sm8650.dtsi": "8c1bf591b95d22a4d120351d4d720713b38236629564dde92613aea6852a3b2a",
+    "arch/arm64/boot/dts/qcom/sm8650-ayaneo-pocket-s2.dts": "44e838b69efbb9bfdc39fba68a3e12b1eedce54fef4061a83f2b545e1f3c475b"
+  },
+  "rfc": "arm64: dts: qcom: sm8650-ayaneo-pocket-s2: add display nodes (lkml 2604.3/08167), touch node only",
+  "console": {"node": "uart15 (serial0)", "base": "0x0089c000", "policy": "inherited 115200 8n1"},
+  "tlmm": {"reserved": "gpio-reserved-ranges <32 4>, <36 1>, <38 6>, <74 1> (NFC)"},
+  "keys": {
+    "Power": "PMK8550 PON_HLOS 0x1300 RT_STS bit 7",
+    "VolumeDown": "PMK8550 PON_HLOS 0x1300 RT_STS bit 6 (pon_resin, KEY_VOLUMEDOWN)",
+    "VolumeUp": "gpio-keys pm8550_gpios 6, active low, debounce 15 ms"
+  },
+  "gamepad": {
+    "pcie1": {"compatible": "qcom,pcie-sm8650", "parf": "0x01c08000", "dbi": "0x40000000", "atu": "0x40001000", "config": "0x40100000", "mem": "0x40300000 + 0x1fd00000", "perst": "TLMM 97 active-low", "wake": "TLMM 99", "clkreq": "TLMM 98 pcie1_clk_req_n", "gdsc": "pcie_1_gdsc (collapse vote 0x5214c bit 1, GDSCR 0x8d004)", "resets": "GCC_PCIE_1_BCR 0x8d000, LINK_DOWN 0x8e014", "intx": "GIC SPI 434/435/438/439", "smmu": "stream 0x1480/0x1481 (must be bypass, not programmed by kShimC)"},
+    "phy": {"compatible": "qcom,sm8650-qmp-gen4x2-pcie-phy", "base": "0x01c0e000", "supplies": "vdda-phy vreg_l3e_0p9 (ldoe3), vdda-pll vreg_l3i_1p2 (ldoi3; regulator-name says 0p91), vdda-qref vreg_l1i_0p88 (ldoi1)"},
+    "endpoint": {"compatible": "pci1912,0014 (Renesas uPD720201)", "reg": "bus 1 dev 0", "supplies": "avdd33 TLMM 123, vdd10 TLMM 122, vdd33 TLMM 121 (regulator-fixed, active-high, vin vph_pwr)", "pinctrl": "gamepad_pwr_en: gpio28 output-high, 2 mA, bias-disable", "firmware": "renesas_usb_fw.mem from super/vendor{slot}/firmware unless ROM or already running"}
+  },
+  "touch": {"controller": "Goodix GT911, goodix,gt911 @ 0x5d", "bus": "i2c4 @ 0xa90000, 400 kHz", "irq": "TLMM 162 falling edge", "reset": "TLMM 161 active-high as written in the RFC (unverified)", "supplies": "VDDIO and AVDD28 = vreg_l14b_3p2 (ldob14)", "pinctrl": "ts_reset_default gpio161 pull-down 8 mA, ts_irq_default gpio162 bias-disable 8 mA", "size": "1440x2560"},
+  "storage": {"ufs": "0x01d84000, ufs_phy_gdsc GDSCR GCC+0x77004 (inherited when PWR_ON)"},
+  "hardware_tested": false
+}

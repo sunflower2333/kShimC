@@ -1,0 +1,30 @@
+# Qualcomm SM8650 QRD: mainline sm8650-qrd.dts as the runtime DT; see
+# configs/qrd8650-provenance.json. UEFI reference port: LanaiCrPkg (qcom-qrd8650),
+# CrDK Target/Sm8650 (GPIO, PDC, inherited UART15 console).
+# Console: uart15 (serial0, 0x89c000) inherited from the boot chain.
+# Keys: PMK8550 PON gen3 power/resin (vol-) and pm8550_gpios 6 (vol+).
+# Touch: Goodix GT9916 (Berlin) on spi4.
+CONFIG_QCOM_KEYS=y
+CONFIG_QCOM_SPMI=y
+CONFIG_QCOM_KEY_DEBOUNCE_SAMPLES=2
+# CONFIG_KSHIM_QEMU_PLATFORM is not set
+CONFIG_KSHIM_FRAMEBUFFER=y
+CONFIG_KSHIM_LVGL=y
+CONFIG_KSHIM_LVGL_BUFFER_BYTES=262144
+# CONFIG_KSHIM_UEFI_TEST_MENU is not set
+# CONFIG_ENABLE_BANNER is not set
+CONFIG_DEBUG_LEVEL_NONE=y
+CONFIG_ASSERT_HALT=y
+
+CONFIG_KSHIM_SMP=y
+CONFIG_KSHIM_SMP_WORKERS=7
+# Pointer service for the LVGL menu; the touch driver comes with GT9916.
+CONFIG_KSHIM_TOUCH=y
+
+# I/O stack (docs/io-stack.md). Not enabled yet: with the LVGL menu the 4 MiB
+# Manifest slot has about 8 KiB left on this profile, and the platform layer
+# alone (CONFIG_KSHIM_REGULATOR=y, ~45 KiB) already overflows it ("kShim
+# runtime exceeds image slot"). Enable once the slot question is settled:
+#   sm8650:       CONFIG_KSHIM_REGULATOR=y
+#   qup:          CONFIG_KSHIM_QUP=y  CONFIG_KSHIM_SPI=y
+#   touch-goodix: CONFIG_KSHIM_TOUCH_GT9916=y
