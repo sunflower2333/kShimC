@@ -79,6 +79,7 @@ struct xm {
     /* Statistics. */
     unsigned irqs_raised, hcrst_count, run_count, stop_count, commands[64], doorbells;
     unsigned td_trbs, last_td_trbs;   /* Normal TRBs of the last chained TD */
+    uint32_t hi_at_reset;             /* DCBAAP/ERSTBA/ERDP upper halves at the last HCRST */
     unsigned rs_clear_before_hcrst; /* a takeover cleared R/S before HCRST */
     uint64_t scratch_seen;
     unsigned last_write_seq, rs_clear_seq, hcrst_seq, seq;

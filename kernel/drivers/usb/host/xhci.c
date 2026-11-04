@@ -484,6 +484,29 @@ void xhci_fail_all(struct xhci *x, int status)
     if (x->cmd_pending) kshim_completion_complete(&x->cmd_done, status);
 }
 
+/* Renesas uPD720201/uPD720202: a reset while 64-bit addresses are
+ * programmed keeps their upper halves internally, so the next owner's
+ * addresses would be combined with the old ones. While halted, clear every
+ * 64-bit address register an earlier owner may have left (DCBAAP, CRCR,
+ * each interrupter's ERSTBA and ERDP) before HCRST. Only done when an upper
+ * half is visibly non-zero. */
+static void zero_64b_registers(struct xhci *x)
+{
+    unsigned intrs = (x->hcsparams1 >> 8) & 0x7ffU;
+    if (intrs > 1024) intrs = 1024;
+    bool high = xhci_op_read(x, XHCI_DCBAAP_HI) != 0;
+    for (unsigned i = 0; i < intrs && !high; ++i)
+        high = xhci_rt_read(x, XHCI_IR(i) + XHCI_ERSTBA_HI) || xhci_rt_read(x, XHCI_IR(i) + XHCI_ERDP_HI);
+    if (!high) return;
+    printf("xhci: %s: clearing inherited 64-bit addresses before reset\n", x->name);
+    op_write64(x, XHCI_DCBAAP_LO, 0);
+    op_write64(x, XHCI_CRCR_LO, 0);
+    for (unsigned i = 0; i < intrs; ++i) {
+        rt_write64(x, XHCI_IR(i) + XHCI_ERSTBA_LO, 0);
+        rt_write64(x, XHCI_IR(i) + XHCI_ERDP_LO, 0);
+    }
+}
+
 static int reset_controller(struct xhci *x)
 {
     xhci_op_write(x, XHCI_USBCMD, XHCI_CMD_HCRST);
@@ -543,6 +566,7 @@ int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xh
         }
     }
     legacy_takeover(x);
+    if (x->quirk_zero_64b) zero_64b_registers(x);
     int status = reset_controller(x);
     if (status) {
         printf("xhci: %s: reset timeout\n", x->name);

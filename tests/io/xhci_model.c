@@ -229,6 +229,8 @@ void xm_init(unsigned ctx_size, unsigned scratchpads, bool running)
         Xm.usbcmd = CMD_RS | CMD_INTE;
         Xm.usbsts = 0;
         Xm.dcbaap_lo = 0xdead0000U;
+        Xm.dcbaap_hi = 0x8U;          /* rings above 4 GiB */
+        Xm.erstba_hi = Xm.erdp_hi = 0x8U;
         Xm.config = 4;
     }
 }
@@ -634,6 +636,7 @@ static void op_write(uintptr_t reg, uint32_t v)
         if (v & CMD_HCRST) {
             /* Software must halt first (5.4.1.1). */
             assert(Xm.usbsts & STS_HCH);
+            Xm.hi_at_reset = Xm.dcbaap_hi | Xm.erstba_hi | Xm.erdp_hi;
             hc_reset();
             return;
         }
@@ -683,7 +686,11 @@ static void rt_write(uintptr_t reg, uint32_t v)
     case 0x34: {
         Xm.erstba_hi = v;
         uint32_t *erst = ptr((uint64_t)Xm.erstba_hi << 32 | Xm.erstba_lo);
-        assert(Xm.erstsz == 1 && erst);
+        if (!erst) {
+            Xm.ev_base = 0; /* cleared while halted */
+            return;
+        }
+        assert(Xm.erstsz == 1);
         Xm.ev_base = ((uint64_t)erst[1] << 32 | erst[0]) & ~0x3fULL;
         Xm.ev_size = erst[2] & 0xffffU;
         Xm.ev_enq = 0;

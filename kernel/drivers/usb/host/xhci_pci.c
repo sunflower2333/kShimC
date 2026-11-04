@@ -226,6 +226,7 @@ static int xhci_pci_probe(struct kshim_pci_dev *dev, const struct kshim_pci_devi
 #endif
     struct xhci_io io;
     xhci_io_mmio(&io);
+    xp->x.quirk_zero_64b = dev->vendor == 0x1912;
     status = xhci_start(&xp->x, xp->name, (uintptr_t)base, &io, UINT64_MAX, xp->irq);
     if (status) {
         printf("xhci: %s: start failed: %s (%d)\n", xp->name, kshim_io_strerror(status), status);

@@ -266,6 +266,8 @@ struct xhci {
     uint32_t page_size;
     unsigned scratchpads;
     uint64_t dma_limit;
+    /* Set by the bus glue before xhci_start (Renesas uPD720201/202). */
+    bool quirk_zero_64b;
     /* DMA: device context base array, scratchpads, rings, ERST. */
     uint64_t *dcbaa;
     uint64_t dcbaa_dma;

@@ -407,7 +407,10 @@ static void scenario_takeover(void)
     uint32_t legsup = Xm.legsup, legctl = Xm.legctl;
     attach_all();
     assert(kshim_usb_class_register(&KbdDriver) == 0);
+    X.quirk_zero_64b = true; /* as xhci_pci.c sets for Renesas */
     assert(start(true) == 0);
+    /* Upper address halves cleared before HCRST (Renesas). */
+    assert(Xm.hi_at_reset == 0);
     /* Halted first (R/S cleared), then reset, then our own rings. */
     assert(X.inherited_running && Xm.stop_count == 1 && Xm.rs_clear_seq < Xm.hcrst_seq);
     assert(Xm.dcbaap_lo != 0xdead0000U && X.ctx_size == 64);
