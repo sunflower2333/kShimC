@@ -32,3 +32,9 @@ void kshim_qcom_spmi_revoke(unsigned controller, uint8_t sid, uint8_t peripheral
 /* Restricted PON adapter used only by the power sequencer. */
 int kshim_qcom_power_read8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t *value);
 int kshim_qcom_power_write8(uint8_t controller,uint8_t bus,uint8_t sid,uint16_t address,uint8_t value);
+
+/* PMIC GPIO byte transport (kernel/drivers/gpio, CONFIG_QCOM_SPMI): reads
+ * any byte; writes only GPIO configuration registers 0x40-0x46/0x4a of a
+ * peripheral whose TYPE reads as GPIO. 0 or -1. */
+int kshim_qcom_pmic_gpio_read8(uint8_t controller, uint8_t sid, uint16_t address, uint8_t *value);
+int kshim_qcom_pmic_gpio_write8(uint8_t controller, uint8_t sid, uint16_t address, uint8_t value);
