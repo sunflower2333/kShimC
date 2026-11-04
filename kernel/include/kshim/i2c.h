@@ -51,7 +51,7 @@ struct kshim_i2c_adapter_ops {
 struct kshim_i2c_adapter {
     const char *name;          /* "i2c@a90000" */
     int node;                  /* controller DT node */
-    uint32_t bus_hz;           /* DT clock-frequency, default 100000 */
+    uint32_t bus_hz;           /* DT clock-frequency, default 100000 (Android binding: 400000) */
     const struct kshim_i2c_adapter_ops *ops;
     void *priv;
     bool irq_driven;           /* completion interrupt live (diagnostics) */
@@ -99,3 +99,15 @@ int kshim_i2c_write_read(const struct kshim_i2c_client *client, const void *tx, 
 /* Handoff: quiesce every registered adapter, newest first. Later transfers
  * fail with KSHIM_IO_ERR_QUIESCED. Idempotent. */
 int kshim_i2c_quiesce_all(void);
+
+/* ---- Additions by the qup owner (additive, docs/qup.md) ----------------- */
+
+/* Limits of the GENI controller (CrDK GeniSeLib FIFO core): 7-bit addresses
+ * (KSHIM_I2C_M_TEN is ERROR_NOT_SUPPORTED), len >= 1, at most 32 messages
+ * between two STOPs (KSHIM_I2C_M_STOP splits a list), timeout <= 1 s. */
+#define KSHIM_I2C_GENI_MAX_RUN 32U
+
+/* GENI controller probe behind kshim_i2c_adapter_get() (CONFIG_KSHIM_I2C_GENI,
+ * kernel/drivers/qup/geni_i2c.c): claims the SE for KSHIM_QUP_OWNER_I2C,
+ * acquires it, starts the FIFO engine and registers the adapter. */
+int kshim_geni_i2c_probe(const void *fdt, int node, struct kshim_i2c_adapter **adapter);

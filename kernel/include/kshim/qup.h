@@ -129,3 +129,49 @@ static inline uintptr_t kshim_qup_se_mmio(const struct kshim_qup_se *se) { retur
 /* Handoff: release every acquired SE except the console's, newest first.
  * The I2C/SPI/UART owners have quiesced their engines before this. */
 int kshim_qup_quiesce_all(void);
+
+/* ---- Additions by the qup owner (additive, docs/qup.md) ----------------- */
+
+/* Acquire details (kernel/drivers/qup/qup.c):
+ *  - the owner node's clocks are "se" (mainline) or "se-clk" (Android); the
+ *    AHB clocks "m-ahb"/"s-ahb" come from the wrapper node when it has them
+ *    (mainline), else from the owner node (Android);
+ *  - source_hz and dfs_index may be NULL for a protocol that keeps the
+ *    inherited rate (UART with baud 0): the RCG is then never touched and
+ *    an inherited active sequencer (a UART RX command) is accepted;
+ *  - kshim_qup_se_release() drops kShimC's clock enables; the RCG selection
+ *    and the pin snapshots stay with kshim_clk_restore_all() and
+ *    kshim_gpio_restore_all(), which run later in kshim_io_quiesce();
+ *  - a window that kshim_qup_map_resources() did not map is refused with
+ *    ERROR_NOT_SUPPORTED once a mapping pass has run (the MMU would fault). */
+
+struct CrIo;
+/* Register access and time for the QUP core and the GENI engines:
+ * CrIoDefault() unless a host register model is injected. */
+void kshim_qup_set_io(const struct CrIo *io);
+const struct CrIo *kshim_qup_io(void);
+/* FDT bound by kshim_qup_init(), NULL before. */
+const void *kshim_qup_fdt(void);
+
+/* DT helpers (kernel/dt/qup.c), pure FDT, no MMIO. */
+/* GENI protocol named by an SE node's compatible, NONE for other nodes. */
+enum kshim_qup_protocol kshim_dt_qup_protocol(const void *fdt, int node);
+/* True for the Android binding family ("qcom,i2c-geni", "qcom,spi-geni",
+ * "qcom,msm-geni-serial-hs", "qcom,msm-geni-console"). */
+bool kshim_dt_qup_android(const void *fdt, int node);
+/* Every SE register window with at least one available node, in DT order,
+ * and the wrappers they reference (parent "qcom,geni-se-qup" or
+ * "qcom,wrapper-core"). Malformed nodes are skipped; windows past the
+ * capacity are dropped and reported with KSHIM_IO_ERR_OVERFLOW (the tables
+ * are still filled). Wrapper pointers point into `wrappers`. */
+int kshim_dt_qup_discover(const void *fdt, struct kshim_qup_wrapper *wrappers,
+                          unsigned max_wrappers, unsigned *wrapper_count,
+                          struct kshim_qup_se *ses, unsigned max_ses, unsigned *se_count);
+/* I2C bus rate of a controller node: "clock-frequency", else Android
+ * "qcom,clk-freq-out", else the binding family's default: 100 kHz for
+ * "qcom,geni-i2c" (Linux i2c-qcom-geni), 400 kHz for "qcom,i2c-geni" (msm
+ * i2c-qcom-geni, and kShimC's former FTM5 binding). */
+uint32_t kshim_dt_qup_i2c_bus_hz(const void *fdt, int node);
+/* Whether kshim_qup_map_resources() maps this window: an available I2C or
+ * SPI controller node with an available child, or an available UART node. */
+bool kshim_dt_qup_window_used(const void *fdt, const struct kshim_qup_se *se);
