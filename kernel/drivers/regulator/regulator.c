@@ -244,7 +244,11 @@ static int rpmh_write(uint32_t address, uint32_t value)
     struct CrQupContext ctx, *p = rpmh(&ctx);
     if (!p) return ERROR_NOT_READY;
     int status = CrRpmhPollWrite(p, address, value);
-    if (status && p->tcs_pending) R.rsc_broken = true; /* TCS retained after a timeout */
+    /* A triggered TCS that timed out stays claimed (a late completion must
+     * not hit a reused TCS); a claim that failed before the trigger is
+     * handed back to its snapshot now, since this context is short-lived. */
+    if (status && p->tcs_pending) R.rsc_broken = true;
+    else if (status && p->tcs_claimed && CrRpmhPollRestore(p)) R.rsc_broken = true;
     return kshim_io_err_from_bus(status);
 }
 
