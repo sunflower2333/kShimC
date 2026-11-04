@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: MIT
+/dts-v1/;
+/*
+ * Focused QUPv3 binding fixture for SM8250 (kona) in the Android form, not a
+ * complete board DT. Numeric facts (SE windows, wrapper windows, GIC SPIs,
+ * gcc clock IDs, PDC ranges, status, touch selection) follow the OnePlus
+ * kona sources pinned by ports/crdk/SM8250-SOURCES.json
+ * (cad09e061ef6cf689a4a1e54d27562e0f042236a: kona-qupv3.dtsi, kona.dtsi,
+ * kona-hdk.dtsi) as compiled into the HDK8250 Android DT. The wrapper
+ * compatible, the "qcom,wrapper-core" back references and the shared SE12
+ * window (console UART and I2C nodes on 0xa90000) are what discovery needs.
+ */
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&intc>;
+
+	chosen {
+		bootargs = "rcupdate.rcu_expedited=1 earlycon=msm_geni_serial,0x988000";
+	};
+
+	intc: interrupt-controller@17a00000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <3>;
+		interrupt-controller;
+		#redistributor-regions = <1>;
+		redistributor-stride = <0x0 0x20000>;
+		reg = <0x17a00000 0x10000>, <0x17a60000 0x100000>;
+	};
+
+	pdc: interrupt-controller@b220000 {
+		compatible = "qcom,kona-pdc";
+		reg = <0xb220000 0x30000>, <0x17c000f0 0x60>;
+		qcom,pdc-ranges = <0 480 94>, <94 609 31>, <125 63 1>, <126 716 12>;
+		#interrupt-cells = <2>;
+		interrupt-parent = <&intc>;
+		interrupt-controller;
+	};
+
+	clock_gcc: clock-controller@100000 {
+		compatible = "qcom,gcc-kona";
+		reg = <0x100000 0x1f0000>;
+		#clock-cells = <1>;
+	};
+
+	tlmm: pinctrl@f000000 {
+		compatible = "qcom,kona-pinctrl";
+		reg = <0xf000000 0x1000000>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		se2_uart: se2-uart { mux { pins = "gpio117", "gpio118"; function = "qup2"; }; };
+		se12_uart: se12-uart { mux { pins = "gpio34", "gpio35"; function = "qup12"; }; };
+		se12_i2c: se12-i2c { mux { pins = "gpio34", "gpio35"; function = "qup12"; }; };
+		se13_i2c: se13-i2c {
+			mux { pins = "gpio36", "gpio37"; function = "qup13"; };
+			config { pins = "gpio36", "gpio37"; drive-strength = <2>; bias-disable; };
+		};
+		se8_spi: se8-spi { mux { pins = "gpio24", "gpio25", "gpio26", "gpio27"; function = "qup8"; }; };
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		qupv3_0: qcom,qupv3_0_geni_se@9c0000 {
+			compatible = "qcom,qupv3-geni-se";
+			reg = <0x9c0000 0x2000>;
+		};
+
+		qupv3_se2_2uart: qcom,qup_uart@988000 {
+			compatible = "qcom,msm-geni-console";
+			reg = <0x988000 0x4000>;
+			reg-names = "se_phys";
+			clock-names = "se-clk", "m-ahb", "s-ahb";
+			clocks = <&clock_gcc 92>, <&clock_gcc 132>, <&clock_gcc 133>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&se2_uart>;
+			interrupts = <0 603 4>;
+			qcom,wrapper-core = <&qupv3_0>;
+			status = "ok";
+		};
+
+		qupv3_1: qcom,qupv3_1_geni_se@ac0000 {
+			compatible = "qcom,qupv3-geni-se";
+			reg = <0xac0000 0x2000>;
+		};
+
+		qupv3_se12_2uart: qcom,qup_uart@a90000 {
+			compatible = "qcom,msm-geni-console";
+			reg = <0xa90000 0x4000>;
+			reg-names = "se_phys";
+			clock-names = "se-clk", "m-ahb", "s-ahb";
+			clocks = <&clock_gcc 114>, <&clock_gcc 134>, <&clock_gcc 135>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&se12_uart>;
+			interrupts = <0 357 4>;
+			qcom,wrapper-core = <&qupv3_1>;
+			status = "disabled";
+		};
+
+		qupv3_se8_spi: spi@a80000 {
+			compatible = "qcom,spi-geni";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0xa80000 0x4000>;
+			reg-names = "se_phys";
+			clock-names = "se-clk", "m-ahb", "s-ahb";
+			clocks = <&clock_gcc 106>, <&clock_gcc 134>, <&clock_gcc 135>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&se8_spi>;
+			interrupts = <0 353 4>;
+			spi-max-frequency = <50000000>;
+			qcom,wrapper-core = <&qupv3_1>;
+			status = "disabled";
+		};
+
+		qupv3_se12_i2c: i2c@a90000 {
+			compatible = "qcom,i2c-geni";
+			reg = <0xa90000 0x4000>;
+			interrupts = <0 357 4>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clock-names = "se-clk", "m-ahb", "s-ahb";
+			clocks = <&clock_gcc 114>, <&clock_gcc 134>, <&clock_gcc 135>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&se12_i2c>;
+			qcom,wrapper-core = <&qupv3_1>;
+			status = "disabled";
+		};
+
+		qupv3_se13_i2c: i2c@a94000 {
+			compatible = "qcom,i2c-geni";
+			reg = <0xa94000 0x4000>;
+			interrupts = <0 358 4>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clock-names = "se-clk", "m-ahb", "s-ahb";
+			clocks = <&clock_gcc 116>, <&clock_gcc 134>, <&clock_gcc 135>;
+			pinctrl-names = "default", "sleep";
+			pinctrl-0 = <&se13_i2c>;
+			pinctrl-1 = <&se13_i2c>;
+			qcom,wrapper-core = <&qupv3_1>;
+			qcom,i2c-touch-active = "";
+			status = "ok";
+
+			st_fts@49 {
+				compatible = "st,fts";
+				reg = <0x49>;
+				interrupt-parent = <&tlmm>;
+				interrupts = <39 0x2008>;
+				st,x-flip;
+				st,y-flip;
+			};
+		};
+
+		qupv3_2: qcom,qupv3_2_geni_se@8c0000 {
+			compatible = "qcom,qupv3-geni-se";
+			reg = <0x8c0000 0x2000>;
+		};
+
+		qupv3_se17_4uart: qcom,qup_uart@88c000 {
+			compatible = "qcom,msm-geni-serial-hs";
+			reg = <0x88c000 0x4000>;
+			reg-names = "se_phys";
+			clock-names = "se-clk", "m-ahb", "s-ahb";
+			clocks = <&clock_gcc 126>, <&clock_gcc 136>, <&clock_gcc 137>;
+			interrupts-extended = <&intc 0 585 4>, <&tlmm 55 0>;
+			qcom,wrapper-core = <&qupv3_2>;
+			status = "disabled";
+		};
+	};
+};
