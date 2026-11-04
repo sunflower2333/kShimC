@@ -17,3 +17,9 @@ CONFIG_ASSERT_HALT=y
 CONFIG_KSHIM_SMP=y
 CONFIG_KSHIM_SMP_WORKERS=7
 CONFIG_KSHIM_TOUCH=y
+# Touch framework (docs/touch.md): ST FTM4 on the GENI I2C bus, rails and
+# reset/IRQ GPIOs through the regulator and GPIO subsystems.
+CONFIG_KSHIM_TOUCH_FTM4=y
+CONFIG_KSHIM_I2C=y
+CONFIG_KSHIM_QUP=y
+CONFIG_KSHIM_REGULATOR=y

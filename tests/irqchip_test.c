@@ -88,9 +88,8 @@ static void test_dt(const void *f, bool has_touch)
     assert(kshim_dt_spmi_irq_find(f, 0, 0, 0xc4, 0, &trigger) < 0);  /* gpio5 not listed */
     assert(kshim_dt_spmi_irq_find(f, 1, 0, 0x08, 0, &trigger) < 0);  /* one arbiter */
     if (has_touch) {
-        struct kshim_touch_resource t;
-        assert(!kshim_dt_touch(f, &t));
-        assert(!kshim_dt_irq(f, t.node, 0, &s)); expect_spec(&s, tlmm, 2, 122, 0x2008, 0);
+        int touch = fdt_node_offset_by_compatible(f, -1, "st,fts");
+        assert(touch >= 0 && !kshim_dt_irq(f, touch, 0, &s)); expect_spec(&s, tlmm, 2, 122, 0x2008, 0);
         assert(kshim_dt_irq_trigger(s.cells[1]) == KSHIM_IRQ_TYPE_LEVEL_LOW);
     }
 }

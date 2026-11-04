@@ -4,7 +4,6 @@
  * Firmware update, flash, calibration, and manufacturing commands are absent.
  */
 #include <st_ftm5.h>
-#include <qcom_bus.h>
 
 #include <string.h>
 
@@ -27,7 +26,6 @@
 #define FTM5_CHIP_ID_HIGH UINT8_C(0x39)
 #define FTM5_SYSTEM_INFO_SIGNATURE UINT8_C(0xa5)
 #define FTM5_SYSTEM_INFO_TYPE UINT8_C(0x01)
-#define FTM5_MAX_COMMAND_SIZE 5U
 #define FTM5_MAX_RAW_RESPONSE (KSHIM_FTM5_FIFO_DEPTH * KSHIM_FTM5_EVENT_SIZE + 1U)
 
 static uint16_t ftm5_le16(const uint8_t *bytes)
@@ -216,114 +214,6 @@ int kshim_ftm5_init(kshim_ftm5_t *device,
 
     device->initialized = true;
     return KSHIM_FTM5_OK;
-}
-
-static int ftm5_qcom_i2c_transfer(void *context, const uint8_t *command,
-                                  size_t command_size, uint8_t *response,
-                                  size_t response_size)
-{
-    struct kshim_qcom_bus *bus = context;
-    struct kshim_i2c_msg messages[2];
-    uint8_t command_copy[FTM5_MAX_COMMAND_SIZE];
-    size_t count = 1U;
-
-    if (bus == NULL || command == NULL || command_size == 0U ||
-        command_size > sizeof(command_copy))
-        return KSHIM_FTM5_ERR_INVALID;
-
-    memcpy(command_copy, command, command_size);
-    messages[0] = (struct kshim_i2c_msg){
-        .address = KSHIM_FTM5_I2C_ADDRESS,
-        .read = false,
-        .data = command_copy,
-        .length = command_size,
-    };
-    if (response_size != 0U) {
-        if (response == NULL)
-            return KSHIM_FTM5_ERR_INVALID;
-        messages[1] = (struct kshim_i2c_msg){
-            .address = KSHIM_FTM5_I2C_ADDRESS,
-            .read = true,
-            .data = response,
-            .length = response_size,
-        };
-        count = 2U;
-    }
-    return kshim_i2c_transfer(bus, messages, count, 0);
-}
-
-static int ftm5_qcom_spi_transfer(void *context, const uint8_t *command,
-                                  size_t command_size, uint8_t *response,
-                                  size_t response_size)
-{
-    struct kshim_qcom_bus *bus = context;
-    struct kshim_spi_segment segments[2] = {
-        {
-            .tx = command,
-            .rx = NULL,
-            .length = command_size,
-            .delay_us = response_size == 0U ?
-                        KSHIM_FTM5_SPI_CS_HOLD_US : 0U,
-        },
-        {
-            .tx = NULL,
-            .rx = response,
-            .length = response_size,
-            .delay_us = KSHIM_FTM5_SPI_CS_HOLD_US,
-        },
-    };
-    size_t count = response_size == 0U ? 1U : 2U;
-
-    if (bus == NULL || command == NULL || command_size == 0U ||
-        (response_size != 0U && response == NULL))
-        return KSHIM_FTM5_ERR_INVALID;
-    return kshim_spi_transfer(bus, segments, count, 0);
-}
-
-static void ftm5_qcom_delay(void *context, uint32_t delay_us)
-{
-    struct kshim_qcom_bus *bus = context;
-
-    bus->io.delay_us(bus->io.context, delay_us);
-}
-
-int kshim_ftm5_init_i2c(kshim_ftm5_t *device,
-                        struct kshim_qcom_bus *bus,
-                        kshim_touch_t *touch)
-{
-    kshim_ftm5_transport_t transport = {
-        .context = bus,
-        .transfer = ftm5_qcom_i2c_transfer,
-        .delay_us = ftm5_qcom_delay,
-        .bus_kind = KSHIM_FTM5_BUS_I2C,
-    };
-
-    if (bus == NULL || !bus->initialized ||
-        bus->config.protocol != KSHIM_GENI_I2C ||
-        bus->config.speed_hz > KSHIM_FTM5_I2C_MAX_HZ ||
-        bus->io.delay_us == NULL)
-        return KSHIM_FTM5_ERR_INVALID;
-    return kshim_ftm5_init(device, &transport, touch);
-}
-
-int kshim_ftm5_init_spi(kshim_ftm5_t *device,
-                        struct kshim_qcom_bus *bus,
-                        kshim_touch_t *touch)
-{
-    kshim_ftm5_transport_t transport = {
-        .context = bus,
-        .transfer = ftm5_qcom_spi_transfer,
-        .delay_us = ftm5_qcom_delay,
-        .bus_kind = KSHIM_FTM5_BUS_SPI,
-    };
-
-    if (bus == NULL || !bus->initialized ||
-        bus->config.protocol != KSHIM_GENI_SPI ||
-        bus->config.speed_hz > KSHIM_FTM5_SPI_MAX_HZ ||
-        bus->config.spi_mode != KSHIM_FTM5_SPI_MODE ||
-        bus->io.delay_us == NULL)
-        return KSHIM_FTM5_ERR_INVALID;
-    return kshim_ftm5_init(device, &transport, touch);
 }
 
 static int ftm5_decode_event(kshim_ftm5_t *device, const uint8_t *event)

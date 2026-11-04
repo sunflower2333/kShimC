@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: MIT */
 #pragma once
 /*
- * Interrupt-driven input (CONFIG_KSHIM_INPUT_IRQ, docs/interrupts.md layer
- * 3). Handlers queue events in IRQ context; kshim_key_source_poll() and
- * kshim_input_touch_poll() keep their contracts and only drain the queues,
- * so event loops wake on the interrupt instead of a poll period. Anything
- * whose interrupt cannot be resolved stays on the polling path.
+ * Interrupt-driven keys (CONFIG_KSHIM_INPUT_IRQ, docs/interrupts.md layer
+ * 3). Handlers sample key levels in IRQ context; kshim_key_source_poll()
+ * keeps its contract, so event loops wake on the interrupt instead of a poll
+ * period. Anything whose interrupt cannot be resolved stays on the polling
+ * path. Touch controllers use the touch framework's deferred interrupt
+ * (kshim/touch_driver.h).
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -28,21 +29,3 @@
 int kshim_keys_irq_start(QcomKeys *keys, const void *fdt);
 /* Free every key interrupt; the descriptors are polled again. */
 int kshim_keys_irq_stop(QcomKeys *keys);
-
-/* Single-producer (IRQ) / single-consumer (poll) touch event queue. A move
- * replaces a queued move of the same contact; when full, a move is dropped
- * and a press/release replaces a queued trailing move. */
-#define KSHIM_TOUCH_QUEUE_DEPTH 32U
-struct kshim_touch_queue {
-    kshim_touch_event_t events[KSHIM_TOUCH_QUEUE_DEPTH];
-    unsigned head, count, dropped;
-};
-void kshim_touch_queue_push(struct kshim_touch_queue *queue, const kshim_touch_event_t *event);
-bool kshim_touch_queue_pop(struct kshim_touch_queue *queue, kshim_touch_event_t *event);
-void kshim_touch_queue_reset(struct kshim_touch_queue *queue);
-
-/* TLMM pin and trigger of a touch controller's `interrupts` entry. The pin
- * must be the controller IRQ GPIO kShimC power-sequences (control register
- * irq_control); a NONE type falls back to the GPIO's active level. */
-int kshim_touch_irq_resolve(const void *fdt, int node, uintptr_t irq_control,
-                            bool active_low, uint32_t *pin, unsigned *trigger);

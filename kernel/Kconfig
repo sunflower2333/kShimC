@@ -40,9 +40,9 @@ menu "Touch input"
         help
             kshim_input_touch_start()/kshim_input_touch_poll() for the boot
             menu. Controllers come from the touch framework
-            (KSHIM_TOUCH_<chip>, docs/io-stack.md); until the framework
-            replaces it, this alone keeps the DT-selected ST FTM5 path.
-            Injected pointer events (USB HID) are delivered through it.
+            (KSHIM_TOUCH_<chip>, docs/io-stack.md, docs/touch.md); with
+            none selected it only delivers injected pointer events (USB
+            HID).
 
     source "$srctree/kernel/drivers/input/touch/Kconfig"
 endmenu

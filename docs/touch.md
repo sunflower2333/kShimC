@@ -12,11 +12,11 @@ protocol fact comes from. Nothing here has run on hardware.
 | `kernel/drivers/input/touch/core.c` | Framework: selection, DT resources, power sequence, deferred IRQ, polling fallback, transform, quiesce |
 | `kernel/drivers/input/touch/registry.c` | Driver table in match order: FTM5, FTM4, GT911, GT9916 |
 | `kernel/drivers/input/touch/ftm5.c` | FTM5 driver: binds the existing protocol core to the framework |
-| `kernel/drivers/st_ftm5.c`, `kernel/include/st_ftm5.h` | FTM5 protocol core (logic unchanged; the header no longer pulls in `qcom_bus.h`) |
+| `kernel/drivers/st_ftm5.c`, `kernel/include/st_ftm5.h` | FTM5 protocol core (logic unchanged; bus-neutral, the GENI adapters are gone) |
 | `kernel/drivers/input/touch/ftm4.c` | FTM4 driver, new, written from protocol facts |
 | `kernel/drivers/input/touch/st_fts.h` | Android `st,fts` family check, raw-level GPIO polarity, vendor flips |
-| `kernel/dt/touch.c` | `kshim_touch_dt_selected()` (Android `qcom,i2c-touch-active` and panel selection); the legacy FTM5 resource prober |
-| `kernel/core/input.c` | Public touch service; forwards to the framework when `CONFIG_KSHIM_TOUCH_FRAMEWORK` |
+| `kernel/dt/touch.c` | `kshim_touch_dt_selected()` (Android `qcom,i2c-touch-active` and panel selection) |
+| `kernel/core/input.c` | Public touch service; forwards to the framework (`CONFIG_KSHIM_TOUCH_FRAMEWORK`) |
 | `kernel/drivers/touch.c`, `kernel/include/touch.h` | Contact tracker (primary contact, flip, scale) |
 
 ## Flow
@@ -150,18 +150,15 @@ Choices made in kShimC that are not from those sources:
 
 ## Migration from the legacy path
 
-On this branch `CONFIG_KSHIM_TOUCH` without any `KSHIM_TOUCH_<chip>` still
-builds the legacy FTM5/QUP path (`kernel/core/input.c` `#else` branch,
-`kernel/dt/touch.c` `kshim_dt_touch()`, the `resources.c` touch windows), so
-every existing defconfig builds and behaves as before. That is needed because
-the framework needs `KSHIM_I2C`, `KSHIM_QUP` and `KSHIM_REGULATOR`, whose
-implementations live on the qup and sm8650 branches.
-
-The retirement is a separate commit on `feature/io-touch-st-retire`, meant to
-be merged after sm8650 and qup. It removes the legacy path and switches
-`configs/andromeda_defconfig` (FTM5) and `configs/hdk8250_defconfig` (FTM4)
-to the framework. It also migrates the tests that used `kshim_dt_touch()` and
-the FTM5 GENI adapters.
+The legacy FTM5/QUP path is retired. It had the `kshim_dt_touch()` resource
+prober, the `resources.c` touch windows, the CrDK `CrQup*` bring-up in
+`kernel/core/input.c`, the IRQ-context FIFO drain with its event queue in
+`input_irq.c`, and the FTM5 GENI adapters. `CONFIG_KSHIM_TOUCH` without a
+`KSHIM_TOUCH_<chip>` now only delivers injected pointer events.
+`configs/andromeda_defconfig` selects FTM5 and `configs/hdk8250_defconfig`
+selects FTM4, each with `KSHIM_I2C`, `KSHIM_QUP` and `KSHIM_REGULATOR`. Their
+implementations come from the qup and sm8650 branches, so this commit
+links only once those are merged.
 
 ## Tests
 
@@ -177,8 +174,14 @@ the FTM5 GENI adapters.
   against a byte-level I2C model of the controller.
 - `touch_st_irq_test`: the andromeda FTM5 case through the real TLMM cascade
   (`tlmm.c`) over the `irq_fake.c` register model.
-- Existing: `st_ftm5_test`, `touch_test`, `input_irq_test`,
-  `qcom_touch_platform_test`, `hdk8250_touch_platform_test`, `dt_test`.
+- Existing, migrated: `st_ftm5_test` (direct transports instead of the
+  removed GENI adapters), `dt_test` and `irqchip_test`
+  (`kshim_touch_dt_selected()` and the touch node instead of
+  `kshim_dt_touch()`), and `input_irq_test` (keys and console; the FTM5
+  IRQ-context drain is gone, and `touch_st_irq_test` covers the deferred
+  path). Unchanged: `touch_test`, `qcom_touch_platform_test` and
+  `hdk8250_touch_platform_test`, which test the CrDK `CrQup` resource
+  library that kShimC no longer uses for touch.
 
 ## Risks (hardware not tested)
 
