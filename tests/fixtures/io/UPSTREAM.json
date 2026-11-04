@@ -1,0 +1,19 @@
+{
+  "linux": "40288c9206c17eb66a603262e06a58d300d0f279",
+  "generator": "tools/gen_sm8650_fixtures.sh",
+  "dtc": "1.7.0",
+  "sources": {
+    "arch/arm64/boot/dts/qcom/sm8650.dtsi": "8c1bf591b95d22a4d120351d4d720713b38236629564dde92613aea6852a3b2a",
+    "arch/arm64/boot/dts/qcom/sm8650-qrd.dts": "a069075b57c23fe88f786deaa3c35d535cf3f77121a9f364214ceeb628857684",
+    "arch/arm64/boot/dts/qcom/sm8650-ayaneo-pocket-s2.dts": "44e838b69efbb9bfdc39fba68a3e12b1eedce54fef4061a83f2b545e1f3c475b"
+  },
+  "sm8650-qrd.dtb": {
+    "sha256": "01c94cf491fa9f5b265fc087b68ae0aea2565b43bcbd8d169b9f463e897ad6bb",
+    "size": 146792
+  },
+  "sm8650-ayaneo-pocket-s2.dtb": {
+    "source": "sm8650-ayaneo-pocket-s2-rfc-touch.dts (mainline + RFC lkml 2604.3/08167 touch node)",
+    "sha256": "7f35daf356d8adee29ba78b70b11b7cdd71dc176b72bedafbe97b566251d58ea",
+    "size": 143576
+  }
+}

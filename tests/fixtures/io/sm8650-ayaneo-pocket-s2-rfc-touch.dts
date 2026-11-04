@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: MIT
+/*
+ * kShimC test fixture: mainline sm8650-ayaneo-pocket-s2.dts plus the touch
+ * node of the RFC patch "arm64: dts: qcom: sm8650-ayaneo-pocket-s2: add
+ * display nodes" (lkml 2604.3/08167), which is not in mainline.
+ *
+ * Only the touch facts of that RFC are restated here, as listed by the
+ * kShimC I/O-stack plan (docs/io-stack.md section 5):
+ *   &i2c4 at 400 kHz; touchscreen@5d "goodix,gt911";
+ *   interrupt TLMM 162 IRQ_TYPE_EDGE_FALLING;
+ *   reset-gpios TLMM 161 GPIO_ACTIVE_HIGH (as written in the RFC; the
+ *   polarity is unverified against the GT911 reset/INT address-select
+ *   sequence, see docs/io-stack.md "Open risks");
+ *   VDDIO-supply and AVDD28-supply = vreg_l14b_3p2;
+ *   touchscreen-size-x/y = 1440/2560;
+ *   pinctrl ts_reset_default (gpio161, pull-down, 8 mA) and
+ *   ts_irq_default (gpio162, bias-disable, 8 mA).
+ *
+ * Build: tools/gen_sm8650_fixtures.sh (see tests/fixtures/io/README.md).
+ */
+#include "sm8650-ayaneo-pocket-s2.dts"
+
+&i2c4 {
+	clock-frequency = <400000>;
+
+	status = "okay";
+
+	touchscreen@5d {
+		compatible = "goodix,gt911";
+		reg = <0x5d>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <162 IRQ_TYPE_EDGE_FALLING>;
+
+		reset-gpios = <&tlmm 161 GPIO_ACTIVE_HIGH>;
+
+		VDDIO-supply = <&vreg_l14b_3p2>;
+		AVDD28-supply = <&vreg_l14b_3p2>;
+
+		touchscreen-size-x = <1440>;
+		touchscreen-size-y = <2560>;
+
+		pinctrl-0 = <&ts_reset_default>, <&ts_irq_default>;
+		pinctrl-names = "default";
+	};
+};
+
+&tlmm {
+	ts_reset_default: ts-reset-default-state {
+		pins = "gpio161";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-down;
+	};
+
+	ts_irq_default: ts-irq-default-state {
+		pins = "gpio162";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+};
