@@ -127,12 +127,33 @@ static void test_acquire(const void *f)
     assert(!m->on && !s->on && !sec->on);
     assert(!kshim_qup_se_release(se));
 
-    /* Inherited: everything already runs; nothing is switched on or off. */
+    /* Inherited: everything already runs; nothing is switched on or off and
+     * the running SE clock is not handed to the clock driver for a rate:
+     * its RCG (read only) already gives CXO undivided. */
     fake_clk_all(true);
+    uintptr_t rcg = sec->desc.rcg;
     assert(!kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_I2C, &hz, &dfs));
-    assert(se->inherited_active && !fake_clk_enabled_by_us());
+    assert(se->inherited_active && !fake_clk_enabled_by_us() && dfs == 0 && hz == 19200000);
+    assert(sec->rate_calls == 1 && !fake_writes_in(rcg, 0x100));
     assert(!kshim_qup_se_release(se) && m->on && s->on && sec->on);
     assert(!m->refs && !s->refs && !sec->refs);
+    /* ... on another source: never retuned. */
+    fake_poke(rcg + 0x4, 1U << 8);
+    assert(kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_I2C, &hz, &dfs) == ERROR_BUSY);
+    assert(!se->acquired && sec->rate_calls == 1 && !m->refs && !sec->refs);
+    /* ... with DFS: the engine's own level (GENI_CLK_SEL 5) when it is CXO,
+     * else another CXO level, else refused. */
+    fake_poke(rcg + 0x14, 1);
+    for (unsigned i = 0; i < 8; ++i) fake_poke(rcg + 0x1c + 4 * i, (1U << 8) | 3U);
+    assert(kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_I2C, &hz, &dfs) == ERROR_NOT_SUPPORTED);
+    fake_poke(rcg + 0x1c + 4 * 3, 1);
+    assert(!kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_I2C, &hz, &dfs) && dfs == 3);
+    assert(!kshim_qup_se_release(se));
+    fake_poke(rcg + 0x1c + 4 * 5, 0);
+    assert(!kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_I2C, &hz, &dfs) && dfs == 5);
+    assert(!kshim_qup_se_release(se) && sec->rate_calls == 1 && !fake_writes_in(rcg, 0x100));
+    fake_poke(rcg + 0x14, 0);
+    fake_poke(rcg + 0x4, 0);
 
     /* Firmware for another protocol: refused, unwound. */
     fake_clk_all(false);

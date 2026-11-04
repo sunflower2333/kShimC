@@ -63,6 +63,8 @@ static struct kshim_clk *clock_for(int provider, uint32_t id)
     for (unsigned i = 0; i < 64; ++i)
         if (!Clocks[i].used) {
             Clocks[i] = (struct kshim_clk){.provider = provider, .id = id, .used = true};
+            Clocks[i].desc = (struct kshim_clk_desc){.kind = KSHIM_CLK_BRANCH,
+                                                     .rcg = FAKE_RCG_BASE + i * 0x100U};
             return &Clocks[i];
         }
     assert(!"clock table full");
@@ -135,7 +137,7 @@ int kshim_clk_set_rate_cxo(struct kshim_clk *clk, uint8_t *dfs_index)
     return 0;
 }
 
-const struct kshim_clk_desc *kshim_clk_desc(const struct kshim_clk *clk) { (void)clk; return NULL; }
+const struct kshim_clk_desc *kshim_clk_desc(const struct kshim_clk *clk) { return clk ? &clk->desc : NULL; }
 
 /* ---- Pinctrl ------------------------------------------------------------ */
 

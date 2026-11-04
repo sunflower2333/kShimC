@@ -29,7 +29,9 @@ struct kshim_clk {
     unsigned refs, enables, disables, rate_calls;
     int enable_status, rate_status;
     uint8_t dfs;
+    struct kshim_clk_desc desc;  /* rcg: FAKE_RCG_BASE + slot * 0x100 in the FakeIo store */
 };
+#define FAKE_RCG_BASE 0x7000000U
 void fake_clk_reset(void);
 /* The clock behind entry `name` of the consumer's clock-names (created). */
 struct kshim_clk *fake_clk_of(const void *fdt, int consumer, const char *name);

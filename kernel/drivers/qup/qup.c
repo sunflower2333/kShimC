@@ -34,7 +34,16 @@
 #define GENI_STATUS_M_ACTIVE (1U << 0)
 #define GENI_STATUS_S_ACTIVE (1U << 12)
 #define GENI_FW_REVISION_RO 0x68U
+#define GENI_CLK_SEL 0x7cU
 #define CXO_HZ 19200000U
+/* RCG facts (CrDK Library/ClockLib/clock_poll.c, Qualcomm RCG2 layout):
+ * CFG_RCGR +4 (SRC_DIV [4:0], SRC_SEL [10:8], MODE [13:12]), CMD_DFSR +0x14
+ * (DFS enable bit 0), PERF_LVL n configuration at +0x1c + 4n (8 levels).
+ * A configuration is "CXO undivided" with SRC_SEL 0, MODE 0, SRC_DIV <= 1. */
+#define RCG_CFG 0x4U
+#define RCG_DFSR 0x14U
+#define RCG_PERF_LVL(n) (0x1cU + 4U * (n))
+#define RCG_DFS_LEVELS 8U
 
 struct se_state {
     struct kshim_clk *se, *m_ahb, *s_ahb;
@@ -250,6 +259,38 @@ static int resolve_clocks(struct kshim_qup_se *se, struct se_state *st)
     return 0;
 }
 
+static bool cxo_undivided(uint32_t cfg)
+{
+    return !(cfg & ((7U << 8) | (3U << 12))) && (cfg & 0x1fU) <= 1U;
+}
+
+/* An engine clock that already runs is never retuned (and the clock driver
+ * refuses to). It is used when its RCG already gives CXO undivided: the DFS
+ * level the engine selects (GENI_CLK_SEL), else another CXO level (only the
+ * engine's CLK_SEL changes, which CrGeniQuiesce restores), else a plain RCG
+ * on CXO. Reads only. */
+static int inherited_cxo(const struct kshim_qup_se *se, struct kshim_clk *clk, uint8_t *dfs)
+{
+    const struct kshim_clk_desc *d = kshim_clk_desc(clk);
+    const struct CrIo *io = kshim_qup_io();
+    if (!d || !d->rcg) return ERROR_NOT_SUPPORTED;
+    if (io->read32(io->context, d->rcg + RCG_DFSR) & 1U) {
+        uint8_t current = (uint8_t)(rd(se, GENI_CLK_SEL) & (RCG_DFS_LEVELS - 1U));
+        if (cxo_undivided(io->read32(io->context, d->rcg + RCG_PERF_LVL(current)))) {
+            *dfs = current;
+            return 0;
+        }
+        for (uint8_t i = 0; i < RCG_DFS_LEVELS; ++i)
+            if (cxo_undivided(io->read32(io->context, d->rcg + RCG_PERF_LVL(i)))) {
+                *dfs = i;
+                return 0;
+            }
+        return ERROR_NOT_SUPPORTED;
+    }
+    *dfs = 0;
+    return cxo_undivided(io->read32(io->context, d->rcg + RCG_CFG)) ? 0 : ERROR_BUSY;
+}
+
 static void drop_clocks(struct se_state *st)
 {
     if (st->se_on && !kshim_clk_disable(st->se)) st->se_on = false;
@@ -292,7 +333,9 @@ int kshim_qup_se_acquire(struct kshim_qup_se *se, enum kshim_qup_protocol protoc
             status = ERROR_BUSY; /* never retune or take over an active engine */
             goto fail;
         }
-        if ((status = kshim_clk_set_rate_cxo(st->se, &dfs))) goto fail;
+        status = kshim_clk_is_on(st->se) ? inherited_cxo(se, st->se, &dfs)
+                                         : kshim_clk_set_rate_cxo(st->se, &dfs);
+        if (status) goto fail;
     }
     if ((status = kshim_clk_enable(st->se))) goto fail;
     st->se_on = true;

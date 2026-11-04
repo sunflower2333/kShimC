@@ -147,7 +147,12 @@ int kshim_qup_quiesce_all(void);
  *    and the pin snapshots stay with kshim_clk_restore_all() and
  *    kshim_gpio_restore_all(), which run later in kshim_io_quiesce();
  *  - a window that kshim_qup_map_resources() did not map is refused with
- *    ERROR_NOT_SUPPORTED once a mapping pass has run (the MMU would fault). */
+ *    ERROR_NOT_SUPPORTED once a mapping pass has run (the MMU would fault);
+ *  - an SE clock that already runs is not handed to kshim_clk_set_rate_cxo()
+ *    (which never retunes an inherited branch): its RCG is read through
+ *    kshim_clk_desc(). A CXO-undivided DFS level (preferring the engine's
+ *    GENI_CLK_SEL) or plain RCG configuration is used as it is; anything
+ *    else is ERROR_BUSY (DFS without a CXO level: ERROR_NOT_SUPPORTED). */
 
 struct CrIo;
 /* Register access and time for the QUP core and the GENI engines:
