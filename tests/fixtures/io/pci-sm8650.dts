@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: MIT
 // Qualcomm PCIe host-test fixture (tests/io/pci_qcom_test.c): the SM8650
 // pcie1 path of the AYANEO Pocket S2 reduced to the nodes the PCI host
 // reads. Hand-copied from Linux arch/arm64/boot/dts/qcom/sm8650.dtsi (pcie1,
 // pcie1_phy, pcie1_port0, pcie1_default_state) and sm8650-ayaneo-pocket-s2.dts
 // (perst/wake GPIOs, PHY supplies, the uPD720201 usb-controller@0 with its
-// three regulator-fixed rails and gamepad_pwr_en), both BSD-3-Clause, with
+// three regulator-fixed rails and gamepad_pwr_en), whose DT facts are
+// BSD-3-Clause, with
 // the dt-bindings macros expanded (qcom,sm8650-gcc.h, qcom,sm8650-tcsr.h,
 // GIC_SPI 0, IRQ_TYPE_LEVEL_HIGH 4, GPIO_ACTIVE_LOW 1). Clock, regulator and
 // pin providers are stand-ins: the test fakes those services. Compiled by
