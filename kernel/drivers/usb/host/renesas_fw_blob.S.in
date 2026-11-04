@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: MIT */
+/* Generated from CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED (cmake/io/usb.cmake).
+ * The embedded image itself is Renesas firmware and is not part of kShimC. */
+    .section .rodata.kshim_renesas_fw, "a"
+    .balign 4
+    .global kshim_renesas_fw_blob
+    .global kshim_renesas_fw_blob_end
+kshim_renesas_fw_blob:
+    .incbin "@KSHIM_RENESAS_FW_EMBED@"
+kshim_renesas_fw_blob_end:
+    .balign 4
