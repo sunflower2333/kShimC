@@ -1,5 +1,11 @@
 /* SPDX-License-Identifier: MIT */
+/*
+ * Touch controller devicetree helpers: the Android board selection shared by
+ * the touch framework's ST drivers (kshim_touch_dt_selected), and the legacy
+ * FTM5/QUP resource prober kept for CONFIG_KSHIM_TOUCH without the framework.
+ */
 #include <qcom_dt.h>
+#include <kshim/touch_driver.h>
 #include <Library/cr_android.h>
 #include <string.h>
 #include <stdio.h>
@@ -183,6 +189,18 @@ static bool selected_panel(const void *f, int node)
             if (panel >= 0 && panel == dt_phandle(f, fdt32_to_cpu(panels[i]))) return true;
     }
     return false;
+}
+bool kshim_touch_dt_selected(const void *f, int node, const char *compatible)
+{
+    if (!f || node < 0) return false;
+    int bus = fdt_parent_offset(f, node);
+    /* Android QRD/HDK DTs name the one populated controller on the bus; an
+     * empty selection (stock kona-hdk.dtsi) selects none. */
+    if (bus >= 0 && fdt_getprop(f, bus, "qcom,i2c-touch-active", NULL)) {
+        const char *selection = dt_string(f, bus, "qcom,i2c-touch-active");
+        if (!selection || !compatible || strcmp(selection, compatible)) return false;
+    }
+    return selected_panel(f, node);
 }
 int kshim_dt_touch(const void *f, struct kshim_touch_resource *t)
 {

@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * Kernel input services behind kshim/input.h: Qualcomm keys built from the
- * boot FDT, and the DT-selected FTM5 touch controller on a GENI QUP.
+ * boot FDT, and the touch service: the touch framework
+ * (CONFIG_KSHIM_TOUCH_FRAMEWORK, kshim/touch_driver.h) or, without any
+ * KSHIM_TOUCH_<chip>, the legacy DT-selected FTM5 on a GENI QUP. Injected
+ * pointer events (USB HID) reach the same emit callback either way.
  */
 #include <kshim.h>
 #include <kshim/input.h>
@@ -11,7 +14,9 @@
 #include <qcom_keys.h>
 #include <qcom_keys_fdt.h>
 #include <config.h>
-#if CONFIG_KSHIM_TOUCH
+#if CONFIG_KSHIM_TOUCH_FRAMEWORK
+#include <kshim/touch_driver.h>
+#elif CONFIG_KSHIM_TOUCH
 #include <st_ftm5.h>
 #endif
 #if CONFIG_KSHIM_INPUT_IRQ
@@ -86,13 +91,47 @@ kshim_key_source_t *kshim_input_keys(void)
 }
 
 #if CONFIG_KSHIM_TOUCH
+static kshim_touch_event_fn TouchEmit;
+static void *TouchEmitContext;
+#if CONFIG_KSHIM_TOUCH_FRAMEWORK
+/* docs/io-stack.md 3.10: selection, power, deferred IRQ and polling live in
+ * kernel/drivers/input/touch/core.c; this is the public service. */
+int kshim_input_touch_start(uint32_t output_width, uint32_t output_height,
+                            kshim_touch_event_fn emit, void *context)
+{
+    struct kshim_resources *r = kshim_resources_get();
+    /* Injected pointer events (docs/io-stack.md) use the same emit callback
+     * and surface, with or without a touch controller. */
+    TouchEmit = emit; TouchEmitContext = context;
+#if CONFIG_KSHIM_INPUT_INJECT
+    kshim_input_inject_set_surface(output_width, output_height);
+#endif
+    if (!r->fdt) return 1;
+    int status = kshim_touch_framework_start(r->fdt, output_width, output_height, emit, context);
+    if (status == ERROR_NOT_FOUND) return 1;   /* no supported controller, nothing touched */
+    return status ? -status : 0;
+}
+int kshim_input_touch_poll(void)
+{
+#if CONFIG_KSHIM_INPUT_INJECT
+    kshim_touch_event_t injected;
+    kshim_input_service();
+    while (kshim_input_inject_poll_touch(&injected))
+        if (TouchEmit) TouchEmit(TouchEmitContext, &injected);
+#endif
+    int status = kshim_touch_framework_poll();
+    return status ? -status : 0;
+}
+int kshim_input_touch_stop(void)
+{
+    return kshim_touch_framework_stop() ? -1 : 0;
+}
+#else /* legacy FTM5/QUP path */
 static kshim_touch_t Touch;
 static struct CrQupContext TouchPlatform;
 static kshim_ftm5_t Ftm5;
 static int TouchAttempted, TouchReady;
 static struct kshim_touch_resource *TouchResource;
-static kshim_touch_event_fn TouchEmit;
-static void *TouchEmitContext;
 #if CONFIG_KSHIM_INPUT_IRQ
 /* IRQ mode: the FTM5 FIFO is drained by the TLMM handler (level low while
  * events are pending) and the tracker's events are queued for the poll. */
@@ -251,4 +290,5 @@ int kshim_input_touch_stop(void)
     TouchReady = 0;
     return touch_quiesce();
 }
-#endif
+#endif /* CONFIG_KSHIM_TOUCH_FRAMEWORK */
+#endif /* CONFIG_KSHIM_TOUCH */

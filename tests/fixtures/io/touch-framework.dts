@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: MIT
+/dts-v1/;
+/* Synthetic binding fixture for the touch framework unit test
+ * (tests/io/touch_framework_test.c); written for kShimC, not a board DT.
+ * Compiled by tests/io/touch.cmake with dtc. */
+/ {
+    #address-cells = <1>; #size-cells = <1>;
+
+    tlmm: pinctrl@f000000 {
+        compatible = "qcom,test-pinctrl";
+        reg = <0xf000000 0x1000000>;
+        gpio-controller; #gpio-cells = <2>;
+        interrupt-controller; #interrupt-cells = <2>;
+        ts_default: ts-default { pins = "gpio10", "gpio11"; function = "gpio"; bias-pull-up; };
+        ts_active: ts-active { pins = "gpio20"; function = "gpio"; };
+    };
+
+    vreg_a: vreg-a { compatible = "regulator-fixed"; regulator-name = "vreg_a"; };
+    vreg_b: vreg-b { compatible = "regulator-fixed"; regulator-name = "vreg_b"; };
+    vreg_x: vreg-x { compatible = "test,unsupported"; regulator-name = "vreg_x"; };
+
+    i2c@a00000 {
+        compatible = "qcom,geni-i2c";
+        reg = <0xa00000 0x4000>;
+        #address-cells = <1>; #size-cells = <0>;
+
+        /* Mainline style: interrupt on the TLMM, active-low reset. */
+        touch@10 {
+            compatible = "test,touch";
+            reg = <0x10>;
+            interrupts-extended = <&tlmm 10 8>;
+            reset-gpios = <&tlmm 11 1>;
+            avdd-supply = <&vreg_a>;
+            vdd-supply = <&vreg_b>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&ts_default>;
+            touchscreen-size-x = <1000>;
+            touchscreen-size-y = <2000>;
+        };
+        /* Android style: IRQ GPIO only, pmx_ts_active, uncontrollable rail. */
+        touch@20 {
+            compatible = "test,touch";
+            reg = <0x20>;
+            irq-gpios = <&tlmm 20 1>;
+            avdd-supply = <&vreg_x>;
+            vdd-supply = <&vreg_b>;
+            pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+            pinctrl-0 = <&ts_active>;
+            pinctrl-1 = <&ts_active>;
+        };
+        touch@30 {
+            compatible = "test,touch";
+            reg = <0x30>;
+            status = "disabled";
+        };
+        /* The interrupt names another pin than the IRQ GPIO. */
+        touch@40 {
+            compatible = "test,touch";
+            reg = <0x40>;
+            interrupts-extended = <&tlmm 40 2>;
+            irq-gpios = <&tlmm 41 0>;
+        };
+    };
+
+    spi@b00000 {
+        compatible = "qcom,geni-spi";
+        reg = <0xb00000 0x4000>;
+        #address-cells = <1>; #size-cells = <0>;
+        touch@0 {
+            compatible = "test,touch", "test,spi-touch";
+            reg = <0>;
+            spi-max-frequency = <1000000>;
+            interrupts-extended = <&tlmm 50 2>;
+        };
+    };
+};
