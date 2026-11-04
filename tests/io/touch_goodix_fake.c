@@ -202,51 +202,37 @@ static int take_failure(void)
 int kshim_touch_i2c_write_read(struct kshim_touch_dev *dev, const void *tx, size_t tx_length,
                                void *rx, size_t rx_length)
 {
+    struct kshim_i2c_adapter *adapter = dev->i2c.adapter;
     assert(dev->bus == KSHIM_TOUCH_BUS_I2C);
-    assert(tx && tx_length);
+    assert(adapter && adapter->ops && adapter->ops->xfer);
+    assert(tx && tx_length && tx_length <= UINT16_MAX && rx_length <= UINT16_MAX);
     assert(rx || !rx_length);
+    const struct kshim_i2c_msg msgs[2] = {
+        { .addr = dev->i2c.addr, .flags = dev->i2c.flags, .len = (uint16_t)tx_length,
+          .buf = (uint8_t *)(uintptr_t)tx },
+        { .addr = dev->i2c.addr, .flags = (uint16_t)(dev->i2c.flags | KSHIM_I2C_M_RD),
+          .len = (uint16_t)rx_length, .buf = rx },
+    };
     ++fake.i2c_transfers;
     int status = take_failure();
     if (status)
         return status;
-    if (!fake.chip.i2c)
-        return KSHIM_IO_ERR_NACK;
-    return fake.chip.i2c(fake.chip.ctx, dev->i2c.addr, tx, tx_length, rx, rx_length);
+    return adapter->ops->xfer(adapter, msgs, rx_length ? 2 : 1, KSHIM_I2C_DEFAULT_TIMEOUT_US);
 }
 
 int kshim_touch_spi_sync(struct kshim_touch_dev *dev, const struct kshim_spi_xfer *xfers,
                          size_t count)
 {
-    static uint8_t mosi[4096], miso[4096];
-    size_t total = 0;
-
+    struct kshim_spi_controller *controller = dev->spi.controller;
     assert(dev->bus == KSHIM_TOUCH_BUS_SPI);
-    /* GENI SPI: mode 0..3 with 8-bit words; Berlin needs mode 0. */
-    assert(dev->spi.mode == KSHIM_SPI_MODE_0);
-    assert(dev->spi.bits_per_word == 8);
-    assert(count >= 1);
-    for (size_t i = 0; i < count; ++i) {
-        assert(total + xfers[i].len <= sizeof(mosi));
-        if (xfers[i].tx)
-            memcpy(&mosi[total], xfers[i].tx, xfers[i].len);
-        else
-            memset(&mosi[total], 0, xfers[i].len);
-        total += xfers[i].len;
-    }
+    assert(controller && controller->ops && controller->ops->transfer);
+    assert(xfers && count >= 1);
     ++fake.spi_messages;
     int status = take_failure();
     if (status)
         return status;
-    memset(miso, 0xff, total);
-    if (fake.chip.spi && (status = fake.chip.spi(fake.chip.ctx, mosi, miso, total)))
-        return status;
-    total = 0;
-    for (size_t i = 0; i < count; ++i) {
-        if (xfers[i].rx)
-            memcpy(xfers[i].rx, &miso[total], xfers[i].len);
-        total += xfers[i].len;
-    }
-    return 0;
+    return controller->ops->transfer(controller, &dev->spi, xfers, count,
+                                     KSHIM_SPI_DEFAULT_TIMEOUT_US);
 }
 
 /* ---- Reports ------------------------------------------------------------------ */

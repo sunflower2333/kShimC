@@ -11,10 +11,14 @@
  *  - kshim_touch_irq_gpio_output(dev, level_high) drives the physical level;
  *  - kshim_touch_power_supplies() enables every dev->supplies[] in order
  *    (refcounted; an inherited-on rail stays on when disabled);
- *  - kshim_touch_i2c_write_read() is one write then a repeated-START read
- *    on dev->i2c.addr; kshim_touch_spi_sync() is one chip-select assertion.
- * A chip model plugs in through struct fake_chip and sees physical pin
- * levels, rail state and bus traffic with the fake time.
+ *  - kshim_touch_i2c_write_read() becomes kshim_i2c_msg[] (write, then a
+ *    repeated-START read) on dev->i2c.addr, passed to the adapter's
+ *    ops->xfer; kshim_touch_spi_sync() passes the segments to the
+ *    controller's ops->transfer (one chip-select assertion).
+ * A chip model is an I2C adapter or SPI controller (kshim/i2c.h,
+ * kshim/spi.h ops) on dev->i2c.adapter / dev->spi.controller, and sees
+ * physical pin levels and rail state through struct fake_chip, all on the
+ * fake time.
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -45,10 +49,6 @@ struct fake_chip {
     void (*int_drive)(void *ctx, bool driven, bool level);
     /* INT level the chip drives (host not driving). */
     bool (*int_level)(void *ctx);
-    /* Bus. */
-    int (*i2c)(void *ctx, uint16_t addr, const uint8_t *tx, size_t tx_length,
-               uint8_t *rx, size_t rx_length);
-    int (*spi)(void *ctx, const uint8_t *mosi, uint8_t *miso, size_t length);
 };
 
 struct fake_touch_event {

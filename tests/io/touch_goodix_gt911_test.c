@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * GT911 driver (kernel/drivers/input/touch/goodix_gt911.c) against an I2C
- * register model of the controller: the power-on address select (INT level
+ * GT911 driver (kernel/drivers/input/touch/goodix_gt911.c) against a model
+ * of the controller behind an I2C adapter (kshim/i2c.h ops, repeated-START
+ * register reads): the power-on address select (INT level
  * sampled at the RSTB rising edge, datasheet T2..T5 timings checked), the
  * product/configuration reads, point frames with the status handshake,
  * inheritance of a running controller, and the polling and quiesce hooks.
@@ -122,28 +123,51 @@ static bool m_int_level(void *ctx)
     return int_level();
 }
 
-static int m_i2c(void *ctx, uint16_t addr, const uint8_t *tx, size_t tx_length, uint8_t *rx,
-                 size_t rx_length)
+/* The GT911 behind a GENI-like I2C adapter (kshim/i2c.h ops): a register
+ * write is one message (address high, low, data); a read is the address
+ * write, then a repeated START and the read message. */
+static unsigned repeated_starts;
+
+static int m_xfer(struct kshim_i2c_adapter *adapter, const struct kshim_i2c_msg *msgs,
+                  size_t count, uint32_t timeout_us)
 {
-    (void)ctx;
-    if (!model.powered || !model.rstb || addr != model.address || fake.now_us < model.ready_us)
+    (void)adapter;
+    assert(count == 1 || count == 2);
+    assert(timeout_us > 0);
+    for (size_t i = 0; i < count; ++i)
+        assert(!(msgs[i].flags & KSHIM_I2C_M_TEN) && msgs[i].buf && msgs[i].len);
+    assert(!(msgs[0].flags & KSHIM_I2C_M_RD) && msgs[0].len >= 2);
+    if (count == 2) {
+        assert((msgs[1].flags & KSHIM_I2C_M_RD) && msgs[1].addr == msgs[0].addr);
+        assert(!(msgs[0].flags & KSHIM_I2C_M_STOP));
+        assert(msgs[0].len == 2);
+        ++repeated_starts;
+    }
+    /* Address phase: NACK unless powered, running and at this address. */
+    if (!model.powered || !model.rstb || msgs[0].addr != model.address ||
+        fake.now_us < model.ready_us)
         return KSHIM_IO_ERR_NACK;
-    assert(tx_length >= 2);
+    const uint8_t *tx = msgs[0].buf;
     unsigned reg = (unsigned)tx[0] << 8 | tx[1];
     assert(reg >= REG_BASE && reg < REG_BASE + REG_SPAN);
     unsigned off = reg - REG_BASE;
-    if (rx_length) {
-        assert(tx_length == 2);
-        assert(off + rx_length <= REG_SPAN);
-        memcpy(rx, &model.regs[off], rx_length);
+    if (count == 2) {
+        assert(off + msgs[1].len <= REG_SPAN);
+        memcpy(msgs[1].buf, &model.regs[off], msgs[1].len);
         return 0;
     }
-    assert(off + tx_length - 2 <= REG_SPAN);
-    memcpy(&model.regs[off], &tx[2], tx_length - 2);
-    if (reg == 0x814e && tx_length == 3 && tx[2] == 0)
+    size_t n = msgs[0].len - 2U;
+    assert(off + n <= REG_SPAN);
+    memcpy(&model.regs[off], &tx[2], n);
+    if (reg == 0x814e && n == 1 && tx[2] == 0)
         ++model.status_clears;
     return 0;
 }
+
+static const struct kshim_i2c_adapter_ops model_ops = { .xfer = m_xfer };
+static struct kshim_i2c_adapter model_adapter = {
+    .name = "i2c@a90000", .bus_hz = 400000, .ops = &model_ops,
+};
 
 static uint8_t *reg(unsigned address)
 {
@@ -185,7 +209,7 @@ static void model_reset(void)
     fake_world_reset();
     fake.chip = (struct fake_chip){
         .ctx = &model, .power = m_power, .rstb = m_rstb, .int_drive = m_int_drive,
-        .int_level = m_int_level, .i2c = m_i2c,
+        .int_level = m_int_level,
     };
 }
 
@@ -216,6 +240,7 @@ static void setup(uint16_t address, bool irq_gpio)
 {
     model_reset();
     fake_dev_init(&dev, drv, KSHIM_TOUCH_BUS_I2C, priv);
+    dev.i2c.adapter = &model_adapter;
     dev.i2c.addr = address;
     fake_dev_set_reset(&dev, true, false);      /* <&tlmm 161 GPIO_ACTIVE_HIGH> */
     fake_dev_set_irq_gpio(&dev, irq_gpio, true); /* falling edge: active low */
@@ -281,8 +306,9 @@ static void test_reports(void)
     /* One contact: status+point in one read, then the clear. */
     model_frame((const struct point[]){ { 0, 100, 200 } }, 1);
     transfers = fake.i2c_transfers;
+    unsigned starts = repeated_starts;
     assert(drv->handle(&dev) == 0);
-    assert(fake.i2c_transfers == transfers + 2);
+    assert(fake.i2c_transfers == transfers + 2 && repeated_starts == starts + 1);
     assert(fake.event_count == 1);
     fake_expect_event(0, 0, KSHIM_TOUCH_CONTACT_ENTER, 100, 200);
     assert(*reg(0x814e) == 0 && model.status_clears == clears + 1);

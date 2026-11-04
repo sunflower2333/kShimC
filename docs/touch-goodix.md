@@ -162,6 +162,11 @@ The framework is not on this branch, so the tests fake it
 
 ## Tests
 
+The chip models are an I2C adapter and an SPI controller on the
+architect's `kshim/i2c.h` / `kshim/spi.h` ops. The fake framework helpers
+build `kshim_i2c_msg` lists (write, then a repeated-START read) and pass
+SPI segments through, as the real helpers will.
+
 - `touch_goodix_gt911_test`: an I2C register model that latches its
   address from INT at the RSTB edge and flags every T2-T5 violation. It
   covers both addresses, the product and config reads (valid, bad checksum,

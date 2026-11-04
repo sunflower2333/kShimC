@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * GT9916 driver (kernel/drivers/input/touch/goodix_gt9916.c) against an SPI
- * model of a Goodix Berlin-D controller: the 0xF0/0xF1 framing with 32-bit
+ * GT9916 driver (kernel/drivers/input/touch/goodix_gt9916.c) against a model
+ * of a Goodix Berlin-D controller behind an SPI controller (kshim/spi.h ops,
+ * one chip select per message): the 0xF0/0xF1 framing with 32-bit
  * big-endian addresses and three dummy bytes, the power and reset timing,
  * the boot-option handshake, the firmware-version and IC-information
  * blocks with their checksums, checksummed touch events (one and several
@@ -105,9 +106,8 @@ static struct region *find(uint32_t addr, size_t length, size_t *offset)
     return NULL;
 }
 
-static int m_spi(void *ctx, const uint8_t *mosi, uint8_t *miso, size_t length)
+static int m_spi(const uint8_t *mosi, uint8_t *miso, size_t length)
 {
-    (void)ctx;
     assert(length >= 5);
     uint32_t addr = (uint32_t)mosi[1] << 24 | (uint32_t)mosi[2] << 16 |
                     (uint32_t)mosi[3] << 8 | mosi[4];
@@ -153,6 +153,52 @@ static int m_spi(void *ctx, const uint8_t *mosi, uint8_t *miso, size_t length)
     memcpy(&miso[8], &r->bytes[offset], n);
     return 0;
 }
+
+/* The GT9916 behind a GENI-like SPI controller (kshim/spi.h ops): the
+ * segments of one message share one chip-select assertion, so the model
+ * sees them as one MOSI/MISO stream. */
+static unsigned cs_assertions;
+
+static int m_transfer(struct kshim_spi_controller *controller,
+                      const struct kshim_spi_device *device,
+                      const struct kshim_spi_xfer *xfers, size_t count, uint32_t timeout_us)
+{
+    static uint8_t mosi[4096], miso[4096];
+    size_t total = 0;
+
+    (void)controller;
+    assert(timeout_us > 0 && count >= 1);
+    /* QRD8650 touchscreen@0: CS 0, mode 0 (set by the driver), 8-bit, 1 MHz. */
+    assert(device->chip_select == 0);
+    assert(device->mode == KSHIM_SPI_MODE_0 && device->bits_per_word == 8);
+    assert(device->max_speed_hz == 1000000);
+    for (size_t i = 0; i < count; ++i) {
+        assert(xfers[i].len && total + xfers[i].len <= sizeof(mosi));
+        assert(xfers[i].delay_us == 0);
+        if (xfers[i].tx)
+            memcpy(&mosi[total], xfers[i].tx, xfers[i].len);
+        else
+            memset(&mosi[total], 0, xfers[i].len);
+        total += xfers[i].len;
+    }
+    ++cs_assertions;
+    memset(miso, 0xff, total);
+    int status = m_spi(mosi, miso, total);
+    if (status)
+        return status;
+    total = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (xfers[i].rx)
+            memcpy(xfers[i].rx, &miso[total], xfers[i].len);
+        total += xfers[i].len;
+    }
+    return 0;
+}
+
+static const struct kshim_spi_controller_ops model_ops = { .transfer = m_transfer };
+static struct kshim_spi_controller model_controller = {
+    .name = "spi@a90000", .num_chipselect = 1, .ops = &model_ops,
+};
 
 static void put16(uint8_t *p, uint16_t v)
 {
@@ -202,6 +248,7 @@ static size_t build_ic_info(uint8_t *info, uint32_t touch_addr)
 static void model_reset(void)
 {
     memset(&model, 0, sizeof(model));
+    cs_assertions = 0;
     model.bootoption.base = BOOTOPTION;
     model.bootoption.span = FW_VERSION - BOOTOPTION;
     model.version.base = FW_VERSION;
@@ -220,7 +267,7 @@ static void model_reset(void)
     model.info.length = build_ic_info(model.info.bytes, TOUCH_DATA_ADDR);
     fake_world_reset();
     fake.chip = (struct fake_chip){
-        .ctx = &model, .power = m_power, .rstb = m_rstb, .int_level = m_int_level, .spi = m_spi,
+        .ctx = &model, .power = m_power, .rstb = m_rstb, .int_level = m_int_level,
     };
 }
 
@@ -267,6 +314,7 @@ static void setup(void)
 {
     model_reset();
     fake_dev_init(&dev, drv, KSHIM_TOUCH_BUS_SPI, priv);
+    dev.spi.controller = &model_controller;
     fake_dev_set_reset(&dev, true, true);        /* <&tlmm 161 GPIO_ACTIVE_LOW> */
     fake_dev_set_irq_gpio(&dev, true, true);     /* level low */
     dev.irq_trigger = 8;
@@ -379,6 +427,7 @@ static void test_events(void)
     messages = fake.spi_messages;
     assert(drv->handle(&dev) == 0);
     assert(fake.spi_messages == messages + 3);
+    assert(cs_assertions == fake.spi_messages);
     assert(fake.event_count == 4);
     fake_expect_event(0, 0, KSHIM_TOUCH_CONTACT_MOVE, 541, 1201);
     fake_expect_event(1, 1, KSHIM_TOUCH_CONTACT_ENTER, 10, 20);
