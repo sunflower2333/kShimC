@@ -72,14 +72,17 @@ static void test_registry(const void *f, const void *other)
     assert(se4 == kshim_qup_se_get(se4->index) && !kshim_qup_se_get(99));
     assert(kshim_qup_se_mmio(se4) == 0xa90000);
     assert(!kshim_qup_se_by_node(-1) && !kshim_qup_se_by_base(0x1234));
-    /* Ownership is per window: i2c4 and spi4 exclude each other. */
+    /* Ownership is per window: one owner through one node. On the Pocket S2
+     * spi4 is a disabled sibling of i2c4 and cannot be claimed at all. */
     assert(!kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_I2C, i2c4, "touch i2c"));
     assert(!kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_I2C, i2c4, "touch i2c"));
-    assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_SPI, spi4, "spi") == ERROR_BUSY);
-    assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_I2C, spi4, "i2c") == ERROR_BUSY);
+    assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_SPI, i2c4, "spi") == ERROR_BUSY);
+    assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_UART, i2c4, "uart") == ERROR_BUSY);
+    assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_SPI, spi4, "spi") == ERROR_NOT_FOUND);
     assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_SPI, console->node, "x") == ERROR_INVALID_PARAMETER);
     assert(!kshim_qup_se_unclaim(se4) && se4->owner == KSHIM_QUP_OWNER_NONE && se4->owner_node == -1);
-    assert(!kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_SPI, spi4, "spi") && se4->owner_node == spi4);
+    assert(kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_SPI, spi4, "spi") == ERROR_NOT_FOUND);
+    assert(!kshim_qup_se_claim(se4, KSHIM_QUP_OWNER_UART, i2c4, "uart") && se4->owner_node == i2c4);
     /* Re-init on another blob with live owners is refused. */
     assert(kshim_qup_init(other) == ERROR_BUSY && kshim_qup_fdt() == f);
     assert(!kshim_qup_se_unclaim(se4));
@@ -143,15 +146,23 @@ static void test_acquire(const void *f)
     unsigned rate_calls = sec->rate_calls;
     assert(kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_I2C, &hz, &dfs) == ERROR_BUSY);
     assert(sec->rate_calls == rate_calls && !fake_clk_enabled_by_us());
-    /* ... but a UART that keeps its inherited rate accepts its RX command. */
+    /* ... but a UART that keeps its inherited rate accepts its RX command
+     * (uart14, qcom,geni-uart at 0x898000, its S sequencer running). */
+    int uart14 = node_named(f, "/soc@0/geniqup@8c0000/serial@898000");
+    struct kshim_qup_se *u14 = kshim_qup_se_by_node(uart14);
+    fake_mmio_region(0x898000, 0x4000, NULL, NULL);
+    fake_poke(0x898000 + GENI_SE_FW_REVISION_RO, 2U << 8);
+    fake_poke(0x898000 + GENI_SE_STATUS, GENI_SE_STATUS_S_GENI_CMD_ACTIVE);
+    assert(!kshim_qup_se_claim(u14, KSHIM_QUP_OWNER_UART, uart14, "uart"));
+    assert(kshim_qup_se_acquire(u14, KSHIM_QUP_PROTOCOL_SPI, NULL, NULL) == ERROR_INVALID_PARAMETER);
+    struct kshim_clk *u14clk = fake_clk_of(f, uart14, "se");
+    assert(!kshim_qup_se_acquire(u14, KSHIM_QUP_PROTOCOL_UART, NULL, NULL));
+    assert(!u14clk->rate_calls && u14clk->on && u14->acquired);
+    assert(!kshim_qup_se_release(u14) && !kshim_qup_se_unclaim(u14) && !fake_clk_enabled_by_us());
+    /* A disabled sibling node cannot be claimed (spi4 on the Pocket S2). */
     assert(!kshim_qup_se_unclaim(se));
     int spi4 = node_named(f, "/soc@0/geniqup@ac0000/spi@a90000");
-    assert(kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_SPI, NULL, NULL) == ERROR_INVALID_PARAMETER);
-    assert(!kshim_qup_se_claim(se, KSHIM_QUP_OWNER_UART, spi4, "uart"));
-    Geni.regs[GENI_SE_FW_REVISION_RO / 4] = 2U << 8;
-    assert(!kshim_qup_se_acquire(se, KSHIM_QUP_PROTOCOL_UART, NULL, NULL));
-    assert(sec->rate_calls == rate_calls && se->acquired);
-    assert(!kshim_qup_se_release(se) && !kshim_qup_se_unclaim(se));
+    assert(kshim_qup_se_claim(se, KSHIM_QUP_OWNER_SPI, spi4, "spi") == ERROR_NOT_FOUND);
     Geni.s_active = false;
     Geni.regs[GENI_SE_FW_REVISION_RO / 4] = 3U << 8;
     se = claim_i2c4(f);

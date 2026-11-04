@@ -118,6 +118,7 @@ int kshim_qup_se_claim(struct kshim_qup_se *se, enum kshim_qup_owner owner,
                        int node, const char *owner_name)
 {
     if (!se || owner == KSHIM_QUP_OWNER_NONE || !names_window(se, node)) return ERROR_INVALID_PARAMETER;
+    if (Fdt && !dt_available(Fdt, node)) return ERROR_NOT_FOUND; /* a disabled sibling */
     if (se->owner == KSHIM_QUP_OWNER_NONE) {
         se->owner = owner;
         se->owner_node = node;
@@ -128,13 +129,19 @@ int kshim_qup_se_claim(struct kshim_qup_se *se, enum kshim_qup_owner owner,
     return ERROR_BUSY;
 }
 
+static struct se_state *state_of(const struct kshim_qup_se *se);
+
 int kshim_qup_se_unclaim(struct kshim_qup_se *se)
 {
-    if (!se) return ERROR_INVALID_PARAMETER;
+    struct se_state *st = state_of(se);
+    if (!st) return ERROR_INVALID_PARAMETER;
     if (se->acquired || se->intid) return ERROR_BUSY;
     se->owner = KSHIM_QUP_OWNER_NONE;
     se->owner_node = -1;
     se->owner_name = NULL;
+    /* Clocks are resolved through the owner node; the next owner may come
+     * through another node of the window. */
+    st->se = st->m_ahb = st->s_ahb = NULL;
     return 0;
 }
 

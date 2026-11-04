@@ -102,7 +102,9 @@ struct kshim_qup_se *kshim_qup_se_by_base(uint64_t base);
 /* Exclusive ownership of the SE window for `owner` through DT node `node`
  * (which selects the pinctrl/IRQ/clock-frequency to use). ERROR_BUSY when
  * owned by someone else; claiming again with the same owner and node is a
- * no-op. Thread context. */
+ * no-op; ERROR_NOT_FOUND for a disabled node of the window. Unclaim (not
+ * acquired, no interrupt) drops the clock handles resolved through the
+ * node. Thread context. */
 int kshim_qup_se_claim(struct kshim_qup_se *se, enum kshim_qup_owner owner,
                        int node, const char *owner_name);
 int kshim_qup_se_unclaim(struct kshim_qup_se *se);
