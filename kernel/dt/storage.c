@@ -11,6 +11,35 @@
 #ifndef KSHIM_STORAGE_ANDROID_PINS
 #define KSHIM_STORAGE_ANDROID_PINS 0
 #endif
+/* Mainline GDSC power domains resolve through the kernel/soc clock tables
+ * when they are built (CONFIG_KSHIM_GPIO/CLK, cmake/io/platform.cmake). */
+#if __has_include(<config.h>)
+#include <config.h>
+#endif
+#if defined(CONFIG_KSHIM_GPIO) || defined(CONFIG_KSHIM_CLK)
+#define KSHIM_STORAGE_SOC_GDSC 1
+#include <kshim/soc_tables.h>
+#else
+#define KSHIM_STORAGE_SOC_GDSC 0
+#endif
+
+#if KSHIM_STORAGE_SOC_GDSC
+/* Mainline: power-domains = <&gcc UFS_PHY_GDSC>; the GDSCR (PWR_ON bit 31)
+ * from the SoC table (SM8650: ufs_phy_gdsc at GCC + 0x77004). */
+static uint64_t soc_gdsc(const void *f, int node)
+{
+    struct dt_spec spec;
+    struct dt_range reg;
+    struct kshim_soc_clk leaf;
+    if (dt_specifier(f, node, "power-domains", "#power-domain-cells", 0, &spec) || spec.count != 1)
+        return 0;
+    const char *compatible = dt_string(f, spec.node, "compatible");
+    const struct kshim_soc_clock_controller *c = kshim_soc_clock_controller(compatible);
+    if (!c || !kshim_soc_clock_leaf(c, KSHIM_SOC_CLK_SPACE_GDSC, spec.args[0], &leaf) ||
+        dt_reg(f, spec.node, 0, &reg) || leaf.halt_reg + 4U > reg.size) return 0;
+    return reg.base + leaf.halt_reg;
+}
+#endif
 
 unsigned kshim_dt_storage_soc(const void *f)
 {
@@ -65,6 +94,9 @@ static int find_ufs(const void *f, struct kshim_storage_dt *out)
         if (hba >= 0 && !fdt_node_check_compatible(f, hba, "qcom,gdsc") &&
             !dt_reg(f, hba, 0, &gdsc) && gdsc.size >= 4)
             u->gdsc = gdsc.base;
+#if KSHIM_STORAGE_SOC_GDSC
+        if (!u->gdsc) u->gdsc = soc_gdsc(f, n);
+#endif
         u->index = out->ufs_count++;
     }
     return 0;

@@ -23,15 +23,19 @@
 /* Fallback pin tables for DTs without qcom,pdc-ranges. SM8150: Android
  * pdc-sm8150.c as carried by CrDK Target/Sm8150/CrTarget.c (UEFI-only, not
  * linkable here). SM8250: mainline sm8250.dtsi qcom,pdc-ranges, which match
- * CrDK Target/Sm8250/CrTarget.c and Android kona.dtsi. */
+ * CrDK Target/Sm8250/CrTarget.c and Android kona.dtsi. SM8650: mainline
+ * sm8650.dtsi qcom,pdc-ranges, identical to CrDK Target/Sm8650/CrPdcTarget.c
+ * (that file's PdcDeviceContext is UEFI-only as well). */
 static const struct {
     const char *compatible;
     uint16_t count;
-    PdcRange ranges[4];
+    PdcRange ranges[6];
 } Builtin[] = {
     {"qcom,pdc-sm8150", 3, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}}},
     {"qcom,kona-pdc", 4, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}, {126, 716, 12}}},
     {"qcom,sm8250-pdc", 4, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}, {126, 716, 12}}},
+    {"qcom,sm8650-pdc", 6, {{0, 480, 94}, {94, 609, 31}, {125, 63, 1}, {126, 716, 12},
+                            {138, 251, 5}, {143, 244, 4}}},
 };
 
 struct pdc_route {

@@ -22,6 +22,7 @@
 GpioDeviceContext *KshimCrdkSm8150GpioContext(void);
 GpioDeviceContext *KshimCrdkSm8250GpioContext(void);
 GpioDeviceContext *KshimCrdkSm8450GpioContext(void);
+GpioDeviceContext *CrSm8650GetSocGpioContext(void);
 
 static void *load(const char *name)
 {
@@ -102,7 +103,8 @@ static void test_dt(const void *f, bool has_touch)
 static void test_tlmm_layout(void)
 {
     GpioDeviceContext *(*const targets[KSHIM_TLMM_SOCS])(void) = {KshimCrdkSm8150GpioContext,
-        KshimCrdkSm8250GpioContext, KshimCrdkSm8250GpioContext, KshimCrdkSm8450GpioContext};
+        KshimCrdkSm8250GpioContext, KshimCrdkSm8250GpioContext, KshimCrdkSm8450GpioContext,
+        CrSm8650GetSocGpioContext};
     const GpioConfigRegInfo *l = &KshimTlmmLayout;
     for (unsigned i = 0; i < KSHIM_TLMM_SOCS; ++i) {
         const GpioDeviceContext *t = targets[i]();
@@ -114,7 +116,8 @@ static void test_tlmm_layout(void)
                r->InterruptEnMsk == l->InterruptEnMsk && r->InterruptPolarityMsk == l->InterruptPolarityMsk &&
                r->InterruptDetectionMsk == l->InterruptDetectionMsk &&
                r->InterruptRawStatusMsk == l->InterruptRawStatusMsk &&
-               r->InterruptStatusMsk == l->InterruptStatusMsk && r->InterruptTargetMsk == l->InterruptTargetMsk &&
+               r->InterruptStatusMsk == l->InterruptStatusMsk &&
+               r->InterruptTargetMsk == (soc->target_mask ? soc->target_mask : l->InterruptTargetMsk) &&
                r->TargetKpssVal == l->TargetKpssVal &&
                r->InterruptDetectionWidth == l->InterruptDetectionWidth);
         unsigned normal = 0;

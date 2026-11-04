@@ -216,6 +216,46 @@ out:
     return result;
 }
 
+/* PMIC GPIO byte adapter for kernel/drivers/gpio (kshim/gpio.h). Reads
+ * any byte of a peripheral; writes only the GPIO configuration registers
+ * 0x40-0x46 and 0x4a (CrDK PmicGpioLib register facts) of a peripheral
+ * whose TYPE register (0x04) reads as GPIO (0x10). */
+int kshim_qcom_pmic_gpio_read8(uint8_t controller, uint8_t sid, uint16_t address, uint8_t *value)
+{
+    uint32_t v;
+    if (!value || controller >= port_count || !ports[controller].spmi || sid > 15 ||
+        spmi_read(&ports[controller], sid, address, &v)) return -1;
+    *value = (uint8_t)v;
+    return 0;
+}
+int kshim_qcom_pmic_gpio_write8(uint8_t controller, uint8_t sid, uint16_t address, uint8_t value)
+{
+    unsigned reg = address & 255U;
+    uint8_t type;
+    if (controller >= port_count || !ports[controller].spmi || sid > 15 ||
+        !((reg >= 0x40 && reg <= 0x46) || reg == 0x4a) ||
+        kshim_qcom_pmic_gpio_read8(controller, sid, (uint16_t)((address & 0xff00U) | 0x04U), &type) ||
+        type != 0x10) return -1;
+    struct spmi_port *p = &ports[controller];
+    SPMI_LOCK();
+    int result = -1;
+    if (KshimSpmiInit(p)) goto out;
+    p->fault = 0;
+    uint32_t offset = p->spmi->PmicArb.Ops->GetChannelOffset(p->spmi, sid, address, SPMI_ARB_CHANNEL_RW);
+    SpmiMemoryRegion *r = &p->spmi->Regions[p->spmi->Version == SPMI_ARB_VERSION_1 ?
+        SPMI_MEMORY_REGION_TYPE_CORE : SPMI_MEMORY_REGION_TYPE_CH_SLAVES];
+    if (offset == UINT32_MAX || p->fault || r->BaseAddress > UINTPTR_MAX - offset ||
+        !KshimSpmiContains(r, r->BaseAddress + offset, SPMI_PMIC_ARB_WDATA0 + sizeof(uint32_t))) goto out;
+    p->command = r->BaseAddress + offset;
+    p->write_data = p->command + SPMI_PMIC_ARB_WDATA0;
+    CR_STATUS status = SpmiWrite(p->spmi, sid, address, &value, 1);
+    p->command = p->write_data = 0;
+    result = CR_ERROR(status) || p->fault ? -1 : 0;
+out:
+    SPMI_UNLOCK();
+    return result;
+}
+
 #if CONFIG_QCOM_IRQCHIP
 SpmiDeviceContext *kshim_qcom_spmi_context(unsigned controller)
 {

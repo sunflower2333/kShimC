@@ -64,7 +64,9 @@ int kshim_dt_spmi_identity(const void *f, int node, uint8_t *controller,
 
 /* Downstream Qualcomm encodes PMIC peripheral reg as <offset length> with
  * address-cells=2, size-cells=0. Mainline uses <offset>, size-cells=0.
- * This is a bus-specific tuple, not a 64-bit physical MMIO address. */
+ * This is a bus-specific tuple, not a 64-bit physical MMIO address. A node
+ * may list several peripherals (mainline PMK8550 pon: <0x1300>, <0x800>,
+ * "hlos" and "pbs"); the first one is the node's own peripheral. */
 int kshim_dt_spmi_reg(const void *f, int node, uint16_t *offset)
 {
     uint8_t controller, bus, sid;
@@ -74,7 +76,7 @@ int kshim_dt_spmi_reg(const void *f, int node, uint16_t *offset)
     const fdt32_t *p = fdt_getprop(f, node, "reg", &len);
     if (!p || dt_u32(f, parent, "#address-cells", &ac) ||
         dt_u32(f, parent, "#size-cells", &sc) || sc ||
-        (ac != 1 && ac != 2) || len != (int)ac * 4) return -1;
+        (ac != 1 && ac != 2) || len < (int)ac * 4 || len % ((int)ac * 4)) return -1;
     uint32_t a = fdt32_to_cpu(p[0]), size = ac == 2 ? fdt32_to_cpu(p[1]) : 0;
     if ((a & 0xffU) || a > UINT16_MAX || size > 0x10000U - a) return -1;
     *offset = a;

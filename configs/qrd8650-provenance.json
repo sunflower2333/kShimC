@@ -1,0 +1,24 @@
+{
+  "board": "qcom-qrd8650 (Snapdragon 8 Gen 3 QRD, SM8650)",
+  "runtime_dt": "Linux arch/arm64/boot/dts/qcom/sm8650-qrd.dts",
+  "repository": "Linux mainline (/home/sunf/mu_aloha_platforms/linux)",
+  "revision": "40288c9206c17eb66a603262e06a58d300d0f279",
+  "fixture": "tests/fixtures/io/sm8650-qrd.dtb (sha256 01c94cf491fa9f5b265fc087b68ae0aea2565b43bcbd8d169b9f463e897ad6bb, identical to CrDK Target/Sm8650 dt_sha256)",
+  "files": {
+    "arch/arm64/boot/dts/qcom/sm8650.dtsi": "8c1bf591b95d22a4d120351d4d720713b38236629564dde92613aea6852a3b2a",
+    "arch/arm64/boot/dts/qcom/sm8650-qrd.dts": "a069075b57c23fe88f786deaa3c35d535cf3f77121a9f364214ceeb628857684"
+  },
+  "uefi_reference": "mu_aloha_platforms Platforms/LanaiCrPkg (qcom-qrd8650), CrDK Target/Sm8650 (CrGpioTarget.c, CrPdcTarget.c, CrDebugUartTarget.c)",
+  "console": {"node": "uart15 (serial0)", "base": "0x0089c000", "compatible": "qcom,geni-debug-uart", "irq": "GIC SPI 462", "policy": "inherited 115200 8n1"},
+  "gic": {"dist": "0x17100000", "redist": "0x17180000 + 0x200000", "stride": "0x40000", "interrupt_cells": 4},
+  "tlmm": {"base": "0x0f100000", "size": "0x300000", "summary": "GIC SPI 208 level-high", "normal_pads": 210, "intr_target": "INTR_CFG bits 10:8 = 3 (KPSS)", "reserved": "gpio-reserved-ranges <32 8>, <74 1> (NFC)"},
+  "pdc": {"base": "0x0b220000", "ranges": "<0 480 94>, <94 609 31>, <125 63 1>, <126 716 12>, <138 251 5>, <143 244 4>"},
+  "spmi": {"core": "0x0c400000", "version": "PMIC arbiter v7 (runtime-detected by CrDK SpmiLib)", "periph_irq": "PDC pin 1 -> SPI 481"},
+  "keys": {
+    "Power": "PMK8550 (SID 0) PON_HLOS 0x1300 RT_STS bit 7 (qcom,pmk8350-pwrkey, gen3)",
+    "VolumeDown": "PMK8550 PON_HLOS 0x1300 RT_STS bit 6 (resin)",
+    "VolumeUp": "pm8550_gpios 6 (SID 1, 0x8d00, RT_STS 0x8d10), active low"
+  },
+  "touch": {"controller": "Goodix GT9916 (Berlin), goodix,gt9916", "bus": "spi4 @ 0xa90000 (qupv3_id_0, GCC_QUPV3_WRAP1_S4_CLK), CS 0, 1 MHz", "irq": "TLMM 162 level-low", "reset": "TLMM 161 active-low", "avdd": "vreg_l14b_3p2 (RPMh ldob14, 3.2 V, HPM)", "size": "1080x2400"},
+  "hardware_tested": false
+}
