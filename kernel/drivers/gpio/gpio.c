@@ -16,8 +16,8 @@
  * that already match are never written, so inherited pads stay untouched.
  *
  * PMIC GPIOs are configured through CrDK PmicGpioLib (subtype detection,
- * LV/MV vs. legacy MODE_CTL encoding) over a one-pin "controller" per
- * requested pin, with the byte transport of kernel/drivers/qcom_keys.c.
+ * LV/MV vs. legacy MODE_CTL encoding) over a one-pin "controller" for the
+ * pin being changed, with the byte transport of kernel/drivers/qcom_keys.c.
  * Registers 0x40-0x46 and 0x4a (PmicGpioLib register facts) are the
  * snapshot. PMIC interrupts are not offered.
  */
@@ -40,7 +40,7 @@
 #else
 #define GPIO_PMIC 0
 #endif
-#define GPIO_SLOTS 32U
+#define GPIO_SLOTS 24U
 #define TLMM_PROVIDERS 2U
 /* PMIC GPIO peripheral registers (CrDK PmicGpioLib). */
 #define PMIC_SNAPSHOT 8U
@@ -60,7 +60,6 @@ struct slot {
     uint32_t cfg, io;
     uint8_t pmic[PMIC_SNAPSHOT];
     uint8_t pmic_valid;  /* bit per PmicRegs entry read successfully */
-    int pmic_index;      /* PmicGpioLib controller, -1 when none */
 };
 
 static struct {
@@ -68,8 +67,7 @@ static struct {
     bool ready;
     uint32_t seq;
     struct slot slots[GPIO_SLOTS];
-    int pmic_arbiter; /* the single SPMI arbiter PMIC pins may use, -1 unset */
-} G = {.pmic_arbiter = -1};
+} G;
 
 /* ---- MMIO and PMIC transport --------------------------------------------- */
 
@@ -266,31 +264,23 @@ static void tlmm_update(uintptr_t address, uint32_t mask, uint32_t value)
     kshim_irq_restore(flags);
 }
 
-/* PmicGpioLib over every PMIC slot, one single-pin controller each. */
-static PmicGpioDeviceContext Pmic;
-static PmicGpioTargetController PmicTargets[PMIC_GPIO_MAX_CONTROLLERS];
-static PmicGpioTargetContext PmicTarget = {.Controllers = PmicTargets};
-
-static int pmic_rebind(void)
-{
-    UINT16 count = 0;
-    for (unsigned i = 0; i < GPIO_SLOTS; ++i) {
-        struct slot *s = &G.slots[i];
-        if (!s->used || s->chip != KSHIM_GPIO_CHIP_PMIC) continue;
-        if (count == PMIC_GPIO_MAX_CONTROLLERS) return KSHIM_IO_ERR_NO_MEMORY;
-        PmicTargets[count] = (PmicGpioTargetController){"kshim", "qcom,spmi-gpio", s->sid, s->base, 1};
-        s->pmic_index = count++;
-    }
-    memset(&Pmic, 0, sizeof(Pmic));
-    if (!count) return 0;
 #if GPIO_PMIC
-    PmicTarget.ControllerCount = count;
-    PmicGpioBusOps bus = pmic_bus((uint8_t)G.pmic_arbiter);
-    return PmicGpioInitialize(&Pmic, &PmicTarget, &bus) == CR_SUCCESS ? 0 : ERROR_DEVICE_ERROR;
-#else
-    return ERROR_NOT_SUPPORTED;
-#endif
+/* PmicGpioLib over one single-pin "controller", the slot's pin; the
+ * context lives on the caller's stack for one operation (PMIC GPIO calls
+ * are rare and thread context only). */
+struct pmic_op {
+    PmicGpioDeviceContext ctx;
+    PmicGpioTargetController target;
+    PmicGpioTargetContext targets;
+};
+static int pmic_open(const struct slot *s, struct pmic_op *op)
+{
+    op->target = (PmicGpioTargetController){"kshim", "qcom,spmi-gpio", s->sid, s->base, 1};
+    op->targets = (PmicGpioTargetContext){&op->target, 1};
+    PmicGpioBusOps bus = pmic_bus(s->controller);
+    return PmicGpioInitialize(&op->ctx, &op->targets, &bus) == CR_SUCCESS ? 0 : ERROR_DEVICE_ERROR;
 }
+#endif
 
 static int snapshot(struct slot *s)
 {
@@ -336,40 +326,32 @@ static int restore(struct slot *s)
     return status;
 }
 
-static void release(struct slot *s)
-{
-    bool pmic = s->chip == KSHIM_GPIO_CHIP_PMIC;
-    memset(s, 0, sizeof(*s));
-    s->pmic_index = -1;
-    if (pmic) (void)pmic_rebind();
-}
+static void release(struct slot *s) { memset(s, 0, sizeof(*s)); }
 
 /* Find or create the slot for `g`, snapshotting a new one. */
 static int attach(struct kshim_gpio *g, struct slot **out)
 {
     struct slot *s = find(g);
     if (!s) {
-        if (g->chip == KSHIM_GPIO_CHIP_PMIC) {
-            if (!pmic_bus_ready()) return ERROR_NOT_SUPPORTED;
-            if (G.pmic_arbiter >= 0 && G.pmic_arbiter != g->spmi_controller) return ERROR_NOT_SUPPORTED;
-        }
+        if (g->chip == KSHIM_GPIO_CHIP_PMIC && !pmic_bus_ready()) return ERROR_NOT_SUPPORTED;
         for (unsigned i = 0; i < GPIO_SLOTS && !s; ++i)
             if (!G.slots[i].used) s = &G.slots[i];
         if (!s) return KSHIM_IO_ERR_NO_MEMORY;
         *s = (struct slot){.used = true, .chip = (uint8_t)g->chip, .pin = g->pin, .ctl = g->ctl,
-            .controller = g->spmi_controller, .sid = g->sid, .base = g->base, .pmic_index = -1};
+            .controller = g->spmi_controller, .sid = g->sid, .base = g->base};
         if (g->chip == KSHIM_GPIO_CHIP_TLMM) {
             const struct kshim_soc_tlmm *t = G.fdt ? kshim_soc_tlmm(kshim_dt_soc(G.fdt, g->provider)) : NULL;
             s->egpio = t && t->egpio;
         }
         int status = snapshot(s);
+#if GPIO_PMIC
         if (!status && g->chip == KSHIM_GPIO_CHIP_PMIC) {
-            G.pmic_arbiter = g->spmi_controller;
-            status = pmic_rebind();
+            struct pmic_op op; /* the peripheral must probe as a GPIO */
+            status = pmic_open(s, &op);
         }
+#endif
         if (status) {
             memset(s, 0, sizeof(*s));
-            if (g->chip == KSHIM_GPIO_CHIP_PMIC) (void)pmic_rebind();
             return status;
         }
     }
@@ -417,15 +399,16 @@ int kshim_gpio_direction_output(struct kshim_gpio *g, bool active)
                     KSHIM_TLMM_CFG_OE | claim);
     } else {
 #if GPIO_PMIC
+        struct pmic_op op;
         PmicGpioConfig c;
-        if (PmicGpioGetConfig(&Pmic, (UINT16)s->pmic_index, 1, &c) != CR_SUCCESS) return ERROR_DEVICE_ERROR;
+        if (pmic_open(s, &op) || PmicGpioGetConfig(&op.ctx, 0, 1, &c) != CR_SUCCESS) return ERROR_DEVICE_ERROR;
         if (!c.Enabled || c.Direction != PMIC_GPIO_DIRECTION_OUTPUT ||
             c.Function != PMIC_GPIO_FUNCTION_NORMAL || c.OutputValue != level) {
             c.Enabled = TRUE;
             c.Direction = PMIC_GPIO_DIRECTION_OUTPUT;
             c.Function = PMIC_GPIO_FUNCTION_NORMAL;
             c.OutputValue = level;
-            if (PmicGpioConfigure(&Pmic, (UINT16)s->pmic_index, 1, &c) != CR_SUCCESS)
+            if (PmicGpioConfigure(&op.ctx, 0, 1, &c) != CR_SUCCESS)
                 return ERROR_DEVICE_ERROR;
         }
 #else
@@ -448,8 +431,9 @@ int kshim_gpio_direction_input(struct kshim_gpio *g, enum kshim_gpio_pull pull)
     } else {
 #if GPIO_PMIC
         /* PMIC pulls: TLMM-style none/down/up onto PmicGpioLib's values. */
+        struct pmic_op op;
         PmicGpioConfig c;
-        if (PmicGpioGetConfig(&Pmic, (UINT16)s->pmic_index, 1, &c) != CR_SUCCESS) return ERROR_DEVICE_ERROR;
+        if (pmic_open(s, &op) || PmicGpioGetConfig(&op.ctx, 0, 1, &c) != CR_SUCCESS) return ERROR_DEVICE_ERROR;
         PmicGpioConfig want = c;
         want.Enabled = TRUE;
         want.Direction = PMIC_GPIO_DIRECTION_INPUT;
@@ -459,7 +443,7 @@ int kshim_gpio_direction_input(struct kshim_gpio *g, enum kshim_gpio_pull pull)
         else if (pull == KSHIM_GPIO_PULL_UP) want.Pull = PMIC_GPIO_PULL_UP_30UA;
         else if (pull == KSHIM_GPIO_PULL_KEEPER) return ERROR_NOT_SUPPORTED;
         if (memcmp(&want, &c, sizeof(c)) &&
-            PmicGpioConfigure(&Pmic, (UINT16)s->pmic_index, 1, &want) != CR_SUCCESS)
+            PmicGpioConfigure(&op.ctx, 0, 1, &want) != CR_SUCCESS)
             return ERROR_DEVICE_ERROR;
 #else
         return ERROR_NOT_SUPPORTED;
@@ -480,7 +464,9 @@ int kshim_gpio_set(struct kshim_gpio *g, bool active)
         return 0;
     }
 #if GPIO_PMIC
-    return PmicGpioSetValue(&Pmic, (UINT16)s->pmic_index, 1, level) == CR_SUCCESS ? 0 : ERROR_DEVICE_ERROR;
+    struct pmic_op op;
+    if (pmic_open(s, &op)) return ERROR_DEVICE_ERROR;
+    return PmicGpioSetValue(&op.ctx, 0, 1, level) == CR_SUCCESS ? 0 : ERROR_DEVICE_ERROR;
 #else
     return ERROR_NOT_SUPPORTED;
 #endif
@@ -554,9 +540,6 @@ int kshim_gpio_restore_all(void)
         int status = restore(newest);
         if (status && !result) result = status;
         memset(newest, 0, sizeof(*newest));
-        newest->pmic_index = -1;
     }
-    memset(&Pmic, 0, sizeof(Pmic));
-    G.pmic_arbiter = -1;
     return result;
 }

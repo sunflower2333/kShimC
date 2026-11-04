@@ -40,7 +40,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define REG_POOL 24U
+#define REG_POOL 16U
 #define REG_NAME 24U
 #define VRM_VOLTAGE 0U
 #define VRM_ENABLE 4U
@@ -83,10 +83,10 @@ static struct {
     const void *fdt;
     uint32_t seq;
     struct kshim_regulator pool[REG_POOL];
-    /* apps RSC and CMD DB */
+    /* apps RSC and CMD DB; each TCS transaction runs on a stack
+     * CrQupContext (claim, program, complete, restore within one call). */
     bool rsc_ready, rsc_broken;
     struct CrQupResources rsc;
-    struct CrQupContext ctx;
 } R;
 
 /* ---- RSC / CMD DB discovery --------------------------------------------- */
@@ -186,18 +186,24 @@ static int rsc_setup(const void *f, bool map, struct kshim_resources *res)
                                    KSHIM_MMU_READ)))
         return ERROR_NOT_SUPPORTED;
     R.rsc = r;
-    memset(&R.ctx, 0, sizeof(R.ctx));
-    R.ctx.board = &R.rsc;
     R.rsc_ready = true;
     R.rsc_broken = false;
     return 0;
+}
+
+/* "qcom,<pmic>-rpmh-regulators" (mainline regulator group). */
+static bool rpmh_group(const char *compatible)
+{
+    static const char suffix[] = "-rpmh-regulators";
+    size_t n = compatible ? strlen(compatible) : 0, k = sizeof(suffix) - 1;
+    return n > k && !strncmp(compatible, "qcom,", 5) && !strcmp(compatible + n - k, suffix);
 }
 
 static bool any_rpmh(const void *f)
 {
     for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
         const char *c = dt_string(f, n, "compatible");
-        if (c && (strstr(c, "-rpmh-regulators") || !strcmp(c, "qcom,rpmh-vrm-regulator") ||
+        if (c && (rpmh_group(c) || !strcmp(c, "qcom,rpmh-vrm-regulator") ||
                   !strcmp(c, "qcom,rpmh-xob-regulator"))) return true;
     }
     return false;
@@ -224,17 +230,18 @@ int kshim_regulator_init(const void *fdt)
 
 /* ---- RPMh transport ----------------------------------------------------- */
 
-static struct CrQupContext *rpmh(void)
+static struct CrQupContext *rpmh(struct CrQupContext *p)
 {
     if (!R.rsc_ready || R.rsc_broken) return NULL;
-    R.ctx.io = *kshim_platform_io();
-    R.ctx.board = &R.rsc;
-    return &R.ctx;
+    memset(p, 0, sizeof(*p));
+    p->io = *kshim_platform_io();
+    p->board = &R.rsc;
+    return p;
 }
 
 static int rpmh_write(uint32_t address, uint32_t value)
 {
-    struct CrQupContext *p = rpmh();
+    struct CrQupContext ctx, *p = rpmh(&ctx);
     if (!p) return ERROR_NOT_READY;
     int status = CrRpmhPollWrite(p, address, value);
     if (status && p->tcs_pending) R.rsc_broken = true; /* TCS retained after a timeout */
@@ -267,7 +274,7 @@ static int tcs_stop(uintptr_t control)
 /* One RPMh read of the apps DRV's own request at `address`. */
 static int rpmh_read(uint32_t address, uint32_t *value)
 {
-    struct CrQupContext *p = rpmh();
+    struct CrQupContext ctx, *p = rpmh(&ctx);
     if (!p) return ERROR_NOT_READY;
     int status = CrRpmhPollClaim(p);
     if (status) return kshim_io_err_from_bus(status);
@@ -347,7 +354,7 @@ static int mainline_rpmh(const void *f, int n, struct kshim_regulator *r)
     const char *compatible = parent >= 0 ? dt_string(f, parent, "compatible") : NULL;
     const char *id = parent >= 0 ? dt_string(f, parent, "qcom,pmic-id") : NULL;
     const char *name = fdt_get_name(f, n, NULL);
-    if (!compatible || !strstr(compatible, "-rpmh-regulators") || !id || !name) return ERROR_NOT_FOUND;
+    if (!rpmh_group(compatible) || !id || !name) return ERROR_NOT_FOUND;
     static const struct { const char *node, *resource; } kinds[] = {
         {"ldo", "ldo"}, {"smps", "smp"}, {"bob", "bob"}};
     for (unsigned i = 0; i < 3; ++i) {
@@ -494,10 +501,9 @@ static void fixed_off(struct kshim_regulator *r)
 static int rpmh_resolve(struct kshim_regulator *r)
 {
     if (r->resolved) return 0;
-    struct CrQupContext *p = rpmh();
-    if (!p) return ERROR_NOT_READY;
+    if (!R.rsc_ready || R.rsc_broken) return ERROR_NOT_READY;
     uint32_t address;
-    if (CrCmdDbLookup(&p->io, R.rsc.cmd_db_base, R.rsc.cmd_db_size, r->resource, &address) ||
+    if (CrCmdDbLookup(kshim_platform_io(), R.rsc.cmd_db_base, R.rsc.cmd_db_size, r->resource, &address) ||
         ((address >> 16) & 7U) != 4U) {
         printf("regulator: CMD DB has no VRM %s\n", r->resource);
         return ERROR_NOT_FOUND;
