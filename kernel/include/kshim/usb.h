@@ -206,7 +206,10 @@ struct kshim_usb_device {
     uint32_t route;                   /* xHCI route string (4 bits per tier below the root) */
     enum kshim_usb_speed speed;
     uint8_t address;                  /* USB address (set by the HCD) */
-    uint8_t tt_hub_slot, tt_port;     /* LS/FS behind a HS hub: TT hub's HCD slot and port */
+    /* LS/FS behind a HS hub: the TT hub's HCD slot and port. The core
+     * fills tt_port; the HCD fills tt_hub_slot in device_alloc (the core
+     * does not know HCD slot ids). 0 when no TT is involved. */
+    uint8_t tt_hub_slot, tt_port;
     struct kshim_usb_device_descriptor descriptor;
     uint8_t *config;                  /* full active configuration descriptor (heap) */
     uint16_t config_length;
@@ -246,6 +249,12 @@ struct kshim_usb_urb {
     void *hcd_priv;
     void *bounce;
     struct kshim_completion done;
+    /* Additive (xhci): core-owned link of the given-back list that
+     * kshim_usb_poll_events() drains, the bounce allocation size and the
+     * transfer direction captured at submit. */
+    struct kshim_usb_urb *done_next;
+    uint32_t bounce_size;
+    bool in;
 };
 
 /* Queue an URB (control, bulk or interrupt; isochronous is not supported).
@@ -322,6 +331,12 @@ int kshim_usb_init(const void *fdt);
 int kshim_usb_settle(uint32_t timeout_ms);
 void kshim_usb_poll_events(void);
 void kshim_usb_poll(void);
+/* Additive (xhci): a class driver with port work still in progress (the hub
+ * driver's connect debounce) keeps kshim_usb_settle() polling for at least
+ * `ms` more milliseconds. Thread context. */
+void kshim_usb_settle_extend(uint32_t ms);
+/* Additive (xhci): "low", "full", "high", "super", "super+" or "unknown". */
+const char *kshim_usb_speed_name(enum kshim_usb_speed speed);
 /* Handoff step "USB": class drivers' disconnect and device slots freed,
  * newest topology first, on every HCD. Idempotent. */
 int kshim_usb_quiesce(void);
