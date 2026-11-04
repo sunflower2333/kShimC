@@ -1,0 +1,200 @@
+// SPDX-License-Identifier: MIT
+// Qualcomm PCIe host-test fixture (tests/io/pci_qcom_test.c): the SM8650
+// pcie1 path of the AYANEO Pocket S2 reduced to the nodes the PCI host
+// reads. Hand-copied from Linux arch/arm64/boot/dts/qcom/sm8650.dtsi (pcie1,
+// pcie1_phy, pcie1_port0, pcie1_default_state) and sm8650-ayaneo-pocket-s2.dts
+// (perst/wake GPIOs, PHY supplies, the uPD720201 usb-controller@0 with its
+// three regulator-fixed rails and gamepad_pwr_en), whose DT facts are
+// BSD-3-Clause, with
+// the dt-bindings macros expanded (qcom,sm8650-gcc.h, qcom,sm8650-tcsr.h,
+// GIC_SPI 0, IRQ_TYPE_LEVEL_HIGH 4, GPIO_ACTIVE_LOW 1). Clock, regulator and
+// pin providers are stand-ins: the test fakes those services. Compiled by
+// tests/io/pci.cmake with dtc.
+/dts-v1/;
+
+/ {
+	compatible = "ayaneo,pocket-s2", "qcom,sm8650";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&intc>;
+
+	vph_pwr: regulator-vph-pwr {
+		compatible = "regulator-fixed";
+		regulator-name = "vph_pwr";
+	};
+
+	upd720201_avdd33_reg: upd720201-avdd33-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "upd720201_avdd33";
+		gpios = <&tlmm 123 0>;
+		enable-active-high;
+		vin-supply = <&vph_pwr>;
+	};
+
+	upd720201_vdd10_reg: upd720201-vdd10-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "upd720201_vdd10";
+		gpios = <&tlmm 122 0>;
+		enable-active-high;
+		vin-supply = <&vph_pwr>;
+	};
+
+	upd720201_vdd33_reg: upd720201-vdd33-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "upd720201_vdd33";
+		gpios = <&tlmm 121 0>;
+		enable-active-high;
+		vin-supply = <&vph_pwr>;
+	};
+
+	vreg_l3e_0p9: regulator-l3e { regulator-name = "vreg_l3e_0p9"; };
+	vreg_l3i_1p2: regulator-l3i { regulator-name = "vreg_l3i_1p2"; };
+	vreg_l1i_0p88: regulator-l1i { regulator-name = "vreg_l1i_0p88"; };
+
+	soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges = <0 0 0 0 0x10 0>;
+
+		gcc: clock-controller@100000 {
+			compatible = "qcom,sm8650-gcc";
+			reg = <0 0x00100000 0 0x1f4200>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+			#power-domain-cells = <1>;
+		};
+
+		tcsr: clock-controller@1fc0000 {
+			compatible = "qcom,sm8650-tcsr", "syscon";
+			reg = <0 0x01fc0000 0 0xa0000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		pcie1: pcie@1c08000 {
+			device_type = "pci";
+			compatible = "qcom,pcie-sm8650", "qcom,pcie-sm8550";
+			reg = <0 0x01c08000 0 0x3000>,
+			      <0 0x40000000 0 0xf1d>,
+			      <0 0x40000f20 0 0xa8>,
+			      <0 0x40001000 0 0x1000>,
+			      <0 0x40100000 0 0x100000>;
+			reg-names = "parf", "dbi", "elbi", "atu", "config";
+			interrupts = <0 307 4 0>, <0 308 4 0>, <0 309 4 0>, <0 312 4 0>,
+				     <0 313 4 0>, <0 314 4 0>, <0 374 4 0>, <0 375 4 0>,
+				     <0 306 4 0>;
+			interrupt-names = "msi0", "msi1", "msi2", "msi3", "msi4", "msi5",
+					  "msi6", "msi7", "global";
+			clocks = <&gcc 46>, <&gcc 48>, <&gcc 49>, <&gcc 56>, <&gcc 57>,
+				 <&gcc 13>, <&gcc 0>, <&gcc 11>;
+			clock-names = "aux", "cfg", "bus_master", "bus_slave", "slave_q2a",
+				      "ddrss_sf_tbu", "noc_aggr", "cnoc_sf_axi";
+			resets = <&gcc 8>, <&gcc 9>;
+			reset-names = "pci", "link_down";
+			power-domains = <&gcc 2>;
+			iommu-map = <0 &gcc 0x1480 0x0 0x1>, <0x100 &gcc 0x1481 0x0 0x1>;
+			interrupt-map = <0 0 0 1 &intc 0 0 0 434 4 0>,
+					<0 0 0 2 &intc 0 0 0 435 4 0>,
+					<0 0 0 3 &intc 0 0 0 438 4 0>,
+					<0 0 0 4 &intc 0 0 0 439 4 0>;
+			interrupt-map-mask = <0 0 0 0x7>;
+			#interrupt-cells = <1>;
+			linux,pci-domain = <1>;
+			num-lanes = <2>;
+			bus-range = <0 0xff>;
+			phys = <&pcie1_phy>;
+			phy-names = "pciephy";
+			dma-coherent;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			ranges = <0x01000000 0 0x00000000 0 0x40200000 0 0x100000>,
+				 <0x02000000 0 0x40300000 0 0x40300000 0 0x1fd00000>;
+			wake-gpios = <&tlmm 99 0>;
+			perst-gpios = <&tlmm 97 1>;
+			pinctrl-0 = <&pcie1_default_state>;
+			pinctrl-names = "default";
+
+			pcie@0 {
+				device_type = "pci";
+				reg = <0x0 0x0 0x0 0x0 0x0>;
+				bus-range = <0x01 0xff>;
+				#address-cells = <3>;
+				#size-cells = <2>;
+				ranges;
+
+				usb-controller@0 {
+					compatible = "pci1912,0014";
+					reg = <0x10000 0x0 0x0 0x0 0x0>;
+					avdd33-supply = <&upd720201_avdd33_reg>;
+					vdd10-supply = <&upd720201_vdd10_reg>;
+					vdd33-supply = <&upd720201_vdd33_reg>;
+					pinctrl-0 = <&gamepad_pwr_en>;
+					pinctrl-names = "default";
+				};
+			};
+		};
+
+		pcie1_phy: phy@1c0e000 {
+			compatible = "qcom,sm8650-qmp-gen4x2-pcie-phy";
+			reg = <0 0x01c0e000 0 0x2000>;
+			clocks = <&gcc 50>, <&gcc 48>, <&tcsr 1>, <&gcc 52>, <&gcc 54>;
+			clock-names = "aux", "cfg_ahb", "ref", "rchng", "pipe";
+			resets = <&gcc 11>, <&gcc 10>;
+			reset-names = "phy", "phy_nocsr";
+			power-domains = <&gcc 3>;
+			#clock-cells = <1>;
+			#phy-cells = <0>;
+			vdda-phy-supply = <&vreg_l3e_0p9>;
+			vdda-pll-supply = <&vreg_l3i_1p2>;
+			vdda-qref-supply = <&vreg_l1i_0p88>;
+		};
+
+		tlmm: pinctrl@f100000 {
+			compatible = "qcom,sm8650-tlmm";
+			reg = <0 0x0f100000 0 0x300000>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+
+			pcie1_default_state: pcie1-default-state {
+				perst-pins {
+					pins = "gpio97";
+					function = "gpio";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+				clkreq-pins {
+					pins = "gpio98";
+					function = "pcie1_clk_req_n";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+				wake-pins {
+					pins = "gpio99";
+					function = "gpio";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
+
+			gamepad_pwr_en: gamepad-pwr-en-active-state {
+				pins = "gpio28";
+				function = "gpio";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		intc: interrupt-controller@17100000 {
+			compatible = "arm,gic-v3";
+			reg = <0 0x17100000 0 0x10000>, <0 0x17180000 0 0x200000>;
+			#interrupt-cells = <4>;
+			#address-cells = <2>;
+			#size-cells = <2>;
+			interrupt-controller;
+		};
+	};
+};
