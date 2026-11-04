@@ -12,10 +12,20 @@ config KSHIM_TOUCH_FTM5
     bool "ST FingerTip FTM5 (I2C)"
     depends on KSHIM_TOUCH && KSHIM_I2C && KSHIM_REGULATOR
     default n
+    help
+        Android "st,fts" nodes with the fts,* property family (Xiaomi Mi MIX
+        3 5G "andromeda"): the kernel/drivers/st_ftm5.c protocol core on the
+        touch framework. Needs the GENI I2C controller (KSHIM_QUP) on
+        Qualcomm boards.
 
 config KSHIM_TOUCH_FTM4
     bool "ST FingerTip FTM4 (I2C)"
     depends on KSHIM_TOUCH && KSHIM_I2C && KSHIM_REGULATOR
     default n
+    help
+        Android "st,fts" nodes with the st,* property family (Qualcomm
+        SM8250 HDK/QRD): sense on/off, controller-ready wait, chip ID 36 70
+        and the 8-byte pointer events, written from protocol facts
+        (configs/hdk8250-touch-provenance.json).
 
 source "$srctree/kernel/drivers/input/touch/Kconfig.goodix"
