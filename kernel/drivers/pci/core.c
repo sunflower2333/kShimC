@@ -728,7 +728,13 @@ static int program_windows(struct kshim_pci_dev *d, uint64_t io_base, uint64_t i
             status |= jwr_changed(d, CFG_IO_BASE_UPPER, 4,
                                   (uint32_t)((io_base >> 16) & 0xffffU) |
                                   (uint32_t)((limit >> 16) & 0xffffU) << 16);
-        w->io_on = true;
+        /* A bridge without an I/O window keeps the registers at zero. */
+        uint32_t back = rd(d, CFG_IO_BASE, 2);
+        w->io_on = ((back & 0xf0U) << 8) == (io_base & 0xf000U) &&
+                   ((back >> 8) & 0xf0U) << 8 == (limit & 0xf000U);
+        if (!w->io_on)
+            LOG("%02x:%02x.%u: bridge has no I/O window\n", d->bus, KSHIM_PCI_SLOT(d->devfn),
+                KSHIM_PCI_FUNC(d->devfn));
         w->io_base = io_base;
         w->io_limit = limit;
     } else if (rd(d, CFG_IO_BASE, 2)) {
