@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: MIT
 /*
  * AYANEO Pocket S2 / S2 Pro touchscreen, as a devicetree overlay on the
  * mainline sm8650-ayaneo-pocket-s2.dtb (which has no touch node yet).
@@ -6,7 +6,8 @@
  * Facts transcribed from "[PATCH RFC] arm64: dts: qcom: sm8650-ayaneo-pocket-s2:
  * add display nodes" (lkml.iu.edu/hypermail/linux/kernel/2604.3/08167.html,
  * from a patch by Kancy Joe); unchanged up to v5 (lkml.iu.edu/2607.3/07518.html).
- * Linux DTS files are BSD-3-Clause. Numeric constants replace the
+ * The patched DTS is BSD-3-Clause; only its DT values (hardware facts) are
+ * used here, written out by hand. Numeric constants replace the
  * dt-bindings macros so no preprocessor is needed:
  * IRQ_TYPE_EDGE_FALLING = 2, GPIO_ACTIVE_HIGH = 0.
  *

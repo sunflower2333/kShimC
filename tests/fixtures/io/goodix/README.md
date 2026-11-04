@@ -7,7 +7,7 @@ sources are BSD-3-Clause Linux DTS files; the blobs are build products.
 | --- | --- | --- |
 | `sm8650-qrd.dtb` | mainline `arch/arm64/boot/dts/qcom/sm8650-qrd.dts` | `3a16f452a024fd885827cb5195148135dfb27b567a48b4acda72863bcbd799e9` |
 | `sm8650-ayaneo-pocket-s2.dtb` | mainline `arch/arm64/boot/dts/qcom/sm8650-ayaneo-pocket-s2.dts` | `c669ef76fc0692162958db3f521a7b3b2a6e23d3bca2a29fe832af310d864ac6` |
-| `pocket-s2-touch.dtso` | Pocket S2 touch node and pinctrl states from the RFC "add display nodes" patch, as an overlay | `83866e9f6312528a2604e714b7681010093efc3ff277a8525ef99c4578a2f49e` |
+| `pocket-s2-touch.dtso` | Pocket S2 touch node and pinctrl states from the RFC "add display nodes" patch, as an overlay (MIT; DT values only) | `c22f5aa3b1dbf2892a5bc41c0f28faa0f9fc0e0d095a4c7d56c1bd8531e8f6b4` |
 
 ## How the DTBs were made
 
