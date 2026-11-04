@@ -23,11 +23,31 @@
  * The HID driver registers a kshim_input_source with the capabilities it
  * found (KSHIM_INPUT_CAP_KEYS/POINTER) on its first bound interface and
  * keeps it registered. disconnect releases held keys
- * (kshim_hid_input_reset).
+ * (kshim_hid_input_reset). A failing input endpoint is cleared
+ * (CLEAR_FEATURE(HALT)) and resubmitted from the service hook, which also
+ * runs the gamepad direction auto-repeat (kshim_hid_input_service).
  */
+#include <stddef.h>
+#include <stdint.h>
+
 #include "error_no.h"
 
 /* kshim_io_init() calls these after kshim_usb_init() and before
- * kshim_pci_init(). */
+ * kshim_pci_init(). kshim_usb_hid_register() also registers the XInput
+ * fallback below. */
 int kshim_usb_hub_register(void);
 int kshim_usb_hid_register(void);
+
+/*
+ * XInput fallback (usbhid addition): vendor-class gamepads with interface
+ * class 0xff, subclass 0x5d, protocol 0x01 (Xbox 360-class wired
+ * controllers and handheld controllers that copy them) have no HID report
+ * descriptor. Their fixed 20-byte input report is described by an
+ * equivalent HID report descriptor and mapped like a HID gamepad (A =
+ * SELECT, B = BACK, D-pad / left stick Y = UP/DOWN). No start or LED
+ * command is sent. Exposed for host tests.
+ */
+struct kshim_hid_input;
+const uint8_t *kshim_usb_xinput_report_descriptor(size_t *length);
+/* Feed one XInput message (non-input messages are ignored, returning 0). */
+int kshim_usb_xinput_report(struct kshim_hid_input *input, const uint8_t *data, size_t length);
