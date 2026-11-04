@@ -25,6 +25,9 @@ run on hardware; QEMU and host register models are the evidence so far.
   (keeping IE) and sets `hcd->irq_pending`. Nothing else runs in IRQ
   context. Event Handler Busy stays set until thread context consumed the
   events and wrote ERDP, which holds off the next interrupt (xHCI 4.17.2).
+  An IP that survives its acknowledge (an INTx level that will not drop)
+  100 times in a row makes the handler clear INTE/IE; the controller then
+  runs on the polling path and thread context logs it.
 - `kshim_usb_poll_events()` runs each HCD's `ops->poll` (the event ring) in
   thread context. HCDs hand finished URBs to `kshim_usb_hcd_giveback()`,
   which only queues them; the core then copies bounced IN data back,
@@ -163,7 +166,7 @@ invalidates; with the MMU off both reduce to barriers in effect.
   (register model of the download plus the PCI glue's decisions with a
   fake loader) and `usb_xhci_test` with a behavioural xHCI model
   (`tests/io/xhci_model.c`), run as the scenarios irq, poll, lostirq,
-  takeover and dead.
+  takeover (with port power control), dead and stuck.
 - QEMU: `tools/test_qemu_xhci.py` (qemu-xhci and nec-usb-xhci; usb-kbd
   and usb-storage; interrupt-driven and polled; EL1 and EL2) compares the
   xHCI function a payload finds after handoff with a direct boot.
