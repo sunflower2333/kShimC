@@ -77,7 +77,21 @@ held for `power_on_delay_us` instead, which stops the controller. Without a
 reset GPIO the error is returned (handoff refused) and the next call retries.
 Then the contact is cancelled, reset is asserted while the supplies are
 disabled newest first, and both GPIOs are freed so the registry restores their
-snapshots. The call is idempotent.
+snapshots (a pad with a pinctrl state is restored with the pinctrl snapshots
+at handoff step 9). A driver with `reset_convention = KSHIM_TOUCH_RESET_LEVEL`
+(goodix,gt9xx: the logical value is the RSTB level) is never driven to the
+reset level here: an inherited controller keeps RSTB as it was, and one
+kShimC reset itself has its RSTB pad turned into an input before the
+supplies drop. The call is idempotent.
+
+Interrupt bookkeeping: the poll re-reads `irq_pending` after the stuck-line
+check, because the handler's own mask makes `kshim_gpio_irq_live()` report
+the pin like a sealed one; and after `probe` the IRQ GPIO's active level is
+re-derived from the trigger the driver chose (step 4 rules).
+
+Supply loads: `driver->supply_loads_ua[]` (same order as `supplies`) is
+handed to `kshim_regulator_set_load()` before the first enable, so an RPMh
+LDO gets the mode the controller needs (FTM4 AVDD 20000 uA: ldoa13 HPM).
 
 ## Boards
 

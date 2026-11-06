@@ -68,9 +68,13 @@ in reset. The Linux goodix driver drives it that way, and all 18
 use `GPIO_ACTIVE_HIGH`. The RFC also pulls GPIO161 down, which holds the
 chip in reset while the pad is an input. The RFC is therefore consistent
 with the GT911's active-low RSTB wired straight to the SoC. The driver
-calls `kshim_touch_set_reset(dev, rstb_high)` and keeps RSTB driven high
-while in use, because that pull-down would reset the chip if the pad were
-released. This is not verified on hardware.
+declares `reset_convention = KSHIM_TOUCH_RESET_LEVEL`, so
+`kshim_touch_set_reset(dev, !rstb_high)` ("held in reset") maps to RSTB
+low, and keeps RSTB driven high while in use, because that pull-down would
+reset the chip if the pad were released. At handoff the framework never
+drives RSTB low: an inherited controller keeps running at its address, and
+after a cold start RSTB is released to its pull-down before the rail drops.
+This is not verified on hardware.
 
 **Inherit first.** If every supply already reports on, RSTB reads high and
 the product ID answers at the DT address, the controller is used as it is.
@@ -146,9 +150,10 @@ The unit tests fake the framework helpers
 (`tests/io/touch_goodix_fake.c`). The drivers rely on these points of the
 `touch_driver.h` contract:
 
-1. `kshim_touch_set_reset(dev, v)` drives the reset GPIO's *logical* value
-   `v` through its DT flags, where "asserted" is the DT active level. The
-   GT911 passes the RSTB level.
+1. `kshim_touch_set_reset(dev, asserted)` takes "held in reset" and maps it
+   through `driver->reset_convention` (`KSHIM_TOUCH_RESET_LEVEL` for the
+   GT911: logical value = RSTB level, so asserted = logical 0) and then the
+   GPIO's DT flags. The GT9916 uses the generic convention.
 2. `kshim_touch_irq_gpio_output(dev, level_high)` drives a *physical* level.
 3. `power_on` replaces the whole common sequence. The framework requests
    the TLMM interrupt after `probe`, using `dev->irq_trigger` as `probe`
@@ -162,17 +167,16 @@ The unit tests fake the framework helpers
 
 Integration check (merged tree): all six points hold in
 `kernel/drivers/input/touch/core.c`, and `touch_goodix_framework_test`
-runs both drivers on the real framework (see Tests). One interplay is
-worth knowing: on stop the framework's `release()` drives the reset GPIO's
-logical "asserted" value (`true`) while it drops the rail references, then
-the GPIO registry restores the pad. Under the goodix,gt9xx convention used
-by the GT911 (logical value = RSTB level) that is RSTB *high*. So there is
-no reset pulse at handoff, and an inherited controller keeps its I2C
-address (useful, since the RFC node has no `irq-gpios` for a payload to
-redo the address select). On the cold path, though, RSTB stays driven
-high for the moment between kShimC dropping its rail vote and the pad
-restore. The GT9916 (active-low reset, generic convention) is held in reset
-as intended.
+runs both drivers on the real framework (see Tests). The stop path follows
+the reset convention: for the GT911 (`KSHIM_TOUCH_RESET_LEVEL`) there is no
+reset pulse at handoff, so an inherited controller keeps its I2C address
+(useful, since the RFC node has no `irq-gpios` for a payload to redo the
+address select). On the cold path RSTB is turned into an input before the
+rail drops, so no high level is driven into the unpowered chip until the
+pinctrl snapshot restores the pad. The GT9916 (active-low reset, generic
+convention) is held in reset while its rail drops. The GT911's configured
+INT mode replaces the DT trigger, and the framework then re-derives the IRQ
+GPIO's active level from it.
 
 ## Tests
 
@@ -203,6 +207,12 @@ SPI segments through, as the real helpers will.
   handling (mask, handle, status released, unmask), the GT9916 level IRQ
   deasserting before the unmask and the 100 ms stuck-level fallback to
   polling, and the stop order and pad restore.
+- `touch_goodix_platform_test` (cold, inherited, qrd): the same drivers and
+  framework over the real GPIO/pinctrl and regulator drivers (TLMM register
+  model, RPMh RSC/TCS and CMD DB model); the chip models see only TLMM
+  registers and RPMh votes. It found that `kshim_regulator_is_enabled()`
+  reported every RPMh rail off before its first enable, which made the
+  inherit checks always cold-start.
 - `touch_goodix_dt_test`: resolves both boards from the real mainline DTBs.
   The Pocket S2 RFC node is applied as an overlay with libfdt. The test
   checks the SE window, the bus parameters, the TLMM interrupt through
