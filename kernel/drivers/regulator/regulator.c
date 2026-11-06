@@ -718,6 +718,10 @@ bool kshim_regulator_is_enabled(const struct kshim_regulator *r)
         if (r->has_gpio) (void)kshim_gpio_get(&r->gpio, &on);
         return on;
     }
+    /* Inherit checks (a controller the previous stage left powered) ask
+     * before any enable: observe the own-DRV request now. The pool object
+     * only caches the read-back here; no vote is written. */
+    if (!r->resolved) (void)rpmh_resolve((struct kshim_regulator *)(uintptr_t)r);
     return r->observed && (r->observed_value[OBS_ENABLE] & 1U);
 }
 

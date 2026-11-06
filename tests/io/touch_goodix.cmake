@@ -57,3 +57,26 @@ target_compile_definitions(touch_goodix_framework_test PRIVATE CONFIG_KSHIM_TOUC
     "FIXTURES=\"${KSHIM_ROOT}/tests/fixtures\"")
 target_include_directories(touch_goodix_framework_test PRIVATE "${KSHIM_ROOT}/tests/include")
 target_link_libraries(touch_goodix_framework_test PRIVATE kshim_dt)
+
+# The same drivers and framework over the real GPIO/pinctrl and regulator
+# drivers (TLMM register model, RPMh RSC/TCS and CMD DB model), with
+# touch_fakes.c reduced to the I2C/SPI clients and the TLMM interrupt API.
+kshim_test(touch_goodix_platform_test io/touch_goodix_platform_test.c ${GOODIX_DRIVERS}
+    "${KSHIM_ROOT}/kernel/drivers/input/touch/core.c"
+    "${KSHIM_ROOT}/kernel/drivers/input/touch/registry.c"
+    "${KSHIM_ROOT}/kernel/drivers/touch.c" "${KSHIM_ROOT}/kernel/dt/qcom_irq.c"
+    "${CMAKE_CURRENT_LIST_DIR}/touch_fakes.c"
+    "${KSHIM_ROOT}/kernel/soc/soc.c" "${KSHIM_ROOT}/kernel/soc/sm8650_tables.c"
+    "${KSHIM_ROOT}/kernel/drivers/gpio/gpio.c" "${KSHIM_ROOT}/kernel/drivers/gpio/pinctrl.c"
+    "${KSHIM_ROOT}/kernel/drivers/regulator/regulator.c")
+target_compile_definitions(touch_goodix_platform_test PRIVATE CONFIG_KSHIM_TOUCH=1
+    CONFIG_KSHIM_TOUCH_FRAMEWORK=1 CONFIG_KSHIM_I2C=1 CONFIG_KSHIM_SPI=1
+    CONFIG_KSHIM_REGULATOR=1 CONFIG_KSHIM_GPIO=1 CONFIG_QCOM_IRQCHIP=1 CONFIG_KSHIM_INPUT_IRQ=1
+    CONFIG_KSHIM_TOUCH_GT911=1 CONFIG_KSHIM_TOUCH_GT9916=1 TOUCH_FAKE_TLMM=1 TOUCH_REAL_PLATFORM=1
+    "FIXTURES=\"${KSHIM_ROOT}/tests/fixtures\"")
+target_include_directories(touch_goodix_platform_test PRIVATE "${KSHIM_ROOT}/tests/include")
+target_link_libraries(touch_goodix_platform_test PRIVATE kshim_dt)
+set_tests_properties(touch_goodix_platform_test PROPERTIES ARGS cold)
+foreach(scenario inherited qrd)
+    add_test(NAME touch_goodix_platform_${scenario}_test COMMAND touch_goodix_platform_test ${scenario})
+endforeach()

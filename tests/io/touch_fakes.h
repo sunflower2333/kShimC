@@ -25,6 +25,10 @@
 #ifndef TOUCH_FAKE_TLMM
 #define TOUCH_FAKE_TLMM 1
 #endif
+/* 1: GPIO, pinctrl and regulators are the real drivers (not faked here). */
+#ifndef TOUCH_REAL_PLATFORM
+#define TOUCH_REAL_PLATFORM 0
+#endif
 
 /* ---- Log ------------------------------------------------------------------ */
 extern char FakeLog[16384];

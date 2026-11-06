@@ -84,6 +84,9 @@ const char *kshim_io_strerror(int status)
     return text;
 }
 
+#if !TOUCH_REAL_PLATFORM
+/* With TOUCH_REAL_PLATFORM the real GPIO/pinctrl and regulator drivers
+ * run over the platform register models instead (touch_goodix_platform_test). */
 /* ---- GPIO ----------------------------------------------------------------- */
 
 static struct fake_pin Pins[32];
@@ -307,6 +310,8 @@ int kshim_regulator_set_load(struct kshim_regulator *regulator, uint32_t load_ua
 bool kshim_regulator_is_enabled(const struct kshim_regulator *regulator) { return regulator->r.refs > 0; }
 const char *kshim_regulator_name(const struct kshim_regulator *regulator) { return regulator->r.name; }
 
+#endif /* !TOUCH_REAL_PLATFORM */
+
 /* ---- I2C ------------------------------------------------------------------ */
 
 fake_i2c_fn FakeI2cDevice;
@@ -463,14 +468,18 @@ bool fake_irq_fire(void)
 void fake_touch_reset(void)
 {
     fake_log_clear();
+#if !TOUCH_REAL_PLATFORM
     memset(Pins, 0, sizeof(Pins));
     memset(Regulators, 0, sizeof(Regulators));
+#endif
     memset(Adapters, 0, sizeof(Adapters));
     AdapterCount = 0;
+#if !TOUCH_REAL_PLATFORM
     FakePinHook = NULL;
     FakePinRead = NULL;
     FakeGpioFailRequest = -1;
     FakeRegulatorFail = NULL;
+#endif
     FakeI2cDevice = NULL;
     FakeI2cGetStatus = 0;
     FakeI2cProbes = FakeI2cTransfers = 0;
