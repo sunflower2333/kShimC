@@ -260,7 +260,7 @@ SPI segments through, as the real helpers will.
     touchscreen never reported. Now the touch is delivered within 250 ms
     and the framework polls from then on. In s2 the same check reads the
     status 4 times in 1 s of idling and keeps the working interrupt.
-  - qrd: spi4 at 1 MHz mode 0 (divider 20), every Berlin access one CS
+  - qrd: spi4 mode 0 at the DT 1 MHz (CXO / 20), every Berlin access one CS
     assertion, reset held while ldob14 comes up, the level-low IRQ masked
     with RAW_STATUS_EN off by the handler and released by the event write
     before the unmask, reset asserted while the rail drops, then everything

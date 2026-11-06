@@ -517,7 +517,7 @@ static void pocket_s2_lost_edge(void)
         assert(!kshim_input_touch_poll());
     }
     assert(EventCount == 1 && Events[0].type == KSHIM_TOUCH_EVENT_PRESS && Events[0].x == 700);
-    assert(FakeNowUs - touched <= 600000U && !FakeGic[SUMMARY].delivered);
+    assert(FakeNowUs - touched <= 260000U && !FakeGic[SUMMARY].delivered);
     /* Polling from now on, at the GT911 cadence. */
     assert(!dev->irq_live && !FakeGic[SUMMARY].requested);
     gt911_frame(0, 0, 0);
