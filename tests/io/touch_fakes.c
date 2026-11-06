@@ -296,6 +296,14 @@ int kshim_regulator_disable(struct kshim_regulator *regulator)
     return 0;
 }
 
+int kshim_regulator_set_load(struct kshim_regulator *regulator, uint32_t load_ua)
+{
+    struct fake_regulator *r = &regulator->r;
+    if (load_ua > r->load_ua) r->load_ua = load_ua;
+    fake_log("%s=load%u", r->name, (unsigned)load_ua);
+    return 0;
+}
+
 bool kshim_regulator_is_enabled(const struct kshim_regulator *regulator) { return regulator->r.refs > 0; }
 const char *kshim_regulator_name(const struct kshim_regulator *regulator) { return regulator->r.name; }
 

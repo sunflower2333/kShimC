@@ -9,7 +9,9 @@
  *    observation by RPMh read, voltage/mode/enable votes, inherited-on
  *    rails not written, restore to the observed request (enable, mode,
  *    voltage), unknown inherited request kept, a hung TCS retained;
- *  - "kona": Android qcom,resource-name rails (ldoa13) on SM8250.
+ *  - "kona": Android qcom,resource-name rails (ldoa13) on SM8250, and the
+ *    load hint turned into a PMIC5 mode from qcom,supported-modes /
+ *    qcom,mode-threshold-currents (FTM4 AVDD 20 mA: HPM 7).
  */
 #include "platform_fake.h"
 
@@ -172,10 +174,28 @@ static void kona(void)
     struct kshim_regulator *avdd, *vdd;
     assert(!kshim_regulator_get(blob, touch, "avdd", &avdd) && !kshim_regulator_get(blob, touch, "vdd", &vdd));
     assert(!strcmp(kshim_regulator_name(avdd), "regulator"));
+    /* No load hint: no mode vote (the aggregated mode stays as inherited). */
+    assert(kshim_regulator_mode(avdd) == -1);
+    /* Inherited on at 3008 mV in LPM (PMIC5 LDO 4, the DT's init mode). The
+     * touch framework hints before the first enable: 5 mA is still LPM,
+     * 20 mA (FTM4 AVDD) needs HPM (7); a lower hint never lowers it. */
+    fake_rpmh_set(L13A + 0, 3008);
+    fake_rpmh_set(L13A + 4, 1);
+    fake_rpmh_set(L13A + 8, 4);
+    assert(!kshim_regulator_set_load(avdd, 5000) && kshim_regulator_mode(avdd) == 4);
+    assert(!kshim_regulator_set_load(avdd, 20000) && kshim_regulator_mode(avdd) == 7);
+    assert(!kshim_regulator_set_load(avdd, 100) && kshim_regulator_mode(avdd) == 7);
+    unsigned writes = FakeRsc.writes;
     assert(!kshim_regulator_enable(avdd));
-    assert(fake_rpmh_get(L13A) == 3008 && fake_rpmh_get(L13A + 4) == 1 && fake_rpmh_get(L13A + 8) == 0);
+    /* Only the mode is written; voltage and enable were already right. */
+    assert(fake_rpmh_get(L13A + 8) == 7 && FakeRsc.writes == writes + 1);
+    assert(fake_rpmh_get(L13A) == 3008 && fake_rpmh_get(L13A + 4) == 1);
     assert(kshim_regulator_enable(vdd) == ERROR_NOT_FOUND); /* ldoc1 missing from this CMD DB */
-    assert(!kshim_regulator_restore_all() && fake_rpmh_get(L13A + 4) == 0);
+    assert(!kshim_regulator_set_load(vdd, 20000) && kshim_regulator_mode(vdd) == -1); /* no facts */
+    /* Release and handoff: the mode goes back to the observed LPM request. */
+    assert(!kshim_regulator_disable(avdd) && fake_rpmh_get(L13A + 8) == 4 && fake_rpmh_get(L13A + 4) == 1);
+    assert(!kshim_regulator_enable(avdd) && fake_rpmh_get(L13A + 8) == 7);
+    assert(!kshim_regulator_restore_all() && fake_rpmh_get(L13A + 8) == 4 && fake_rpmh_get(L13A + 4) == 1);
 }
 
 int main(int argc, char **argv)

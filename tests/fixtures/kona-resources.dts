@@ -40,6 +40,8 @@
         ldoa13 {
             compatible="qcom,rpmh-vrm-regulator"; qcom,resource-name="ldoa13";
             qcom,regulator-type="pmic5-ldo";
+            /* <RPMH_REGULATOR_MODE_LPM RPMH_REGULATOR_MODE_HPM>, <0 10000> */
+            qcom,supported-modes=<1 3>; qcom,mode-threshold-currents=<0 10000>;
             l13: regulator { regulator-min-microvolt=<3008000>; regulator-max-microvolt=<3008000>; };
         };
         ldoc1 {

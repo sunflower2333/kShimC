@@ -13,9 +13,15 @@
  * "ldo"/"smp"/"bob" + qcom,pmic-id + index, as qcom-rpmh-regulator names
  * them; Android qcom,resource-name), then VRM writes at +0 voltage (mV),
  * +4 enable, +8 mode through CrDK RpmhLib's polled TCS API on the apps DRV.
- * Mode is voted only for a mainline regulator-initial-mode, mapped to the
- * PMIC5 hardware modes (qcom-rpmh-regulator facts: LDO RET 3, LPM 4, HPM 7;
- * SMPS RET 3, PFM 4, AUTO 6, PWM 7; BOB PFM 4, AUTO 6, PWM 7).
+ * Mode is voted for a mainline regulator-initial-mode, or for a consumer's
+ * load hint, mapped to the PMIC5 hardware modes (qcom-rpmh-regulator facts:
+ * LDO RET 3, LPM 4, HPM 7; SMPS RET 3, PFM 4, AUTO 6, PWM 7; BOB PFM 4,
+ * AUTO 6, PWM 7; PMIC5 LDO hpm_min_load_uA 10000). Load facts: Android
+ * rpmh-regulator nodes give qcom,regulator-type ("pmic5-ldo", "pmic5-hfsmps",
+ * "pmic5-ftsmps", "pmic5-bob"), qcom,supported-modes (dt-bindings
+ * RPMH_REGULATOR_MODE_RET 0, LPM 1, AUTO 2, HPM 3) and
+ * qcom,mode-threshold-currents (minimum load in uA per listed mode; kona
+ * ldoa13 <0 10000>); mainline nodes opt in with regulator-allow-set-load.
  *
  * Inherited state: before the first vote the apps DRV's own request for
  * the three registers is read back with an RPMh read command on a borrowed
@@ -42,6 +48,8 @@
 
 #define REG_POOL 16U
 #define REG_NAME 24U
+#define REG_MODES 4U
+#define PMIC5_LDO_HPM_MIN_UA 10000U
 #define VRM_VOLTAGE 0U
 #define VRM_ENABLE 4U
 #define VRM_MODE 8U
@@ -72,7 +80,12 @@ struct kshim_regulator {
     char resource[REG_NAME];
     uint32_t address;
     uint32_t min_mv, max_mv, want_mv;
-    int mode;              /* hardware mode, -1 none */
+    int mode;              /* hardware mode from the DT (initial), -1 none */
+    /* Load-driven modes: hardware mode per threshold, ascending. */
+    uint8_t mode_count;
+    uint8_t load_modes[REG_MODES];
+    uint32_t load_thresholds[REG_MODES];
+    uint32_t load_ua;      /* largest consumer load hint */
     bool observed;
     uint32_t observed_value[OBS_COUNT];
     uint8_t changed;       /* bit per OBS_* register kShimC wrote */
@@ -372,9 +385,45 @@ static int mainline_rpmh(const void *f, int n, struct kshim_regulator *r)
         r->mode = -1;
         if (!dt_u32(f, n, "regulator-initial-mode", &mode) && pmic5(f, parent))
             r->mode = pmic5_mode(kinds[i].resource, mode);
+        /* qcom-rpmh-regulator: a PMIC5 LDO takes HPM from hpm_min_load_uA;
+         * Linux only honours loads with regulator-allow-set-load. */
+        if (!strcmp(kinds[i].resource, "ldo") && pmic5(f, parent) &&
+            fdt_getprop(f, n, "regulator-allow-set-load", NULL)) {
+            r->load_modes[0] = (uint8_t)(r->mode >= 0 ? r->mode : 4);
+            r->load_thresholds[0] = 0;
+            r->load_modes[1] = 7;
+            r->load_thresholds[1] = PMIC5_LDO_HPM_MIN_UA;
+            r->mode_count = 2;
+        }
         return 0;
     }
     return ERROR_NOT_SUPPORTED;
+}
+
+/* Android rpmh-regulator load facts on the VRM node: qcom,regulator-type
+ * names the PMIC5 kind, qcom,supported-modes the modes (RPMH_REGULATOR_MODE_*)
+ * and qcom,mode-threshold-currents each mode's minimum load. */
+static void android_load_modes(const void *f, int m, struct kshim_regulator *r)
+{
+    const char *type = dt_string(f, m, "qcom,regulator-type");
+    const char *kind = !type ? NULL : !strcmp(type, "pmic5-ldo") ? "ldo" :
+                       (!strcmp(type, "pmic5-hfsmps") || !strcmp(type, "pmic5-ftsmps")) ? "smp" :
+                       !strcmp(type, "pmic5-bob") ? "bob" : NULL;
+    int mlen, tlen;
+    const fdt32_t *modes = fdt_getprop(f, m, "qcom,supported-modes", &mlen);
+    const fdt32_t *thresholds = fdt_getprop(f, m, "qcom,mode-threshold-currents", &tlen);
+    if (!kind || !modes || !thresholds || mlen != tlen || mlen <= 0 || mlen % 4 ||
+        (unsigned)mlen / 4U > REG_MODES)
+        return;
+    unsigned count = (unsigned)mlen / 4U;
+    for (unsigned i = 0; i < count; ++i) {
+        int hw = pmic5_mode(kind, fdt32_to_cpu(modes[i]));
+        uint32_t t = fdt32_to_cpu(thresholds[i]);
+        if (hw < 0 || (i && t < r->load_thresholds[i - 1])) { r->mode_count = 0; return; }
+        r->load_modes[i] = (uint8_t)hw;
+        r->load_thresholds[i] = t;
+    }
+    r->mode_count = (uint8_t)count;
 }
 
 /* Android: the node or its parent is qcom,rpmh-vrm/xob-regulator with
@@ -390,6 +439,7 @@ static int android_rpmh(const void *f, int n, struct kshim_regulator *r)
         strcpy(r->resource, resource);
         r->xob = xob;
         r->mode = -1;
+        if (vrm) android_load_modes(f, m, r);
         return 0;
     }
     return ERROR_NOT_FOUND;
@@ -534,12 +584,30 @@ static int rpmh_vote(struct kshim_regulator *r, unsigned which, uint32_t value)
     return 0;
 }
 
+/* The DT's initial mode, overridden by the mode the consumers' load needs:
+ * the highest listed mode whose threshold the load reaches. */
+static int wanted_mode(const struct kshim_regulator *r)
+{
+    if (r->type != REG_RPMH || r->xob) return -1;
+    if (!r->load_ua || !r->mode_count) return r->mode;
+    int mode = r->mode;
+    for (unsigned i = 0; i < r->mode_count; ++i)
+        if (r->load_ua >= r->load_thresholds[i]) mode = r->load_modes[i];
+    return mode;
+}
+
+int kshim_regulator_mode(const struct kshim_regulator *r)
+{
+    return r && r->used ? wanted_mode(r) : -1;
+}
+
 static bool rpmh_inherited_on(const struct kshim_regulator *r)
 {
     if (!r->observed || (r->observed_value[OBS_ENABLE] & 1U) != 1U) return false;
     uint32_t mv = r->observed_value[OBS_VOLTAGE] & 0x1fffU;
     if (!r->xob && r->min_mv && (mv < r->min_mv || (r->max_mv && mv > r->max_mv))) return false;
-    return r->mode < 0 || (r->observed_value[OBS_MODE] & 7U) == (uint32_t)r->mode;
+    int mode = wanted_mode(r);
+    return mode < 0 || (r->observed_value[OBS_MODE] & 7U) == (uint32_t)mode;
 }
 
 static int rpmh_on(struct kshim_regulator *r)
@@ -547,8 +615,9 @@ static int rpmh_on(struct kshim_regulator *r)
     int status = rpmh_resolve(r);
     if (status) return status;
     if (!r->changed && rpmh_inherited_on(r)) return 0;
+    int mode = wanted_mode(r);
     if (!r->xob && r->want_mv && (status = rpmh_vote(r, OBS_VOLTAGE, r->want_mv))) return status;
-    if (!r->xob && r->mode >= 0 && (status = rpmh_vote(r, OBS_MODE, (uint32_t)r->mode))) return status;
+    if (!r->xob && mode >= 0 && (status = rpmh_vote(r, OBS_MODE, (uint32_t)mode))) return status;
     return rpmh_vote(r, OBS_ENABLE, 1);
 }
 
@@ -626,6 +695,18 @@ int kshim_regulator_set_voltage(struct kshim_regulator *r, uint32_t min_uv, uint
     if (!r->refs) return 0;
     int status = rpmh_resolve(r);
     return status ? status : rpmh_vote(r, OBS_VOLTAGE, lo);
+}
+
+int kshim_regulator_set_load(struct kshim_regulator *r, uint32_t load_ua)
+{
+    if (!r || !r->used) return ERROR_INVALID_PARAMETER;
+    if (r->type != REG_RPMH || r->xob || load_ua <= r->load_ua) return 0;
+    int before = wanted_mode(r);
+    r->load_ua = load_ua;
+    int after = wanted_mode(r);
+    if (!r->refs || after < 0 || after == before) return 0;
+    int status = rpmh_resolve(r);
+    return status ? status : rpmh_vote(r, OBS_MODE, (uint32_t)after);
 }
 
 bool kshim_regulator_is_enabled(const struct kshim_regulator *r)

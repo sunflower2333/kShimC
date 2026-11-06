@@ -233,8 +233,13 @@ static int ftm4_quiesce(struct kshim_touch_dev *dev)
 static const char *const Ftm4Compatibles[] = {"st,fts", NULL};
 static const char *const Ftm4Reset[] = {"reset-gpios", "st,reset-gpio", NULL};
 static const char *const Ftm4Irq[] = {"irq-gpios", "st,irq-gpio", NULL};
-/* st,regulator_avdd = "avdd", st,regulator_dvdd = "vdd"; AVDD first. */
+/* st,regulator_avdd = "avdd", st,regulator_dvdd = "vdd"; AVDD first. AVDD
+ * draws 20 mA (fts.c regulator_set_load fact, provenance JSON
+ * "fts.c ... 4369 AVDD 20mA load"); on the HDK that is pm8150_l13 (ldoa13),
+ * whose kona-regulators.dtsi thresholds <0 10000> make it HPM (PMIC5 LDO
+ * mode 7). */
 static const char *const Ftm4Supplies[] = {"avdd", "vdd", NULL};
+static const uint32_t Ftm4SupplyLoads[] = {20000, 0};
 
 const struct kshim_touch_driver kshim_touch_driver_ftm4 = {
     .name = "ftm4",
@@ -243,6 +248,7 @@ const struct kshim_touch_driver kshim_touch_driver_ftm4 = {
     .reset_gpio_names = Ftm4Reset,
     .irq_gpio_names = Ftm4Irq,
     .supplies = Ftm4Supplies,
+    .supply_loads_ua = Ftm4SupplyLoads,
     .power_on_delay_us = FTM4_RESET_LOW_US,
     .post_reset_delay_us = 0,   /* the ready-event poll covers the boot */
     .priv_size = sizeof(struct ftm4_priv),

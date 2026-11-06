@@ -19,7 +19,8 @@
  *     Android "fts,reset-gpio"); IRQ GPIO from "irq-gpios"
  *     (driver->irq_gpio_names overrides); supplies driver->supplies[]
  *     ("<name>-supply"; absent ones are skipped, an unsupported provider is
- *     logged and left as inherited); the interrupt from
+ *     logged and left as inherited; driver->supply_loads_ua[] is passed to
+ *     kshim_regulator_set_load()); the interrupt from
  *     "interrupts"/"interrupts-extended" when its parent is the TLMM.
  *  3. driver->match(dev, fdt): no bus I/O. It sees the resolved resources
  *     and may adjust them (vendor size/flip properties into dev->props, the
@@ -130,6 +131,10 @@ struct kshim_touch_driver {
     const char *const *irq_gpio_names;
     /* Supply names in power-on order, NULL-terminated; NULL = none. */
     const char *const *supplies;
+    /* Optional load per supply in uA (same order; 0 = no hint), handed to
+     * kshim_regulator_set_load() before the rails are enabled so an RPMh
+     * LDO is voted the mode the controller needs (FTM4 AVDD 20 mA: HPM). */
+    const uint32_t *supply_loads_ua;
     uint32_t power_on_delay_us;         /* supplies on -> reset release */
     uint32_t post_reset_delay_us;       /* reset release -> probe */
     size_t priv_size;                   /* zeroed bytes at dev->priv, <= KSHIM_TOUCH_PRIV_MAX */

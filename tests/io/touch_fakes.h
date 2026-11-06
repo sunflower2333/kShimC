@@ -63,6 +63,7 @@ struct fake_regulator {
     int node;
     char name[48];
     int refs, enables, disables;
+    uint32_t load_ua;           /* largest kshim_regulator_set_load() */
 };
 struct fake_regulator *fake_regulator_named(const char *name);
 extern const char *FakeRegulatorFail;   /* regulator-name whose enable fails */

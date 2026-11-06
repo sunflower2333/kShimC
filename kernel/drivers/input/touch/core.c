@@ -260,18 +260,24 @@ static int read_gpio(struct kshim_touch_dev *dev, const char *const *names,
 static int read_supplies(struct kshim_touch_dev *dev)
 {
     const char *const *names = dev->driver->supplies;
-    for (; names && *names; ++names) {
+    const uint32_t *loads = dev->driver->supply_loads_ua;
+    for (unsigned i = 0; names && names[i]; ++i) {
+        const char *const *name = &names[i];
         struct kshim_regulator *r;
-        int status = kshim_regulator_get(dev->fdt, dev->node, *names, &r);
+        int status = kshim_regulator_get(dev->fdt, dev->node, *name, &r);
         if (status == ERROR_NOT_FOUND) continue;
         if (status == ERROR_NOT_SUPPORTED) {
             /* Inherit first: a rail we cannot drive may well be on. */
             printf("Touch: %s-supply of %s not controllable, left as inherited\n",
-                   *names, node_name(dev));
+                   *name, node_name(dev));
             continue;
         }
         if (status) return status;
         if (dev->supply_count == KSHIM_TOUCH_MAX_SUPPLIES) return ERROR_NOT_SUPPORTED;
+        /* Before any enable, so the first vote already carries the mode. */
+        if (loads && loads[i] && (status = kshim_regulator_set_load(r, loads[i])))
+            printf("Touch: %s-supply load %u uA: %s\n", *name, (unsigned)loads[i],
+                   kshim_io_strerror(status));
         dev->supplies[dev->supply_count++] = r;
     }
     return 0;

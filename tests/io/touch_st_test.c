@@ -498,6 +498,15 @@ static void test_ftm4_kona(const void *fixture, size_t size)
            ((const struct fake_regulator *)(const void *)dev->supplies[1])->node ==
                fdt_path_offset(f, "/regulators/ldoc1/regulator"));
     assert(fake_log_has("pinctrl=default"));
+    /* AVDD's 20 mA load hint reaches the regulator before its first enable
+     * (DVDD gets none). */
+    const struct fake_regulator *avdd = (const void *)dev->supplies[0];
+    const struct fake_regulator *dvdd = (const void *)dev->supplies[1];
+    assert(avdd->load_ua == 20000 && dvdd->load_ua == 0);
+    char load[64], on[64];
+    snprintf(load, sizeof(load), "%s=load20000", avdd->name);
+    snprintf(on, sizeof(on), "%s=on", avdd->name);
+    assert(fake_log_order((const char *const[]){load, on, NULL}));
     ftm4_session(f);
 
     /* The FTM5 driver leaves an st,* node alone even when FTM4 fails. */

@@ -189,9 +189,13 @@ links only once those are merged.
   framing and the chip-ID position are inferred from the constants and the
   generic read routine, because the vendor `readChipInfo` is not in the pinned
   file set.
-- HDK `ldoa13` needed HPM (mode 7) in the legacy table for the 20 mA AVDD
-  load. `kshim/regulator.h` has no load or mode call, so the rail keeps
-  whatever mode RPMh aggregates.
+- HDK `ldoa13` needs HPM (mode 7) for the 20 mA AVDD load. The FTM4
+  driver gives the framework a per-supply load (`supply_loads_ua`, AVDD
+  20000 uA), which `kshim_regulator_set_load()` turns into the PMIC5 mode
+  from the Android node's `qcom,supported-modes` and
+  `qcom,mode-threshold-currents` (`<LPM HPM>`, `<0 10000>`). The mode is
+  voted before the first enable and restored to the observed request at
+  handoff. This is checked against the RSC model only.
 - Android `qcom,i2c-geni` nodes without `clock-frequency` run at the I2C
   core's default. The vendor default is 400 kHz.
 - The touch quiesce now restores the reset pin and returns rails to their

@@ -17,7 +17,8 @@
  *    ("qcom,rpmh-rsc" / Android "qcom,tcs-drv"), CMD DB the "qcom,cmd-db"
  *    reserved memory. Votes are voltage (mV, clamped to the node's
  *    regulator-min/max-microvolt), enable, and mode only when the DT names
- *    one (regulator-initial-mode).
+ *    one (regulator-initial-mode) or a consumer's load hint needs one
+ *    (kshim_regulator_set_load()).
  *  - Anything else: ERROR_NOT_SUPPORTED from kshim_regulator_get().
  *
  * Reference counting: one object per provider node, shared by all
@@ -62,6 +63,23 @@ int kshim_regulator_disable(struct kshim_regulator *regulator);
  * effect immediately when enabled, else at the next enable. */
 int kshim_regulator_set_voltage(struct kshim_regulator *regulator,
                                 uint32_t min_uv, uint32_t max_uv);
+/* Load hint in microamps, as Linux regulator_set_load(): the rail's
+ * requirement is the largest load any consumer asked for (a lower request
+ * never lowers it while it is held). RPMh LDO/SMPS/BOB rails turn it into a
+ * PMIC5 hardware mode:
+ *  - Android VRM nodes: qcom,regulator-type "pmic5-*" with
+ *    qcom,supported-modes and qcom,mode-threshold-currents: the highest
+ *    listed mode whose threshold <= the load (kona ldoa13: LPM below
+ *    10000 uA, HPM from 10000 uA);
+ *  - mainline PMIC5 LDOs with regulator-allow-set-load: HPM (7) from
+ *    10000 uA (qcom-rpmh-regulator hpm_min_load_uA), else the initial mode.
+ * The mode is voted with the voltage and enable votes (at the next enable,
+ * or at once on an enabled rail) and goes back to the observed request at
+ * release/handoff like them. A load of 0, or a rail without these facts,
+ * votes no mode. Fixed rails and XOBs ignore it (0). */
+int kshim_regulator_set_load(struct kshim_regulator *regulator, uint32_t load_ua);
+/* The PMIC5 hardware mode the next vote uses, or -1 for none. */
+int kshim_regulator_mode(const struct kshim_regulator *regulator);
 bool kshim_regulator_is_enabled(const struct kshim_regulator *regulator);
 /* "regulator-name", or the node name. Never NULL. */
 const char *kshim_regulator_name(const struct kshim_regulator *regulator);
