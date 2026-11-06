@@ -55,6 +55,13 @@ enum { CC_SUCCESS = 1, CC_TRANSACTION = 4, CC_TRB = 5, CC_STALL = 6, CC_NO_SLOTS
 enum { EP_DISABLED = 0, EP_RUNNING = 1, EP_HALTED = 2, EP_STOPPED = 3 };
 
 static void *ptr(uint64_t a) { return (void *)(uintptr_t)a; }
+/* Bus mastering gate (PCI COMMAND.BME through the test's PCI glue). */
+static bool dma_ok(void)
+{
+    if (!Xm.dma_allowed || Xm.dma_allowed()) return true;
+    ++Xm.dma_blocked;
+    return false;
+}
 static uint32_t *trb(uint64_t a) { return ptr(a); }
 static bool usb3(unsigned port) { return port >= 3; }
 
@@ -71,7 +78,7 @@ static void raise_irq(void)
 
 static void post(uint32_t p0, uint32_t p1, uint32_t status, uint32_t control)
 {
-    if (!(Xm.usbcmd & CMD_RS) || !Xm.ev_base) return;
+    if (!(Xm.usbcmd & CMD_RS) || !Xm.ev_base || !dma_ok()) return;
     uint32_t *e = trb(Xm.ev_base + 16ULL * Xm.ev_enq);
     e[0] = p0;
     e[1] = p1;
@@ -121,6 +128,8 @@ static void deliver(void)
     in_handler = false;
 }
 
+bool xm_irq_line(void) { return line_high(); }
+
 void xm_raise_irq(void)
 {
     raise_irq();
@@ -161,10 +170,21 @@ static uint32_t port_idle(unsigned port)
     return Xm.ppc ? 0 : port_powered(port);
 }
 
+static void mark_gone(unsigned index)
+{
+    struct xm_dev *d = &Xm.devs[index];
+    d->present = false;
+    if (d->hub)
+        for (unsigned p = 1; p <= d->hub_ports; ++p)
+            if (d->child[p]) mark_gone(d->child[p]);
+}
+
 void xm_attach(unsigned port, const struct xm_dev *dev)
 {
     Xm.devs[port] = *dev;
     Xm.devs[port].present = true;
+    Xm.devs[port].parent = Xm.devs[port].parent_port = 0;
+    if (Xm.dev_count < XM_PORTS) Xm.dev_count = XM_PORTS;
     Xm.portsc[port] = Xm.ppc && !(Xm.portsc[port] & P_PP) ? 0 : port_powered(port);
     post_port(port);
     deliver();
@@ -172,18 +192,20 @@ void xm_attach(unsigned port, const struct xm_dev *dev)
 
 void xm_detach(unsigned port)
 {
-    Xm.devs[port].present = false;
+    mark_gone(port);
     Xm.portsc[port] = (Xm.portsc[port] & ~(P_CCS | P_PED)) | P_CSC;
     post_port(port);
     deliver();
 }
 
-struct xm_slot *xm_slot_of_port(unsigned port)
+struct xm_slot *xm_slot_of(unsigned index)
 {
     for (unsigned s = 1; s <= XM_SLOTS; ++s)
-        if (Xm.slots[s].enabled && Xm.slots[s].addressed && Xm.slots[s].port == port) return &Xm.slots[s];
+        if (Xm.slots[s].enabled && Xm.slots[s].addressed && Xm.slots[s].dev == index) return &Xm.slots[s];
     return NULL;
 }
+
+struct xm_slot *xm_slot_of_port(unsigned port) { return xm_slot_of(port); }
 
 static void port_write(unsigned port, uint32_t v)
 {
@@ -252,39 +274,204 @@ void xm_init(unsigned ctx_size, unsigned scratchpads, bool running)
     }
 }
 
-/* ---- Devices (chapter 9 / HID) ---------------------------------------------------- */
+/* ---- Devices (chapter 9, HID 1.11, hub class) -------------------------------------- */
 
-static bool request_stalls(const struct xm_dev *d, uint8_t bm, uint8_t req, uint16_t value)
+/* USB 2.0 hub: wPortStatus/wPortChange bits (11.24.2.7) and feature
+ * selectors (table 11-17). */
+#define HS_CONNECTION 0x0001U
+#define HS_ENABLE     0x0002U
+#define HS_POWER      0x0100U
+#define HS_LOW_SPEED  0x0200U
+#define HS_HIGH_SPEED 0x0400U
+#define HC_CONNECTION 0x0001U
+#define HC_RESET      0x0010U
+
+static void serve_interrupt(unsigned index);
+
+static void hub_changed(unsigned hub, unsigned port)
 {
-    if (bm == 0x80 && req == 6) return !((value >> 8) == 1 || (value >> 8) == 2);
-    if (bm == 0x81 && req == 6) return (value >> 8) != 0x22 || !d->report_desc;
-    if (bm == 0x80 && req == 0) return false;
-    if (bm == 0x00 && req == 9) return false;
-    if (bm == 0x02 && req == 1) return false;
-    if (bm == 0x21 && req == 0x0a) return d->stall_set_idle;
-    return true;
+    Xm.devs[hub].hub_bitmap |= (uint16_t)(1U << port);
+    serve_interrupt(hub);
 }
 
-static uint32_t control_in(struct xm_dev *d, const struct xm_ep *ep, uint8_t *buf, uint32_t len)
+void xm_make_hub(struct xm_dev *d, uint8_t speed, uint8_t ports)
 {
+    /* Device: class 9, protocol 1 (single TT) at high speed; one interface
+     * 9/0/<0|1>, status-change endpoint 0x81 (interrupt, 1 byte). Hub
+     * descriptor: per-port power switching, TT think time 8 FS bit times. */
+    static const uint8_t hs_dev[18] = {18, 1, 0x00, 0x02, 9, 0, 1, 64, 0x09, 0x04, 0x5a, 0x55,
+                                       0x00, 0x01, 0, 0, 0, 1};
+    static const uint8_t fs_dev[18] = {18, 1, 0x10, 0x01, 9, 0, 0, 8, 0x09, 0x04, 0x5b, 0x55,
+                                       0x00, 0x01, 0, 0, 0, 1};
+    static const uint8_t hs_cfg[25] = {9, 2, 25, 0, 1, 1, 0, 0xe0, 0, 9, 4, 0, 0, 1, 9, 0, 1, 0,
+                                       7, 5, 0x81, 3, 1, 0, 12};
+    static const uint8_t fs_cfg[25] = {9, 2, 25, 0, 1, 1, 0, 0xe0, 0, 9, 4, 0, 0, 1, 9, 0, 0, 0,
+                                       7, 5, 0x81, 3, 1, 0, 255};
+    memset(d, 0, sizeof(*d));
+    d->speed = speed;
+    d->dev_desc = speed == 3 ? hs_dev : fs_dev;
+    d->dev_len = 18;
+    d->cfg_desc = speed == 3 ? hs_cfg : fs_cfg;
+    d->cfg_len = 25;
+    d->hub = true;
+    d->hub_ports = ports > XM_HUB_PORTS ? XM_HUB_PORTS : ports;
+    uint8_t desc[9] = {9, 0x29, d->hub_ports, 0x01, 0x00, 50, 0, 0, 0xff};
+    memcpy(d->hub_desc, desc, sizeof(desc));
+    d->hub_desc_len = sizeof(desc);
+}
+
+unsigned xm_hub_attach(unsigned hub, unsigned port, const struct xm_dev *dev)
+{
+    struct xm_dev *h = &Xm.devs[hub];
+    assert(h->hub && port >= 1 && port <= h->hub_ports);
+    if (Xm.dev_count < XM_PORTS) Xm.dev_count = XM_PORTS;
+    unsigned index = ++Xm.dev_count;
+    assert(index < XM_DEVS);
+    Xm.devs[index] = *dev;
+    Xm.devs[index].present = true;
+    Xm.devs[index].parent = (uint8_t)hub;
+    Xm.devs[index].parent_port = (uint8_t)port;
+    h->child[port] = (uint8_t)index;
+    /* Visible only on a powered port. */
+    if (h->port_status[port] & HS_POWER) {
+        h->port_status[port] |= HS_CONNECTION;
+        h->port_change[port] |= HC_CONNECTION;
+        hub_changed(hub, port);
+    }
+    deliver();
+    return index;
+}
+
+void xm_hub_detach(unsigned hub, unsigned port)
+{
+    struct xm_dev *h = &Xm.devs[hub];
+    assert(h->hub && port >= 1 && port <= h->hub_ports && h->child[port]);
+    mark_gone(h->child[port]);
+    h->child[port] = 0;
+    bool was = (h->port_status[port] & HS_CONNECTION) != 0;
+    h->port_status[port] &= (uint16_t)~(HS_CONNECTION | HS_ENABLE | HS_LOW_SPEED | HS_HIGH_SPEED);
+    if (was) {
+        h->port_change[port] |= HC_CONNECTION;
+        hub_changed(hub, port);
+    }
+    deliver();
+}
+
+static const uint8_t *report_of(const struct xm_dev *d, unsigned interface, size_t *length)
+{
+    if (interface == 0 && d->report_desc) { *length = d->report_len; return d->report_desc; }
+    if (interface < XM_IFS && d->if_report[interface]) { *length = d->if_report_len[interface]; return d->if_report[interface]; }
+    return NULL;
+}
+
+/* Class requests to a hub (USB 2.0 11.24.2). Returns false to STALL. */
+static bool hub_request(unsigned index, const struct xm_ep *ep)
+{
+    struct xm_dev *d = &Xm.devs[index];
+    uint8_t bm = ep->setup.bm, req = ep->setup.req;
+    uint16_t value = ep->setup.value, port = ep->setup.index;
+    if (bm == 0xa0 && req == 6) return (value >> 8) == 0x29;
+    if (bm == 0xa0 && req == 0) return true;            /* GET_STATUS(hub) */
+    if (bm == 0x20 && req == 1) return value <= 1;      /* CLEAR_FEATURE(C_HUB_*) */
+    if (!port || port > d->hub_ports) return false;
+    if (bm == 0xa3 && req == 0) return true;            /* GET_STATUS(port) */
+    if (bm == 0x23 && req == 3) {                       /* SET_FEATURE(port) */
+        if (value == 8) {
+            if (!(d->port_status[port] & HS_POWER)) {
+                d->port_status[port] |= HS_POWER;
+                if (d->child[port] && Xm.devs[d->child[port]].present) {
+                    d->port_status[port] |= HS_CONNECTION;
+                    d->port_change[port] |= HC_CONNECTION;
+                    hub_changed(index, port);
+                }
+            }
+            return true;
+        }
+        if (value == 4) {
+            ++d->port_resets;
+            if (!(d->port_status[port] & HS_CONNECTION)) return true;
+            const struct xm_dev *c = &Xm.devs[d->child[port]];
+            d->port_status[port] &= (uint16_t)~(HS_LOW_SPEED | HS_HIGH_SPEED);
+            d->port_status[port] |= HS_ENABLE | (c->speed == 2 ? HS_LOW_SPEED : 0) | (c->speed == 3 ? HS_HIGH_SPEED : 0);
+            d->port_change[port] |= HC_RESET;
+            hub_changed(index, port);
+            return true;
+        }
+        return value == 2 || value == 5;                 /* suspend, link state: accepted */
+    }
+    if (bm == 0x23 && req == 1) {                       /* CLEAR_FEATURE(port) */
+        if (value == 1) d->port_status[port] &= (uint16_t)~HS_ENABLE;
+        else if (value == 8) d->port_status[port] &= (uint16_t)~(HS_POWER | HS_CONNECTION | HS_ENABLE);
+        else if (value >= 16 && value <= 20) d->port_change[port] &= (uint16_t)~(1U << (value - 16U));
+        return true;
+    }
+    return false;
+}
+
+static bool request_ok(unsigned index, struct xm_ep *ep)
+{
+    struct xm_dev *d = &Xm.devs[index];
+    uint8_t bm = ep->setup.bm, req = ep->setup.req;
+    uint16_t value = ep->setup.value;
+    size_t length;
+    if (bm == 0x80 && req == 6) {
+        unsigned type = value >> 8, which = value & 0xffU;
+        if (type == 3) return which < 4 && d->strings[which];
+        return type == 1 || type == 2;
+    }
+    if (bm == 0x81 && req == 6) return (value >> 8) == 0x22 && report_of(d, ep->setup.index, &length);
+    if (bm == 0x80 && req == 0) return true;
+    if (bm == 0x00 && req == 9) return true;
+    if (bm == 0x02 && req == 1) return true;
+    if (bm == 0x21 && req == 0x0a) return !d->stall_set_idle;
+    if (bm == 0x21 && req == 0x0b) return ep->setup.index < XM_IFS;
+    if (d->hub) return hub_request(index, ep);
+    return false;
+}
+
+static uint32_t control_in(unsigned index, const struct xm_ep *ep, uint8_t *buf, uint32_t len)
+{
+    struct xm_dev *d = &Xm.devs[index];
     const uint8_t *src = NULL;
     size_t avail = 0;
-    static const uint8_t status[2] = {0, 0};
+    static const uint8_t status[4] = {0, 0, 0, 0};
+    uint8_t port_status[4];
     uint8_t type = (uint8_t)(ep->setup.value >> 8);
-    if (ep->setup.req == 6 && type == 1) { src = d->dev_desc; avail = d->dev_len; }
-    else if (ep->setup.req == 6 && type == 2) { src = d->cfg_desc; avail = d->cfg_len; }
-    else if (ep->setup.req == 6 && type == 0x22) { src = d->report_desc; avail = d->report_len; }
-    else if (ep->setup.req == 0) { src = status; avail = 2; }
+    if (ep->setup.bm == 0x80 && ep->setup.req == 6 && type == 1) { src = d->dev_desc; avail = d->dev_len; }
+    else if (ep->setup.bm == 0x80 && ep->setup.req == 6 && type == 2) { src = d->cfg_desc; avail = d->cfg_len; }
+    else if (ep->setup.bm == 0x80 && ep->setup.req == 6 && type == 3) {
+        src = d->strings[ep->setup.value & 0xffU];
+        avail = src ? src[0] : 0;
+        ++d->string_reads;
+    }
+    else if (ep->setup.bm == 0x81 && ep->setup.req == 6) src = report_of(d, ep->setup.index, &avail);
+    else if (ep->setup.bm == 0xa0 && ep->setup.req == 6) { src = d->hub_desc; avail = d->hub_desc_len; }
+    else if (ep->setup.bm == 0xa3 && ep->setup.req == 0) {
+        unsigned port = ep->setup.index;
+        port_status[0] = (uint8_t)d->port_status[port];
+        port_status[1] = (uint8_t)(d->port_status[port] >> 8);
+        port_status[2] = (uint8_t)d->port_change[port];
+        port_status[3] = (uint8_t)(d->port_change[port] >> 8);
+        src = port_status;
+        avail = 4;
+    }
+    else if (ep->setup.req == 0) { src = status; avail = ep->setup.bm == 0xa0 ? 4 : 2; }
     if (avail > ep->setup.length) avail = ep->setup.length;
     if (avail > len) avail = len;
     if (src && avail) memcpy(buf, src, avail);
     return (uint32_t)avail;
 }
 
-static void control_out_done(struct xm_dev *d, const struct xm_ep *ep)
+static void control_out_done(unsigned index, const struct xm_ep *ep)
 {
+    struct xm_dev *d = &Xm.devs[index];
     if (ep->setup.bm == 0x00 && ep->setup.req == 9) d->config = (uint8_t)ep->setup.value;
     if (ep->setup.bm == 0x02 && ep->setup.req == 1) ++d->clear_halts;
+    if (ep->setup.bm == 0x21 && ep->setup.req == 0x0a) ++d->set_idles;
+    if (ep->setup.bm == 0x21 && ep->setup.req == 0x0b) {
+        ++d->set_protocols;
+        d->protocol[ep->setup.index] = (uint8_t)ep->setup.value;
+    }
 }
 
 /* Advance past the rest of a chained TD after a short packet. */
@@ -306,13 +493,49 @@ static void skip_td(struct xm_ep *ep, uint32_t control)
     }
 }
 
+/* Next interrupt IN data for endpoint `address`; false = NAK. */
+static bool interrupt_in(struct xm_dev *d, uint8_t address, uint8_t *buf, uint32_t len, uint32_t *n)
+{
+    if (d->hub && address == 0x81) {
+        if (!d->hub_bitmap) return false;
+        uint8_t bits[2] = {(uint8_t)d->hub_bitmap, (uint8_t)(d->hub_bitmap >> 8)};
+        uint32_t bytes = (d->hub_ports + 8U) / 8U;
+        *n = len < bytes ? len : bytes;
+        memcpy(buf, bits, *n);
+        d->hub_bitmap = 0;
+        return true;
+    }
+    for (unsigned i = 0; i < d->queue_count; ++i) {
+        unsigned at = (d->queue_head + i) % XM_QUEUE;
+        if (d->queue_ep[at] != address) continue;
+        *n = len < d->queue_len[at] ? len : d->queue_len[at];
+        memcpy(buf, d->queue[at], *n);
+        /* Remove entry `at`, keeping the order of the others. */
+        for (unsigned j = i; j + 1 < d->queue_count; ++j) {
+            unsigned to = (d->queue_head + j) % XM_QUEUE, from = (d->queue_head + j + 1) % XM_QUEUE;
+            memcpy(d->queue[to], d->queue[from], XM_REPORT_MAX);
+            d->queue_len[to] = d->queue_len[from];
+            d->queue_ep[to] = d->queue_ep[from];
+        }
+        --d->queue_count;
+        ++d->reports_sent;
+        return true;
+    }
+    return false;
+}
+
 static void run_ep(unsigned s, unsigned dci)
 {
     struct xm_slot *slot = &Xm.slots[s];
     struct xm_ep *ep = &slot->ep[dci];
-    struct xm_dev *d = &Xm.devs[slot->port];
+    unsigned index = slot->dev;
+    struct xm_dev *d = &Xm.devs[index];
+    bool checked = false;
     for (unsigned guard = 0; guard < 4096; ++guard) {
         if (ep->state != EP_RUNNING || !d->present) return;
+        /* Fetching the TRB is already a DMA read. */
+        if (!checked && !dma_ok()) return;
+        checked = true;
         uint32_t *t = trb(ep->deq);
         if ((t[3] & T_CYCLE) != ep->cycle) return;
         uint32_t c = t[3], len = t[2] & 0x1ffffU;
@@ -336,7 +559,7 @@ static void run_ep(unsigned s, unsigned dci)
                 ep->setup.value = (uint16_t)(t[0] >> 16);
                 ep->setup.index = (uint16_t)t[1];
                 ep->setup.length = (uint16_t)(t[1] >> 16);
-                ep->stall_td = request_stalls(d, ep->setup.bm, ep->setup.req, ep->setup.value);
+                ep->stall_td = !request_ok(index, ep);
                 ep->deq += 16;
                 continue;
             }
@@ -347,7 +570,7 @@ static void run_ep(unsigned s, unsigned dci)
             }
             if (type == 3 || type == 1) {
                 bool in = (ep->setup.bm & 0x80) != 0;
-                uint32_t n = in ? control_in(d, ep, ptr(buf), len) : len;
+                uint32_t n = in ? control_in(index, ep, ptr(buf), len) : len;
                 ep->deq += 16;
                 if (n < len) {
                     if (c & T_ISP) post_transfer(here, CC_SHORT, len - n, s, dci);
@@ -358,7 +581,7 @@ static void run_ep(unsigned s, unsigned dci)
                 continue;
             }
             if (type == 4) {
-                control_out_done(d, ep);
+                control_out_done(index, ep);
                 ep->deq += 16;
                 if (c & T_IOC) post_transfer(here, CC_SUCCESS, 0, s, dci);
                 continue;
@@ -375,11 +598,10 @@ static void run_ep(unsigned s, unsigned dci)
         }
         uint32_t n = len;
         if (ep->type == 7) { /* interrupt IN */
-            if (!d->report_ready) return; /* NAK: the TD stays pending */
-            n = len < 8 ? len : 8;
-            memcpy(ptr(buf), d->report, n);
-            d->report_ready = false;
-            ++d->reports_sent;
+            uint8_t address = (uint8_t)(0x80U | (dci >> 1));
+            if (!interrupt_in(d, address, ptr(buf), len, &n)) return; /* NAK: the TD stays pending */
+        } else if (ep->type == 3) { /* interrupt OUT: consumed */
+            ++d->interrupt_out;
         } else if (ep->type == 2) { /* bulk OUT */
             n = len < sizeof(d->bulk) ? len : (uint32_t)sizeof(d->bulk);
             memcpy(d->bulk, ptr(buf), n);
@@ -406,17 +628,27 @@ static void run_ep(unsigned s, unsigned dci)
     }
 }
 
-void xm_report(unsigned port, const uint8_t report[8])
+static void serve_interrupt(unsigned index)
 {
-    struct xm_dev *d = &Xm.devs[port];
-    memcpy(d->report, report, 8);
-    d->report_ready = true;
-    struct xm_slot *slot = xm_slot_of_port(port);
-    if (slot)
-        for (unsigned dci = 2; dci < 32; ++dci)
-            if (slot->ep[dci].enabled && slot->ep[dci].type == 7) run_ep((unsigned)(slot - Xm.slots), dci);
+    struct xm_slot *slot = xm_slot_of(index);
+    if (!slot) return;
+    for (unsigned dci = 3; dci < 32; dci += 2)
+        if (slot->ep[dci].enabled && slot->ep[dci].type == 7) run_ep((unsigned)(slot - Xm.slots), dci);
+}
+
+void xm_queue_report(unsigned index, uint8_t ep, const uint8_t *data, size_t length)
+{
+    struct xm_dev *d = &Xm.devs[index];
+    assert(length && length <= XM_REPORT_MAX && d->queue_count < XM_QUEUE);
+    unsigned at = (d->queue_head + d->queue_count++) % XM_QUEUE;
+    memcpy(d->queue[at], data, length);
+    d->queue_len[at] = (uint8_t)length;
+    d->queue_ep[at] = ep;
+    serve_interrupt(index);
     deliver();
 }
+
+void xm_report(unsigned port, const uint8_t report[8]) { xm_queue_report(port, 0x81, report, 8); }
 
 /* ---- Commands ------------------------------------------------------------------------- */
 
@@ -448,8 +680,33 @@ static unsigned exec_command(unsigned type, const uint32_t *t, uint8_t *slot_out
         if ((in[1] & 3U) != 3U) return CC_PARAMETER;
         unsigned port = (sc[1] >> 16) & 0xffU, speed = (sc[0] >> 20) & 0xfU;
         if (!port || port > XM_PORTS || !Xm.devs[port].present) return CC_TRANSACTION;
-        if (speed != Xm.devs[port].speed || ((e0[1] >> 3) & 7U) != 4 || ((e0[1] >> 1) & 3U) != 3)
+        /* Route string (xHCI 4.3.3, USB 3.2 10.9): one hub port per tier,
+         * lowest nibble first; each hub port on the way must be enabled. */
+        unsigned index = port, tt_hub = 0, tt_port = 0;
+        uint32_t route = sc[0] & 0xfffffU;
+        for (unsigned tier = 0; tier < 5; ++tier) {
+            unsigned nibble = (route >> (4U * tier)) & 0xfU;
+            if (!nibble) break;
+            const struct xm_dev *hub = &Xm.devs[index];
+            if (!hub->hub || nibble > hub->hub_ports || !(hub->port_status[nibble] & 0x0002U) ||
+                !hub->child[nibble] || !Xm.devs[hub->child[nibble]].present)
+                return CC_TRANSACTION;
+            if (hub->speed == 3) { tt_hub = index; tt_port = nibble; }
+            index = hub->child[nibble];
+        }
+        if (speed != Xm.devs[index].speed || ((e0[1] >> 3) & 7U) != 4 || ((e0[1] >> 1) & 3U) != 3)
             return CC_PARAMETER;
+        /* LS/FS behind a HS hub: split transactions go to that hub's TT. */
+        if ((speed == 1 || speed == 2) && tt_hub) {
+            const struct xm_slot *hs = xm_slot_of(tt_hub);
+            if (!hs || (sc[2] & 0xffU) != (unsigned)(hs - Xm.slots) || ((sc[2] >> 8) & 0xffU) != tt_port) {
+                ++Xm.tt_errors;
+                return CC_PARAMETER;
+            }
+        }
+        slot->dev = (uint8_t)index;
+        slot->tt_slot = (uint8_t)sc[2];
+        slot->tt_port = (uint8_t)(sc[2] >> 8);
         slot->port = (uint8_t)port;
         slot->speed = (uint8_t)speed;
         slot->route = sc[0] & 0xfffffU;
@@ -550,6 +807,7 @@ static unsigned exec_command(unsigned type, const uint32_t *t, uint8_t *slot_out
 
 static void run_commands(void)
 {
+    if (Xm.cmd_deq && !dma_ok()) return;
     for (unsigned guard = 0; guard < 1024 && Xm.cmd_deq; ++guard) {
         uint32_t *t = trb(Xm.cmd_deq);
         if ((t[3] & T_CYCLE) != Xm.cmd_cycle) return;
@@ -678,7 +936,7 @@ static void op_write(uintptr_t reg, uint32_t v)
         if ((old & CMD_RS) && !(v & CMD_RS)) {
             ++Xm.stop_count;
             Xm.rs_clear_seq = ++Xm.seq;
-            Xm.usbsts |= STS_HCH;
+            if (!Xm.never_halts) Xm.usbsts |= STS_HCH;
         }
         return;
     }

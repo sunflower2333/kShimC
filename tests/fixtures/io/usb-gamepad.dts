@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: MIT
+// usb_gamepad_test fixture (tests/io/usb_gamepad_test.c). The AYANEO Pocket
+// S2 gamepad topology from the mainline sm8650-ayaneo-pocket-s2.dts
+// (BSD-3-Clause): pcie1 (linux,pci-domain 1, MEM window 0x40300000 +
+// 0x1fd00000, INTA-D on GIC SPI 434/435/438/439 level-high) -> pcie1_port0
+// root port at 00:00.0 -> usb-controller@0 "pci1912,0014" (uPD720201) at
+// 01:00.0. The host is the generic ECAM host instead of the Qualcomm DWC
+// host (covered by pci_qcom_test), so the real PCI core, xhci_pci.c and the
+// xHCI driver run over register models. Hand written; compiled with dtc by
+// tests/io/usb.cmake.
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&gic>;
+
+	gic: interrupt-controller@17100000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <3>;
+		#address-cells = <2>;
+		#size-cells = <2>;
+		interrupt-controller;
+		reg = <0x0 0x17100000 0x0 0x10000>, <0x0 0x17180000 0x0 0x200000>;
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		pcie@60000000 {
+			compatible = "pci-host-ecam-generic";
+			device_type = "pci";
+			reg = <0x0 0x60000000 0x0 0x00200000>;
+			bus-range = <0x00 0x01>;
+			linux,pci-domain = <1>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			ranges = <0x02000000 0x0 0x40300000 0x0 0x40300000 0x0 0x1fd00000>;
+			#interrupt-cells = <1>;
+			interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+			interrupt-map = <0x0 0x0 0x0 0x1 &gic 0x0 0x0 0x0 434 0x4>,
+					<0x0 0x0 0x0 0x2 &gic 0x0 0x0 0x0 435 0x4>,
+					<0x0 0x0 0x0 0x3 &gic 0x0 0x0 0x0 438 0x4>,
+					<0x0 0x0 0x0 0x4 &gic 0x0 0x0 0x0 439 0x4>;
+
+			pcie@0 {
+				device_type = "pci";
+				reg = <0x0 0x0 0x0 0x0 0x0>;
+				bus-range = <0x01 0x01>;
+				#address-cells = <3>;
+				#size-cells = <2>;
+				ranges;
+
+				usb-controller@0 {
+					compatible = "pci1912,0014";
+					reg = <0x10000 0x0 0x0 0x0 0x0>;
+				};
+			};
+		};
+	};
+};

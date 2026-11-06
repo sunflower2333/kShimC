@@ -16,6 +16,7 @@ run on hardware; QEMU and host register models are the evidence so far.
 | `kernel/drivers/usb/host/xhci_ops.c` | `struct kshim_usb_hcd_ops`: ports, slots/contexts, TDs, transfer events, cancel |
 | `kernel/drivers/usb/host/xhci_pci.c` | PCI driver (class 0x0c0330, 1912:0014/0015, 1033:0194), Renesas preparation |
 | `kernel/drivers/usb/host/renesas_fw.c` | uPD720201/uPD720202 firmware download over config space |
+| `kernel/drivers/usb/core/trace.c` | Bring-up trace (`KSHIM_USB_TRACE`): `usbtrace:` records, unbound interfaces read for the trace (docs/usb-hid.md) |
 | `kernel/drivers/usb/core/selftest.c` | Test only: HID/BOT self-test class driver (`KSHIM_USB_SELFTEST`) |
 
 ## Execution model
@@ -188,6 +189,7 @@ invalidates; with the MMU off both reduce to barriers in effect.
 | `KSHIM_USB_XHCI_RENESAS` | Renesas firmware download |
 | `KSHIM_USB_XHCI_RENESAS_FW` | Firmware file name |
 | `KSHIM_USB_XHCI_RENESAS_FW_EMBED` | Optional build-time image path |
+| `KSHIM_USB_TRACE`, `_REPORTS` | Bring-up trace of every device, HID descriptor and the first distinct reports (docs/usb-hid.md); on for the Pocket S2 |
 | `KSHIM_USB_SELFTEST`, `_MS` | Test only: HID/BOT self-test class driver |
 
 ## Additions to the architect's headers (additive)
@@ -198,6 +200,9 @@ invalidates; with the MMU off both reduce to barriers in effect.
   is filled by the HCD in `device_alloc` (the core fills `tt_port`).
 - `kshim/dma.h`: `kshim_dma_owns()`, `kshim_dma_in_use()`,
   `kshim_dma_pool_size()`.
+- `kshim/usb.h` (io-evidence): `kshim_usb_device_path()`, and with
+  `CONFIG_KSHIM_USB_TRACE` `kshim_usb_trace()`, `kshim_usb_trace_hex()`,
+  `kshim_usb_trace_report()` and `struct kshim_usb_trace_state`.
 
 ## Tests
 
@@ -209,6 +214,15 @@ invalidates; with the MMU off both reduce to barriers in effect.
   takeover (with port power control), dead, stuck, runwindow (Port Status
   Changes posted as R/S is set), ehb (an interrupt after a drained ring)
   and gone (all-ones reads at handoff).
+- Host, full stack: `usb_gamepad_test` (`tests/io/usb.cmake`; scenarios
+  irq, poll, takeover, nohalt) runs `xhci_pci.c`, `renesas_fw.c` and the
+  xHCI driver on the real PCI core (ECAM host, configuration-space model,
+  `tests/fixtures/io/usb-gamepad.dts` in the Pocket S2 pcie1 shape) with
+  the hub and HID class drivers above the core, through `kshim_io_init()`
+  and `kshim_io_quiesce()`. `xhci_pci.c` is compiled through
+  `tests/io/usb_gamepad_xhci_pci.c`, which routes BAR0 to the model only
+  while the root port forwards and the function decodes its BAR; the
+  model refuses DMA while bus mastering is off. See docs/usb-hid.md.
 - QEMU: `tools/test_qemu_xhci.py` (qemu-xhci and nec-usb-xhci; usb-kbd
   and usb-storage; interrupt-driven and polled; EL1 and EL2) compares the
   xHCI function a payload finds after handoff with a direct boot. It runs
