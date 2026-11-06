@@ -36,6 +36,7 @@
  * code was used; kShimC describes the layout as a HID report descriptor for
  * its own parser.
  */
+#include <config.h>
 #include <kshim/usb.h>
 #include <kshim/usb_class.h>
 #include <kshim/hid.h>
@@ -59,6 +60,10 @@
 #define HID_CONTROL_TIMEOUT_MS 1000U
 #define HID_MAX_URB_ERRORS 16U
 
+#ifndef CONFIG_KSHIM_USB_TRACE
+#define CONFIG_KSHIM_USB_TRACE 0
+#endif
+
 #define XINPUT_SUBCLASS 0x5dU
 #define XINPUT_PROTOCOL_GAMEPAD 0x01U
 #define XINPUT_REPORT_BYTES 20U
@@ -73,9 +78,63 @@ struct hid_if {
     bool xinput;
     bool urb_active, urb_error, stopped;
     unsigned urb_errors;
+    const struct kshim_hid_quirk *quirk;
     struct kshim_hid_desc desc;
     struct kshim_hid_input input;
+#if CONFIG_KSHIM_USB_TRACE
+    struct kshim_usb_trace_state trace;
+#endif
 };
+
+/* ---- Quirks (kshim/usb_class.h; rows in hid_quirks.c) --------------------- */
+
+const struct kshim_hid_quirk *kshim_hid_quirk_find(uint16_t vendor, uint16_t product, uint8_t interface)
+{
+    for (const struct kshim_hid_quirk *q = kshim_hid_quirks; q->vendor; ++q)
+        if (q->vendor == vendor && (!q->product || q->product == product) &&
+            (q->interface < 0 || q->interface == interface))
+            return q;
+    return NULL;
+}
+
+static const struct kshim_hid_quirk *quirk_of(const struct kshim_usb_interface *intf)
+{
+    const struct kshim_usb_device *dev = intf->device;
+    return kshim_hid_quirk_find(dev->descriptor.idVendor, dev->descriptor.idProduct, intf->number);
+}
+
+static const char *quirk_name(const struct kshim_hid_quirk *quirk)
+{
+    return quirk ? (quirk->name ? quirk->name : "unnamed") : "none";
+}
+
+/* ---- Trace (CONFIG_KSHIM_USB_TRACE) ----------------------------------------- */
+
+#if CONFIG_KSHIM_USB_TRACE
+static void trace_unbound(const struct kshim_usb_interface *intf, const struct kshim_hid_quirk *quirk,
+                          const char *reason)
+{
+    kshim_usb_trace(intf->device, intf->number, "hid", "map=unbound quirk=%s reason=\"%s\"", quirk_name(quirk),
+                    reason);
+}
+
+/* Held key codes after a report: "<code>:<action>,...". */
+static void held_text(const struct kshim_hid_input *input, char *out, size_t size)
+{
+    static const char *const actions[] = {"none", "up", "down", "select", "back"};
+    size_t at = 0;
+    out[0] = 0;
+    for (unsigned i = 0; i < input->held_count && at + 1U < size; ++i) {
+        int action = kshim_hid_input_action(input->held[i]);
+        int n = snprintf(out + at, size - at, "%s%x:%s", i ? "," : "", (unsigned)input->held[i],
+                         actions[action >= 0 && action <= 4 ? action : 0]);
+        if (n < 0) break;
+        at += (size_t)n;
+    }
+}
+#else
+#define trace_unbound(intf, quirk, reason) ((void)(intf), (void)(quirk), (void)(reason))
+#endif
 
 static struct kshim_input_source HidSource = {.name = "usb-hid"};
 static bool HidSourceRegistered;
@@ -185,6 +244,11 @@ static void report_complete(struct kshim_usb_urb *urb)
         if (urb->actual) {
             if (h->xinput) (void)kshim_usb_xinput_report(&h->input, h->buffer, urb->actual);
             else (void)kshim_hid_input_report(&h->input, h->buffer, urb->actual);
+#if CONFIG_KSHIM_USB_TRACE
+            char held[128];
+            held_text(&h->input, held, sizeof(held));
+            (void)kshim_usb_trace_report(&h->trace, h->dev, h->intf->number, h->buffer, urb->actual, held);
+#endif
         }
         if (submit_report(h)) h->urb_error = true;
         return;
@@ -240,6 +304,31 @@ static const char *describe(const struct hid_if *h)
     return "keys";
 }
 
+#if CONFIG_KSHIM_USB_TRACE
+/* Stable mapping class for the trace (docs/usb-hid.md). */
+static const char *map_kind(const struct hid_if *h)
+{
+    if (h->xinput) return "xinput";
+    if (h->input.boot_keyboard) return "boot-keyboard";
+    if (h->input.boot_mouse) return "boot-mouse";
+    const struct kshim_hid_desc *d = &h->desc;
+    if (kshim_hid_has_application(d, KSHIM_HID_USAGE(KSHIM_HID_PAGE_GENERIC_DESKTOP, KSHIM_HID_GD_GAMEPAD)))
+        return "gamepad";
+    if (kshim_hid_has_application(d, KSHIM_HID_USAGE(KSHIM_HID_PAGE_GENERIC_DESKTOP, KSHIM_HID_GD_JOYSTICK)))
+        return "joystick";
+    if (kshim_hid_has_application(d, KSHIM_HID_USAGE(KSHIM_HID_PAGE_GENERIC_DESKTOP, KSHIM_HID_GD_KEYBOARD)))
+        return "keyboard";
+    if (h->input.caps & KSHIM_HID_INPUT_POINTER) {
+        const struct kshim_hid_item *x = kshim_hid_find(d, KSHIM_HID_REPORT_INPUT,
+                                                        KSHIM_HID_USAGE(KSHIM_HID_PAGE_GENERIC_DESKTOP,
+                                                                        KSHIM_HID_GD_X), -1);
+        return x && (x->flags & KSHIM_HID_MAIN_RELATIVE) ? "mouse" : "tablet";
+    }
+    if (kshim_hid_has_application(d, KSHIM_HID_USAGE(KSHIM_HID_PAGE_CONSUMER, 0x01))) return "consumer";
+    return "keys";
+}
+#endif
+
 static int start(struct hid_if *h, uint32_t report_bytes)
 {
     struct kshim_usb_interface *intf = h->intf;
@@ -261,11 +350,17 @@ static int start(struct hid_if *h, uint32_t report_bytes)
         return status;
     }
     source_add(h->input.caps);
-    printf("HID %04x:%04x interface %u: %s (%s%s), interval %u\n", h->dev->descriptor.idVendor,
-           h->dev->descriptor.idProduct, intf->number, describe(h),
-           (h->input.caps & KSHIM_HID_INPUT_KEYS) ? "keys" : "",
-           (h->input.caps & KSHIM_HID_INPUT_POINTER) ? ((h->input.caps & KSHIM_HID_INPUT_KEYS) ? "+pointer" : "pointer") : "",
-           h->ep->interval);
+    const char *caps = (h->input.caps & KSHIM_HID_INPUT_KEYS)
+                           ? ((h->input.caps & KSHIM_HID_INPUT_POINTER) ? "keys+pointer" : "keys")
+                           : "pointer";
+    printf("HID %04x:%04x interface %u: %s (%s), interval %u%s%s\n", h->dev->descriptor.idVendor,
+           h->dev->descriptor.idProduct, intf->number, describe(h), caps, h->ep->interval,
+           h->quirk ? ", quirk " : "", h->quirk ? quirk_name(h->quirk) : "");
+#if CONFIG_KSHIM_USB_TRACE
+    kshim_usb_trace(h->dev, intf->number, "hid", "map=%s caps=%s ep=%02x len=%u report_bytes=%u ids=%u quirk=%s",
+                    map_kind(h), caps, h->ep->address, (unsigned)length, (unsigned)report_bytes,
+                    h->desc.report_ids ? 1U : 0U, quirk_name(h->quirk));
+#endif
     return 0;
 }
 
@@ -282,29 +377,80 @@ static uint16_t report_descriptor_length(const struct kshim_usb_interface *intf)
     return 0;
 }
 
+/* The XInput layout, or a quirk's report descriptor, on an interface that
+ * has no HID report descriptor of its own. */
+static int layout_bind(struct kshim_usb_interface *intf, const struct kshim_hid_quirk *quirk, bool xinput)
+{
+    struct kshim_usb_endpoint *ep = kshim_usb_find_endpoint(intf, KSHIM_USB_XFER_INTERRUPT, true);
+    if (!ep) {
+        trace_unbound(intf, quirk, "no interrupt IN endpoint");
+        return ERROR_NOT_SUPPORTED;
+    }
+    struct hid_if *h = calloc(1, sizeof(*h));
+    if (!h) return KSHIM_IO_ERR_NO_MEMORY;
+    h->intf = intf;
+    h->dev = intf->device;
+    h->ep = ep;
+    h->xinput = xinput;
+    h->quirk = quirk;
+    const uint8_t *descriptor = xinput ? XInputReportDescriptor : quirk->report_descriptor;
+    size_t length = xinput ? sizeof(XInputReportDescriptor) : quirk->report_descriptor_length;
+    int status = kshim_hid_parse(descriptor, length, &h->desc);
+    if (!status) status = kshim_hid_input_init(&h->input, &h->desc);
+    if (!status) status = start(h, xinput ? XINPUT_REPORT_BYTES : max_input_bytes(&h->desc));
+    if (status) {
+        trace_unbound(intf, quirk, kshim_io_strerror(status));
+        free(h);
+    }
+    return status;
+}
+
 static int hid_probe(struct kshim_usb_interface *intf)
 {
     struct kshim_usb_device *dev = intf->device;
+    const struct kshim_hid_quirk *quirk = quirk_of(intf);
+    if (quirk && (quirk->flags & KSHIM_HID_QUIRK_IGNORE)) {
+        trace_unbound(intf, quirk, "ignored by quirk");
+        return ERROR_NOT_SUPPORTED;
+    }
+    if (quirk && (quirk->flags & KSHIM_HID_QUIRK_XINPUT)) return layout_bind(intf, quirk, true);
     struct kshim_usb_endpoint *ep = kshim_usb_find_endpoint(intf, KSHIM_USB_XFER_INTERRUPT, true);
-    if (!ep) return ERROR_NOT_SUPPORTED;
+    if (!ep) {
+        trace_unbound(intf, quirk, "no interrupt IN endpoint");
+        return ERROR_NOT_SUPPORTED;
+    }
     struct hid_if *h = calloc(1, sizeof(*h));
     if (!h) return KSHIM_IO_ERR_NO_MEMORY;
     h->intf = intf;
     h->dev = dev;
     h->ep = ep;
+    h->quirk = quirk;
+    bool replaced = quirk && quirk->report_descriptor;
     int status = ERROR_NOT_SUPPORTED;
     uint16_t length = report_descriptor_length(intf);
-    if (length && length <= HID_MAX_REPORT_DESCRIPTOR) {
+    /* The device's own descriptor is read unless a quirk replaces it; the
+     * trace always reads (and prints) it. */
+    if (length && length <= HID_MAX_REPORT_DESCRIPTOR && (!replaced || CONFIG_KSHIM_USB_TRACE)) {
         uint8_t *report = malloc(length);
         uint32_t actual = 0;
         status = report ? kshim_usb_control(dev, HID_RT_STD_IN_INTERFACE, KSHIM_USB_REQ_GET_DESCRIPTOR,
                                             (uint16_t)(KSHIM_USB_DT_REPORT << 8), intf->number, report,
                                             length, HID_CONTROL_TIMEOUT_MS, &actual)
                         : KSHIM_IO_ERR_NO_MEMORY;
-        if (!status) status = kshim_hid_parse(report, actual, &h->desc);
-        if (!status) status = kshim_hid_input_init(&h->input, &h->desc);
+#if CONFIG_KSHIM_USB_TRACE
+        if (!status) kshim_usb_trace_hex(dev, intf->number, "rdesc", report, actual);
+        else kshim_usb_trace(dev, intf->number, "rdesc", "len=%u error=\"%s\"", length, kshim_io_strerror(status));
+#endif
+        if (!status && !replaced) status = kshim_hid_parse(report, actual, &h->desc);
         free(report);
     }
+#if CONFIG_KSHIM_USB_TRACE
+    else if (!length) {
+        kshim_usb_trace(dev, intf->number, "rdesc", "len=0 error=\"no report descriptor in the HID descriptor\"");
+    }
+#endif
+    if (replaced) status = kshim_hid_parse(quirk->report_descriptor, quirk->report_descriptor_length, &h->desc);
+    if (!status) status = kshim_hid_input_init(&h->input, &h->desc);
     uint32_t report_bytes = status ? 0 : max_input_bytes(&h->desc);
     bool boot = intf->subclass == HID_SUBCLASS_BOOT &&
                 (intf->protocol == HID_PROTOCOL_KEYBOARD || intf->protocol == HID_PROTOCOL_MOUSE);
@@ -320,6 +466,7 @@ static int hid_probe(struct kshim_usb_interface *intf)
         }
     }
     if (status) {
+        trace_unbound(intf, quirk, kshim_io_strerror(status));
         free(h);
         return status;
     }
@@ -327,25 +474,33 @@ static int hid_probe(struct kshim_usb_interface *intf)
     (void)kshim_usb_control(dev, HID_RT_CLASS_OUT_INTERFACE, HID_REQ_SET_IDLE, 0, intf->number, NULL, 0,
                             HID_CONTROL_TIMEOUT_MS, NULL);
     status = start(h, report_bytes);
-    if (status) free(h);
+    if (status) {
+        trace_unbound(intf, quirk, kshim_io_strerror(status));
+        free(h);
+    }
     return status;
 }
 
 static int xinput_probe(struct kshim_usb_interface *intf)
 {
-    struct kshim_usb_endpoint *ep = kshim_usb_find_endpoint(intf, KSHIM_USB_XFER_INTERRUPT, true);
-    if (!ep) return ERROR_NOT_SUPPORTED;
-    struct hid_if *h = calloc(1, sizeof(*h));
-    if (!h) return KSHIM_IO_ERR_NO_MEMORY;
-    h->intf = intf;
-    h->dev = intf->device;
-    h->ep = ep;
-    h->xinput = true;
-    int status = kshim_hid_parse(XInputReportDescriptor, sizeof(XInputReportDescriptor), &h->desc);
-    if (!status) status = kshim_hid_input_init(&h->input, &h->desc);
-    if (!status) status = start(h, XINPUT_REPORT_BYTES);
-    if (status) free(h);
-    return status;
+    const struct kshim_hid_quirk *quirk = quirk_of(intf);
+    if (quirk && (quirk->flags & KSHIM_HID_QUIRK_IGNORE)) {
+        trace_unbound(intf, quirk, "ignored by quirk");
+        return ERROR_NOT_SUPPORTED;
+    }
+    return layout_bind(intf, quirk, true);
+}
+
+/* A vendor (non-HID) interface named by a quirk row with the XInput flag or
+ * a report descriptor. HID interfaces are left to hid_probe. */
+static int quirk_probe(struct kshim_usb_interface *intf)
+{
+    const struct kshim_hid_quirk *quirk = quirk_of(intf);
+    if (!quirk || (quirk->flags & KSHIM_HID_QUIRK_IGNORE) || intf->class_code == KSHIM_USB_CLASS_HID)
+        return ERROR_NOT_SUPPORTED;
+    if (quirk->flags & KSHIM_HID_QUIRK_XINPUT) return layout_bind(intf, quirk, true);
+    if (quirk->report_descriptor) return layout_bind(intf, quirk, false);
+    return ERROR_NOT_SUPPORTED;
 }
 
 static void hid_disconnect(struct kshim_usb_interface *intf)
@@ -381,8 +536,45 @@ static struct kshim_usb_class_driver XInputDriver = {
     .service = hid_service,
 };
 
+/* One class driver per quirk device with a vendor-interface layout, tried
+ * before the generic drivers; its VID:PID match also makes the core count
+ * the configuration as supported. */
+#define HID_QUIRK_DRIVERS 8U
+static struct kshim_usb_class_driver QuirkDrivers[HID_QUIRK_DRIVERS];
+
+static int register_quirk_drivers(void)
+{
+    unsigned count = 0;
+    for (const struct kshim_hid_quirk *q = kshim_hid_quirks; q->vendor; ++q) {
+        if (!(q->flags & KSHIM_HID_QUIRK_XINPUT) && !q->report_descriptor) continue;
+        bool known = false;
+        for (unsigned i = 0; i < count; ++i)
+            known |= QuirkDrivers[i].vendor == q->vendor && QuirkDrivers[i].product == q->product;
+        if (known) continue;
+        if (count == HID_QUIRK_DRIVERS) {
+            printf("HID: quirk %s for %04x:%04x skipped (more than %u devices)\n", quirk_name(q), q->vendor,
+                   q->product, HID_QUIRK_DRIVERS);
+            continue;
+        }
+        QuirkDrivers[count] = (struct kshim_usb_class_driver){
+            .name = "usb-hid-quirk", .class_code = KSHIM_USB_MATCH_ANY, .subclass = KSHIM_USB_MATCH_ANY,
+            .protocol = KSHIM_USB_MATCH_ANY, .vendor = q->vendor, .product = q->product,
+            .probe = quirk_probe, .disconnect = hid_disconnect, .service = hid_service,
+        };
+        int status = kshim_usb_class_register(&QuirkDrivers[count++]);
+        if (status && status != KSHIM_IO_ERR_EXISTS) return status;
+    }
+    return 0;
+}
+
 int kshim_usb_hid_register(void)
 {
+    static bool quirks_registered;
+    if (!quirks_registered) {
+        quirks_registered = true;
+        int quirks = register_quirk_drivers();
+        if (quirks) return quirks;
+    }
     int status = kshim_usb_class_register(&HidDriver);
     if (status && status != KSHIM_IO_ERR_EXISTS) return status;
     status = kshim_usb_class_register(&XInputDriver);

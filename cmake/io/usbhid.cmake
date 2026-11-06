@@ -10,6 +10,7 @@ if(CONFIG_KSHIM_USB_HUB)
 endif()
 if(CONFIG_KSHIM_USB_HID)
     list(APPEND KERNEL_SOURCES kernel/drivers/usb/class/hid.c
+        kernel/drivers/usb/class/hid_quirks.c
         kernel/drivers/hid/hid_parse.c kernel/drivers/hid/hid_input.c)
 endif()
 if(CONFIG_KSHIM_INPUT_INJECT)

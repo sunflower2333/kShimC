@@ -53,6 +53,11 @@ void usb_core_device_path(const struct kshim_usb_device *device, char *out, size
         at += snprintf(out + at, size - (size_t)at, i == n ? "%u" : ".%u", ports[i - 1]);
 }
 
+void kshim_usb_device_path(const struct kshim_usb_device *device, char *out, size_t size)
+{
+    if (out && size) usb_core_device_path(device, out, size);
+}
+
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 
 static bool driver_matches(const struct kshim_usb_class_driver *drv,
@@ -216,6 +221,9 @@ void usb_core_bind_device(struct kshim_usb_device *dev)
             intf->driver_data = NULL;
         }
     }
+#if CONFIG_KSHIM_USB_TRACE
+    usb_trace_bound(dev);
+#endif
 }
 
 /* ---- Enumeration -------------------------------------------------------- */
@@ -330,6 +338,9 @@ int kshim_usb_enumerate(struct kshim_usb_hcd *hcd, struct kshim_usb_device *pare
     dev->configured = true;
     if (!parent) hcd->root[port - 1U] = dev;
     log_device(dev);
+#if CONFIG_KSHIM_USB_TRACE
+    usb_trace_device(dev);
+#endif
     usb_core_bind_device(dev);
     if (device) *device = dev;
     return 0;
@@ -365,6 +376,9 @@ void kshim_usb_disconnect(struct kshim_usb_device *device)
         intf->driver = NULL;
         intf->driver_data = NULL;
     }
+#if CONFIG_KSHIM_USB_TRACE
+    usb_trace_disconnect(device);
+#endif
     struct kshim_usb_hcd *hcd = device->hcd;
     if (hcd && hcd->ops->device_free) hcd->ops->device_free(hcd, device);
     usb_core_drain();

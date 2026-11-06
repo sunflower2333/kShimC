@@ -45,6 +45,9 @@ CONFIG_KSHIM_USB_XHCI=y
 CONFIG_KSHIM_USB_XHCI_RENESAS=y
 CONFIG_KSHIM_USB_HUB=y
 CONFIG_KSHIM_USB_HID=y
+# First-boot identity capture of the internal gamepad (VID:PID, report
+# descriptor, first reports): "usbtrace:" console lines, docs/usb-hid.md.
+CONFIG_KSHIM_USB_TRACE=y
 # Touch: GT911 on i2c4 (RFC node).
 CONFIG_KSHIM_QUP=y
 CONFIG_KSHIM_I2C=y

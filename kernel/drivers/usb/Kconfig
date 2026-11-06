@@ -66,6 +66,31 @@ config KSHIM_USB_XHCI_RENESAS_FW_EMBED
         proprietary firmware: never commit it, and do not redistribute a
         runtime that embeds it unless Renesas' terms allow it.
 
+config KSHIM_USB_TRACE
+    bool "Trace USB devices and HID reports on the console (bring-up)"
+    depends on KSHIM_USB
+    default n
+    help
+        Print stable "usbtrace:" lines for every enumerated device: VID:PID,
+        speed and topology, strings, each interface's class/subclass/protocol
+        and endpoints, the raw configuration descriptor, the driver that
+        bound each interface, for HID interfaces the raw report descriptor
+        and how the mapper classified it (gamepad, joystick, keyboard,
+        mouse, tablet, consumer, XInput, unbound), and the first distinct
+        input reports with the keys they map to. Unbound interfaces with
+        an interrupt IN endpoint are read for the trace only. Output goes to
+        the console UART and its USB CDC-ACM mirror. Used to capture an
+        unknown device on its first boot (docs/usb-hid.md).
+
+config KSHIM_USB_TRACE_REPORTS
+    int "Distinct input reports traced per interface"
+    depends on KSHIM_USB_TRACE
+    range 1 1000
+    default 32
+    help
+        A report identical to the last one printed for the interface is
+        not counted; press one control at a time to see which bits move.
+
 config KSHIM_USB_SELFTEST
     bool "USB core self-test class driver (QEMU test)"
     depends on KSHIM_USB

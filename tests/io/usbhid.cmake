@@ -14,6 +14,7 @@ set(KSHIM_USBHID_HID_SOURCES
     "${KSHIM_ROOT}/kernel/core/input_inject.c")
 kshim_test(usbhid_hid_test io/usbhid_hid_test.c ${KSHIM_USBHID_HID_SOURCES}
     "${KSHIM_ROOT}/kernel/drivers/usb/class/hid.c"
+    "${KSHIM_ROOT}/kernel/drivers/usb/class/hid_quirks.c"
     "${KSHIM_ROOT}/kernel/drivers/keys.c")
 target_compile_definitions(usbhid_hid_test PRIVATE CONFIG_KSHIM_INPUT_INJECT=1)
 target_include_directories(usbhid_hid_test PRIVATE "${KSHIM_ROOT}/tests/include")
@@ -24,6 +25,7 @@ kshim_test(usbhid_stack_test io/usbhid_stack_test.c ${KSHIM_USBHID_HID_SOURCES}
     "${KSHIM_ROOT}/kernel/core/dma.c"
     "${KSHIM_ROOT}/kernel/drivers/usb/class/hub.c"
     "${KSHIM_ROOT}/kernel/drivers/usb/class/hid.c"
+    "${KSHIM_ROOT}/kernel/drivers/usb/class/hid_quirks.c"
     "${KSHIM_ROOT}/kernel/drivers/keys.c"
     "${KSHIM_ROOT}/kernel/core/io.c")
 target_compile_definitions(usbhid_stack_test PRIVATE CONFIG_KSHIM_INPUT_INJECT=1)

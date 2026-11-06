@@ -7,6 +7,9 @@ if(CONFIG_KSHIM_USB)
     list(APPEND KERNEL_SOURCES kernel/core/dma.c
         kernel/drivers/usb/core/core.c kernel/drivers/usb/core/desc.c
         kernel/drivers/usb/core/enumerate.c)
+    if(CONFIG_KSHIM_USB_TRACE)
+        list(APPEND KERNEL_SOURCES kernel/drivers/usb/core/trace.c)
+    endif()
     if(CONFIG_KSHIM_USB_SELFTEST)
         list(APPEND KERNEL_SOURCES kernel/drivers/usb/core/selftest.c)
     endif()

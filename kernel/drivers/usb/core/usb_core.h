@@ -53,6 +53,14 @@ bool usb_core_root_busy(const struct kshim_usb_hcd *hcd);
 void usb_core_bind_device(struct kshim_usb_device *device);
 void usb_core_device_path(const struct kshim_usb_device *device, char *out, size_t size);
 
+#if CONFIG_KSHIM_USB_TRACE
+/* trace.c (bring-up trace, kshim/usb.h): after configuration, after class
+ * binding, and in kshim_usb_disconnect() before the slot is freed. */
+void usb_trace_device(struct kshim_usb_device *device);
+void usb_trace_bound(struct kshim_usb_device *device);
+void usb_trace_disconnect(struct kshim_usb_device *device);
+#endif
+
 #if CONFIG_KSHIM_USB_SELFTEST
 /* selftest.c (QEMU self-test class driver). */
 int kshim_usb_selftest_register(void);

@@ -342,3 +342,46 @@ const char *kshim_usb_speed_name(enum kshim_usb_speed speed);
 int kshim_usb_quiesce(void);
 /* Handoff step "xHCI": every HCD's ops->quiesce. Idempotent. */
 int kshim_usb_hcd_quiesce_all(void);
+
+/* ---- Bring-up trace (additive, io-evidence) ------------------------------ */
+
+/* "<hcd>-<root port>[.<hub port>...]", the topology path used in the logs. */
+void kshim_usb_device_path(const struct kshim_usb_device *device, char *out, size_t size);
+
+/*
+ * CONFIG_KSHIM_USB_TRACE (docs/usb-hid.md "Capturing an unknown device"):
+ * one console line per fact, each starting with KSHIM_USB_TRACE_PREFIX and
+ * an event word, then space-separated key=value fields (values never
+ * contain spaces, except a final quoted reason="..."/text="..."):
+ *   dev, str, if, cfg (core, per enumerated device), bind (core, per
+ *   interface), rdesc, hid, report (HID class driver), sniff (core, an
+ *   unbound interface's interrupt IN endpoint read for the trace only),
+ *   gone (core, disconnect). Hex dumps are contiguous lowercase pairs,
+ *   KSHIM_USB_TRACE_LINE_BYTES per line with the byte offset in off=.
+ * Printing goes through printf, i.e. the console UART and its USB CDC-ACM
+ * mirror. Thread context only (enumeration, URB callbacks). The functions
+ * exist only with CONFIG_KSHIM_USB_TRACE.
+ */
+#define KSHIM_USB_TRACE_PREFIX "usbtrace:"
+#define KSHIM_USB_TRACE_LINE_BYTES 32U
+#define KSHIM_USB_TRACE_DESC_MAX 1024U    /* descriptor dump bound */
+#define KSHIM_USB_TRACE_REPORT_MAX 64U    /* bytes of one traced report */
+
+struct kshim_usb_trace_state {
+    unsigned seq;                         /* distinct reports printed */
+    uint16_t last_length;
+    uint8_t last[KSHIM_USB_TRACE_REPORT_MAX];
+};
+
+/* "<prefix> <event> path=<p> if=<n> <fields>"; interface < 0 omits if=. */
+void kshim_usb_trace(const struct kshim_usb_device *device, int interface, const char *event,
+                     const char *format, ...) __attribute__((format(printf, 4, 5)));
+/* "<event> path= [if=] len= off= hex=" lines, at most KSHIM_USB_TRACE_DESC_MAX
+ * bytes (trunc=1 on the last line when cut). */
+void kshim_usb_trace_hex(const struct kshim_usb_device *device, int interface, const char *event,
+                         const uint8_t *data, size_t length);
+/* One "report" line when `data` differs from the last report printed for
+ * `state` and fewer than CONFIG_KSHIM_USB_TRACE_REPORTS were printed; `held`
+ * is the mapping result appended as held=. Returns true when printed. */
+bool kshim_usb_trace_report(struct kshim_usb_trace_state *state, const struct kshim_usb_device *device,
+                            uint8_t interface, const uint8_t *data, size_t length, const char *held);

@@ -51,3 +51,37 @@ struct kshim_hid_input;
 const uint8_t *kshim_usb_xinput_report_descriptor(size_t *length);
 /* Feed one XInput message (non-input messages are ignored, returning 0). */
 int kshim_usb_xinput_report(struct kshim_hid_input *input, const uint8_t *data, size_t length);
+
+/*
+ * Per-device quirks (additive, io-evidence): the extension point for a
+ * device whose identity and reports were captured with
+ * CONFIG_KSHIM_USB_TRACE (docs/usb-hid.md "Turning a capture into a
+ * mapping"). Rows live in kernel/drivers/usb/class/hid_quirks.c, the table
+ * ends with a row whose vendor is 0, and the first row matching vendor,
+ * product (0 = any product of that vendor) and interface wins.
+ *
+ *  - KSHIM_HID_QUIRK_IGNORE: no HID/XInput binding for the interface.
+ *  - KSHIM_HID_QUIRK_XINPUT: the interface (any class, for example a
+ *    vendor class with a non-Xbox subclass) carries the XInput 20-byte
+ *    report and is mapped like an Xbox 360 pad.
+ *  - report_descriptor: a HID report descriptor written for the device.
+ *    On a HID interface it replaces the device's own; on any other
+ *    interface with an interrupt IN endpoint it describes that endpoint's
+ *    reports, which then go through the HID mapping (kshim/hid.h).
+ */
+#define KSHIM_HID_QUIRK_IGNORE 0x1U
+#define KSHIM_HID_QUIRK_XINPUT 0x2U
+#define KSHIM_HID_QUIRK_ANY_INTERFACE (-1)
+
+struct kshim_hid_quirk {
+    uint16_t vendor, product;
+    int16_t interface;                  /* bInterfaceNumber or KSHIM_HID_QUIRK_ANY_INTERFACE */
+    uint16_t flags;                     /* KSHIM_HID_QUIRK_* */
+    const uint8_t *report_descriptor;   /* optional */
+    uint16_t report_descriptor_length;
+    const char *name;                   /* quirk= in the log and the trace */
+};
+
+extern const struct kshim_hid_quirk kshim_hid_quirks[];
+/* The row for one interface, or NULL. */
+const struct kshim_hid_quirk *kshim_hid_quirk_find(uint16_t vendor, uint16_t product, uint8_t interface);
