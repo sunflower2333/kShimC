@@ -80,3 +80,38 @@ set_tests_properties(touch_goodix_platform_test PROPERTIES ARGS cold)
 foreach(scenario inherited qrd)
     add_test(NAME touch_goodix_platform_${scenario}_test COMMAND touch_goodix_platform_test ${scenario})
 endforeach()
+
+# The same paths over the real bus drivers as well: the I2C/SPI cores, the
+# GENI I2C/SPI controllers and engine with the unmodified CrDK FIFO core, the
+# QUP core with the real clock driver, pinctrl, regulators and the TLMM
+# irqchip, kernel/core/input.c and kernel/core/io.c (boot and handoff order).
+# Only the GIC (irq_fake.c), the GENI serial engine with the chips as bus
+# devices on it (qup_fakes.c) and the SM8650 TLMM/GCC/RSC/CMD DB registers
+# (sm8650_model.c) are models.
+kshim_test(touch_goodix_bus_test io/touch_goodix_bus_test.c io/sm8650_model.c io/qup_fakes.c
+    ${KSHIM_IRQCHIP_SOURCES} ${GOODIX_DRIVERS}
+    "${KSHIM_ROOT}/kernel/drivers/input/touch/core.c"
+    "${KSHIM_ROOT}/kernel/drivers/input/touch/registry.c"
+    "${KSHIM_ROOT}/kernel/drivers/touch.c"
+    "${KSHIM_ROOT}/kernel/dt/qup.c" "${KSHIM_ROOT}/kernel/drivers/qup/qup.c"
+    "${KSHIM_ROOT}/kernel/drivers/qup/geni_uart.c" "${KSHIM_ROOT}/kernel/drivers/geni_rx_irq.c"
+    "${KSHIM_ROOT}/kernel/drivers/qup/geni_engine.c" "${KSHIM_ROOT}/kernel/drivers/qup/geni_i2c.c"
+    "${KSHIM_ROOT}/kernel/drivers/qup/geni_spi.c"
+    "${KSHIM_ROOT}/kernel/drivers/i2c/core.c" "${KSHIM_ROOT}/kernel/drivers/spi/core.c"
+    "${KSHIM_ROOT}/kernel/soc/soc.c" "${KSHIM_ROOT}/kernel/soc/sm8650_tables.c"
+    "${KSHIM_ROOT}/kernel/drivers/gpio/gpio.c" "${KSHIM_ROOT}/kernel/drivers/gpio/pinctrl.c"
+    "${KSHIM_ROOT}/kernel/drivers/clk/clk.c" "${KSHIM_ROOT}/kernel/drivers/regulator/regulator.c"
+    "${KSHIM_ROOT}/kernel/core/input.c" "${KSHIM_ROOT}/kernel/core/io.c")
+target_compile_definitions(touch_goodix_bus_test PRIVATE QUP_REAL_PLATFORM=1
+    CONFIG_KSHIM_TOUCH=1 CONFIG_KSHIM_TOUCH_FRAMEWORK=1 CONFIG_KSHIM_TOUCH_GT911=1
+    CONFIG_KSHIM_TOUCH_GT9916=1 CONFIG_KSHIM_I2C=1 CONFIG_KSHIM_I2C_GENI=1 CONFIG_KSHIM_SPI=1
+    CONFIG_KSHIM_SPI_GENI=1 CONFIG_KSHIM_QUP=1 CONFIG_KSHIM_CLK=1 CONFIG_KSHIM_GPIO=1
+    CONFIG_KSHIM_REGULATOR=1 CONFIG_QCOM_IRQCHIP=1 CONFIG_KSHIM_INPUT_IRQ=1
+    "IO_FIXTURES=\"${KSHIM_ROOT}/tests/fixtures/io\"")
+target_include_directories(touch_goodix_bus_test PRIVATE "${KSHIM_ROOT}/tests/include"
+    "${KSHIM_ROOT}/kernel/drivers/qup")
+target_link_libraries(touch_goodix_bus_test PRIVATE kshim_dt)
+set_tests_properties(touch_goodix_bus_test PROPERTIES ARGS s2)
+foreach(scenario s2-inherited s2-poll qrd)
+    add_test(NAME touch_goodix_bus_${scenario}_test COMMAND touch_goodix_bus_test ${scenario})
+endforeach()

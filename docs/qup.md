@@ -185,10 +185,32 @@ fake GIC of `tests/irq_fake.c`). The console section of `input_irq_test`
 covers the RX interrupt engine, and `usb_acm_test` covers the console on the
 UART layer.
 
+The GENI model answers either with canned read data or through modelled bus
+devices (`geni_model_i2c_target()`, `geni_model_spi_target()`). An I2C
+target sees each bus phase as the M sequencer runs it: START or repeated
+START (a previous command with STOP_STRETCH), the address with R/W (it may
+NACK), every TX FIFO byte (it may NACK), every read byte before the
+command's CMD_DONE, and STOP (a command without STOP_STRETCH, or
+STOP_ON_BUS). An SPI device sees CS_ASSERT and CS_DEASSERT with the
+programmed mode, and exchanges one MISO byte per MOSI byte (RX-only clocks
+MOSI low). `Geni.bus_log` records the I2C side as text, for example
+`S 5d/W A 81 40 Sr 5d/R A [11] P `. `qup_i2c_test` checks a register
+read with repeated START, a data NACK (the NACKed byte clocked, nothing
+after it, STOP from the recovery) and an address NACK against such a device;
+`qup_spi_test` checks full-duplex and RX-only exchanges under one CS.
+
+`touch_goodix_bus_test` (`tests/io/touch_goodix.cmake`) runs this layer
+without its clock and pinctrl fakes (`QUP_REAL_PLATFORM=1`): the QUP core,
+the GENI I2C/SPI controllers and engine with the CrDK FIFO core, the real
+clock driver, pinctrl, regulators and the TLMM irqchip, with the GT911 and
+GT9916 as bus devices (docs/touch-goodix.md).
+
 ## Open points
 
 - The clock, GPIO and pinctrl implementations come from the sm8650 owner.
-  The QUP core is tested here against fakes of their headers only.
+  The QUP unit tests use fakes of their headers; `touch_goodix_bus_test`
+  runs the QUP core on the real ones over SM8650 GCC and TLMM register
+  models (`tests/io/sm8650_model.c`).
 - The QUP core clock (`qup-core` interconnect) and the CX domain are
   assumed to be inherited. A cold engine behind a gated QUP core cannot be
   revived.

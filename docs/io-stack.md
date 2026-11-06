@@ -641,6 +641,14 @@ Report exact counts and state plainly what was not run on hardware.
     handle flow, polling fallback, coordinate transform; per-chip protocol
     models (FTM4, FTM5 existing tests kept green, GT911 address select and
     report, GT9916 SPI framing and report).
+  - **Cross-stack (board paths):** `touch_goodix_bus_test` runs the Pocket
+    S2 GT911 (i2c4) and the QRD8650 GT9916 (spi4) from
+    `kshim_input_touch_start/poll` through the touch framework, the I2C/SPI
+    cores, the GENI controllers and engine with the CrDK FIFO core, the QUP
+    core, the clock, GPIO, pinctrl, regulator and TLMM irqchip drivers and
+    `kshim_io_init/quiesce`, with only the GIC, the GENI serial engine (the
+    chips as bus devices on it) and the SM8650 TLMM/GCC/RPMh registers
+    modelled (docs/touch-goodix.md, Tests).
 - **Firmware matrix.** `tools/build_runtime.py --config configs/<x>_defconfig`
   for every defconfig. All 7 passed when this contract was written. New
   defconfigs joined the matrix: `qrd8650` and `ayaneo_pocket_s2` from

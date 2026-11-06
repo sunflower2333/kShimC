@@ -33,6 +33,25 @@ static int node_named(const void *f, const char *path)
 
 static uint32_t clk_cfg(uint32_t divisor) { return (divisor << 4) | GENI_SE_SER_CLK_EN; }
 
+/* A device on CS 3 (geni_spi_target) that answers each MOSI byte with its
+ * complement and records the chip-select envelope and mode. */
+static struct { unsigned selects, deselects, bytes, mode; bool selected; } Dev3;
+static void dev3_select(void *c, bool asserted, unsigned mode)
+{
+    (void)c;
+    Dev3.selected = asserted;
+    if (asserted) { ++Dev3.selects; Dev3.mode = mode; }
+    else ++Dev3.deselects;
+}
+static uint8_t dev3_exchange(void *c, uint8_t mosi)
+{
+    (void)c;
+    assert(Dev3.selected);
+    ++Dev3.bytes;
+    return (uint8_t)~mosi;
+}
+static const struct geni_spi_target Dev3Target = {NULL, dev3_select, dev3_exchange};
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -108,6 +127,18 @@ int main(void)
     assert(!kshim_spi_sync(&gt, xfers, 1, 0));
     assert(geni_model_reg(SPI_GENI_SE_CPHA) == 0 && geni_model_reg(SPI_GENI_SE_DEMUX_SEL) == 0);
     assert(geni_model_reg(GENI_SE_SER_M_CLK_CFG) == clk_cfg(20));
+
+    /* A modelled device: full-duplex MISO follows each MOSI byte, RX-only
+     * clocks MOSI low, all under one CS assertion in mode 1. */
+    geni_model_spi_target(3, &Dev3Target);
+    struct kshim_spi_device dev3 = {c, -1, 3, KSHIM_SPI_CPHA, 8, 2000000};
+    uint8_t out[3] = {0x00, 0x5a, 0xff}, in[3], tail[2];
+    struct kshim_spi_xfer duplex[2] = {{out, in, 3, 0}, {NULL, tail, 2, 0}};
+    assert(!kshim_spi_sync(&dev3, duplex, 2, 0));
+    assert(in[0] == 0xff && in[1] == 0xa5 && in[2] == 0x00 && tail[0] == 0xff && tail[1] == 0xff);
+    assert(Dev3.selects == 1 && Dev3.deselects == 1 && Dev3.bytes == 5 && Dev3.mode == 1 && !Dev3.selected);
+    Geni.spi[3] = NULL;
+    assert(!kshim_spi_sync(&gt, xfers, 1, 0));
 
     /* Modes and sizes GENI does not do; rejected without bus activity. */
     unsigned commands = Geni.cmd_count;

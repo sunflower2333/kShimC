@@ -143,6 +143,70 @@ static void test_recovery(struct kshim_i2c_adapter *a)
     printf("recovery: ok\n");
 }
 
+/* A 256-byte register device at 0x50 on the bus model (geni_i2c_target):
+ * a write sets the pointer, further bytes are stored, reads stream from the
+ * pointer. It NACKs the data byte at nack_at (0 = never). */
+static struct { uint8_t mem[256], pointer; unsigned index, nack_at, stops; bool reading; } Eeprom;
+static bool eeprom_start(void *c, bool read, bool repeated)
+{
+    (void)c; (void)repeated;
+    Eeprom.index = 0;
+    Eeprom.reading = read;
+    return true;
+}
+static bool eeprom_write(void *c, uint8_t byte)
+{
+    (void)c;
+    if (++Eeprom.index == Eeprom.nack_at) return false;
+    if (Eeprom.index == 1) Eeprom.pointer = byte;
+    else Eeprom.mem[Eeprom.pointer++] = byte;
+    return true;
+}
+static uint8_t eeprom_read(void *c) { (void)c; return Eeprom.mem[Eeprom.pointer++]; }
+static void eeprom_stop(void *c) { (void)c; ++Eeprom.stops; }
+static const struct geni_i2c_target EepromTarget = {0x50, NULL, eeprom_start, eeprom_write, eeprom_read,
+                                                    eeprom_stop};
+
+static void test_devices(struct kshim_i2c_adapter *a)
+{
+    /* Bus devices instead of canned data: the device sees START, repeated
+     * START, data and STOP as the controller issues them. */
+    memset(&Eeprom, 0, sizeof(Eeprom));
+    for (unsigned i = 0; i < 256; ++i) Eeprom.mem[i] = (uint8_t)(i ^ 0xa5);
+    geni_model_i2c_target(&EepromTarget);
+    geni_model_log_clear();
+    struct kshim_i2c_client client = {.adapter = a, .node = -1, .addr = 0x50};
+    static const uint8_t reg = 0x10;
+    uint8_t data[4];
+    assert(!kshim_i2c_write_read(&client, &reg, 1, data, 4, 0));
+    assert(data[0] == (0x10 ^ 0xa5) && data[3] == (0x13 ^ 0xa5) && Eeprom.stops == 1);
+    assert(!strcmp(Geni.bus_log, "S 50/W A 10 Sr 50/R A [4] P "));
+
+    /* Data NACK on the second byte of a write (0x01 is clocked, then
+     * NACKed): NACK reported, the rest not clocked, STOP sent by the
+     * recovery; the bus works again. */
+    static const uint8_t page[4] = {0x20, 1, 2, 3};
+    Eeprom.nack_at = 2;
+    geni_model_log_clear();
+    unsigned stops = Geni.stops;
+    assert(kshim_i2c_write(&client, page, 4, 0) == KSHIM_IO_ERR_NACK);
+    assert(Geni.data_nacks == 1 && Geni.stops == stops + 1 && Eeprom.stops == 2);
+    assert(!strcmp(Geni.bus_log, "S 50/W A 20 01 N P "));
+    assert(Geni.cmds[Geni.cmd_count - 1].opcode == I2C_GENI_M_CMD_OPCODE_STOP_ON_BUS);
+    Eeprom.nack_at = 0;
+    assert(!kshim_i2c_write(&client, page, 4, 0) && Eeprom.mem[0x20] == 1 && Eeprom.mem[0x22] == 3);
+
+    /* Nobody at 0x51: address NACK, no data clocked. */
+    struct kshim_i2c_client absent = {.adapter = a, .node = -1, .addr = 0x51};
+    geni_model_log_clear();
+    assert(kshim_i2c_write_read(&absent, &reg, 1, data, 4, 0) == KSHIM_IO_ERR_NACK);
+    assert(!strcmp(Geni.bus_log, "S 51/W N P "));
+    assert(!kshim_i2c_write_read(&client, &reg, 1, data, 1, 0) && data[0] == (0x10 ^ 0xa5));
+    /* Back to canned data for the tests below. */
+    Geni.i2c_count = 0;
+    printf("bus devices (repeated START, data NACK, address NACK): ok\n");
+}
+
 static struct kshim_i2c_adapter *Reentrant;
 static int ReentryStatus = -1;
 static void reenter(void)
@@ -233,6 +297,7 @@ int main(void)
     struct kshim_i2c_adapter *a;
     assert(!kshim_i2c_adapter_get(s2, I2c4Node, &a));
     test_recovery(a);
+    test_devices(a);
     test_reentry(a);
     test_undelivered(a);
     /* The Pocket S2 adapter stays registered (and quiesced below). Its

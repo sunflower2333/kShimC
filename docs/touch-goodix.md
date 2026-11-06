@@ -219,6 +219,56 @@ SPI segments through, as the real helpers will.
   `kshim_dt_irq`, the reset specifiers, the driver supply tables against
   the case-sensitive properties, the RPMh rail behind them ("ldob14"),
   sizes, pinctrl states and the GT911 `match`.
+- `touch_goodix_bus_test` (s2, s2-inherited, s2-poll, qrd): the whole path
+  from the boot menu's touch callback to the registers, on the committed
+  fixtures `tests/fixtures/io/sm8650-ayaneo-pocket-s2.dtb` (with the RFC
+  touch node) and `sm8650-qrd.dtb`. Real code: `kernel/core/input.c`
+  (`kshim_input_touch_start/poll`, `kshim_input_quiesce`), the framework,
+  both drivers, the I2C and SPI cores, `geni_i2c.c`/`geni_spi.c`,
+  `geni_engine.c` with the unmodified CrDK GeniSeLib FIFO core,
+  `qup.c` with `kernel/dt/qup.c`, the clock driver, GPIO registry, pinctrl
+  and regulator drivers, the TLMM irqchip (`tlmm.c`, `resolve.c`,
+  `handoff.c`) and `kernel/core/io.c` (`kshim_io_init`, `kshim_io_quiesce`).
+  Modelled: the GIC core (`tests/irq_fake.c`), the GENI serial engine with
+  the GT911 as an I2C target at 0x5d/0x14 and the GT9916 as the SPI device
+  on CS 0 (`tests/io/qup_fakes.c`, docs/qup.md), and the SM8650 TLMM, GCC
+  and RPMh RSC/CMD DB registers (`tests/io/sm8650_model.c`). The chip
+  models see only bus phases, pad levels and RPMh votes.
+  - s2: cold QUP clocks (AHB and SE votes, SE RCG moved to CXO), ldob14
+    voted on in HPM, the GT911 address latched from the INT pad at the RSTB
+    edge (0x5d), the first address phase NACKed and recovered (CrDK
+    cancel, STOP_ON_BUS, driver retry), every register read a 2-byte WRITE
+    with STOP_STRETCH and a repeated-START READ ending in STOP, each
+    command's completion delivered as SE interrupt SPI 357 while the CPU
+    waits in WFI. IRQ 162 falling edge latches in the TLMM, the summary
+    SPI 208 runs the framework's handler (no bus access in IRQ context),
+    and `kshim_input_touch_poll()` delivers PRESS, MOVE and RELEASE to the
+    menu callback. The handoff (`kshim_input_quiesce`, `kshim_io_quiesce`,
+    `kshim_irqchip_restore`) releases RSTB to its pull-down while the rail
+    is still on, then leaves all 210 TLMM pads, the QUP GCC words, every
+    GENI register except command/length/clear registers, the ldob14 vote
+    and both GIC lines as found.
+  - s2-inherited: rail, RSTB, running chip and QUP clocks left by UEFI: no
+    GCC write, no RPMh vote, no reset pulse; still running at 0x5d after
+    the handoff.
+  - s2-poll: no GIC; the GENI engine busy-polls and the framework reads the
+    GT911 status at its 10 ms cadence.
+  - qrd: spi4 at 1 MHz mode 0 (divider 20), every Berlin access one CS
+    assertion, reset held while ldob14 comes up, the level-low IRQ masked
+    with RAW_STATUS_EN off by the handler and released by the event write
+    before the unmask, reset asserted while the rail drops, then everything
+    as found.
+  Mutations of the kernel code (RCG restore skipped, `CrGeniQuiesce`
+  skipped, TLMM edge acknowledge dropped, GT911 status release skipped,
+  repeated START replaced by STOP) each make it fail.
+
+Still not covered without hardware: the GENI M sequencer itself (opcodes,
+FIFO packing, IRQ status timing are modelled from the register facts), the
+GIC, whether the SE and TLMM summary lines really behave level-high as
+modelled, I2C electrical timing (clock stretching, SCL counters only checked
+as programmed values), the chips' real firmware behaviour (the models follow
+the datasheet and Berlin protocol facts), the board wiring of RSTB/INT and
+the RFC's reset polarity, ICC/BCM votes and the SMMU.
 
 Nothing here has run on hardware.
 
