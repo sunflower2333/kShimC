@@ -18,7 +18,7 @@ import tempfile
 import zlib
 
 
-BOARDS = {"hdk8150": ("SurfaceDuo1Pkg", 0), "hdk8450": ("WaipioPkg", 3),
+BOARDS = {"hdk8150": ("HanaCrPkg", 0), "hdk8450": ("WaipioCrPkg", 3),
           "andromeda": ("SurfaceDuo1Pkg", 0)}
 
 
