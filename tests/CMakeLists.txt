@@ -111,8 +111,7 @@ set(KSHIM_IRQCHIP_SOURCES irq_fake.c "${KSHIM_ROOT}/kernel/dt/qcom_irq.c" "${KSH
 kshim_test(irqchip_test irqchip_test.c ${KSHIM_IRQCHIP_SOURCES})
 kshim_test(input_irq_test input_irq_test.c ${KSHIM_IRQCHIP_SOURCES}
     "${KSHIM_ROOT}/kernel/drivers/input_irq.c" "${KSHIM_ROOT}/kernel/drivers/geni_rx_irq.c"
-    "${KSHIM_ROOT}/kernel/drivers/keys.c" "${KSHIM_ROOT}/kernel/dt/keys.c"
-    "${KSHIM_ROOT}/kernel/drivers/st_ftm5.c" "${KSHIM_ROOT}/kernel/drivers/touch.c")
+    "${KSHIM_ROOT}/kernel/drivers/keys.c" "${KSHIM_ROOT}/kernel/dt/keys.c")
 target_compile_definitions(input_irq_test PRIVATE CONFIG_KSHIM_INPUT_IRQ=1)
 foreach(target irqchip_test input_irq_test)
     target_compile_definitions(${target} PRIVATE CONFIG_QCOM_IRQCHIP=1
