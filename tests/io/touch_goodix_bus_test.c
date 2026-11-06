@@ -387,6 +387,17 @@ static void pocket_s2_cold(bool interrupts)
     assert((fake_peek(SM_GCC + SE_RCG + 4) & 0x371fU) == 1U);
     /* ldob14 at 3200 mV in HPM (regulator-initial-mode), enabled. */
     assert(rail_on() && sm_rpmh_get(L14B) == 3200 && sm_rpmh_get(L14B + 8) == 7);
+    /* Pinctrl through the GPIO registry: i2c4 SDA/SCL (gpio48/49) muxed to
+     * qup1_se4 with pull-up at 2 mA; RSTB driven high over its pull-down
+     * and INT an input without bias, both at 8 mA. */
+    for (unsigned pin = 48; pin <= 49; ++pin) {
+        uint32_t c = fake_peek(sm_tlmm_cfg(pin));
+        assert(((c >> 2) & 0xfU) != 0 && (c & 3U) == 3U && !((c >> 6) & 7U) && !(c & (1U << 9)));
+    }
+    uint32_t c161 = fake_peek(sm_tlmm_cfg(RESET_PIN)), c162 = fake_peek(sm_tlmm_cfg(INT_PIN));
+    assert(!((c161 >> 2) & 0xfU) && (c161 & 3U) == 1U && ((c161 >> 6) & 7U) == 3U && (c161 & (1U << 9)));
+    assert(sm_tlmm_level(RESET_PIN));
+    assert(!((c162 >> 2) & 0xfU) && !(c162 & 3U) && ((c162 >> 6) & 7U) == 3U && !(c162 & (1U << 9)));
     /* Address select through the TLMM pads: 0x5d, once, never unpowered. */
     assert(G.latches == 1 && G.address == 0x5d && !G.rstb_rises_unpowered);
     /* The first address phase was NACKed: CrDK cancelled the command and
