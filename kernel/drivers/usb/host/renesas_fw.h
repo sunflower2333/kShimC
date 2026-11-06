@@ -28,9 +28,16 @@
  * the first two bytes are AA 55 (0x55AA read as a 16-bit LE value); images
  * are between 4 KiB and 64 KiB.
  *
- * The firmware lives in controller RAM until the next PCI reset or power
- * loss. kShimC never asserts either, so a downloaded image stays for the
- * payload, which then finds "already running".
+ * The firmware lives in controller RAM until the next PCI reset (PERST#) or
+ * power loss. Whether a downloaded image survives for the payload depends
+ * on who owns the link and the controller's power:
+ *  - inherited link and rails (UEFI left pcie1 up): kShimC asserts neither,
+ *    so the payload finds "already running";
+ *  - kShimC cold start (Pocket S2: kShimC enabled the TLMM 121/122/123
+ *    rails and released PERST#): the handoff contract restores both, so
+ *    PERST# is asserted and the rails return to their inherited off state.
+ *    The RAM image is lost and the payload must download it again (it finds
+ *    RENESAS_FW_NEEDED).
  *
  * Config access goes through struct renesas_cfg so the sequence can be run
  * against a register model (tests/io/renesas_fw_test.c). On hardware it is

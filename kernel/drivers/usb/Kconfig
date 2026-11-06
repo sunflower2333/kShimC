@@ -60,11 +60,11 @@ config KSHIM_USB_XHCI_RENESAS_FW_EMBED
     default ""
     help
         Path, at build time, of a firmware image to embed. Empty (the
-        default) embeds nothing. With the firmware loader the embedded image
-        is only a fallback after the Android partitions confirmed absence;
-        without the loader it is the only source. The image is Renesas'
-        proprietary firmware: never commit it, and check its redistribution
-        terms before distributing a runtime that embeds it.
+        default) embeds nothing. When set, the embedded image is used
+        whenever the controller needs firmware (after "already running" and
+        the external ROM) and no partition is read. The image is Renesas'
+        proprietary firmware: never commit it, and do not redistribute a
+        runtime that embeds it unless Renesas' terms allow it.
 
 config KSHIM_USB_SELFTEST
     bool "USB core self-test class driver (QEMU test)"

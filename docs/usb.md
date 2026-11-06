@@ -99,9 +99,23 @@ comes from the Supported Protocol capabilities.
 Stop (`xhci_stop`, handoff): INTE/IE off, R/S=0, wait HCHalted (a failure
 refuses the handoff and keeps the DMA memory), give back every URB, HCRST
 (clears DCBAAP, CRCR, CONFIG, the interrupter), restore the legacy-support
-semaphores and SMI enables, free the DMA memory. Idempotent. A downloaded
-Renesas image stays loaded. The PCI core then frees the interrupt and
-replays its config journal (COMMAND, BARs).
+semaphores and SMI enables, free the DMA memory. Idempotent. A controller
+that reads all-ones (it left the bus) cannot master DMA: the stop gives the
+URBs back, frees the memory and succeeds without a reset. A downloaded
+Renesas image survives only while the link and the controller's rails were
+inherited; after a kShimC cold start the host restores PERST# and the
+endpoint rails, so the payload finds `RENESAS_FW_NEEDED` and downloads it
+again. The PCI core then frees the interrupt and replays its config
+journal (COMMAND, BARs).
+
+Start order (`xhci_prepare`, then `xhci_run`): halt an inherited
+controller, take the BIOS semaphore and HCRST before the PCI glue requests
+the interrupt, so a level INTx the previous owner left asserted cannot be
+taken before anything can acknowledge it. `xhci_run` sets R/S alone, waits
+for HCH = 0, marks the controller running and only then sets INTE. The
+handler acknowledges EINT/IMAN.IP whenever the interrupter is enabled, and
+the event pass clears Event Handler Busy after an interrupt even when the
+ring was already drained.
 
 ## Renesas uPD720201 / uPD720202
 
@@ -117,13 +131,36 @@ Decision at probe, before memory decode or MMIO:
 - lock without success, a stale FW Download Enable, or an error result:
   refused (needs a reset kShimC does not issue);
 - otherwise download `CONFIG_KSHIM_USB_XHCI_RENESAS_FW`
-  ("renesas_usb_fw.mem") from the Android partitions with
-  `kshim_firmware_request()` (default locations, `super/vendor{slot}/
-  firmware` among them) into 64 KiB of DMA-pool scratch returned right
-  after the download. `CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED` may name an
-  image to link in at build time (default empty): it is the loader's
-  builtin fallback after confirmed absence, or the only source without
-  the loader. Never commit the image; check its redistribution terms.
+  ("renesas_usb_fw.mem"), from the first source that has it:
+  1. the image linked in at build time, when
+     `CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED` names one (opt-in, default
+     empty; no partition is read then);
+  2. `kshim_firmware_request()` with the loader defaults, the Android
+     vendor firmware directories (`super/vendor{slot}/firmware`,
+     `.../firmware/image`, `modem{slot}/image`);
+  3. `super/odm{slot}/firmware` and `super/vendor_dlkm{slot}/firmware`;
+  4. `persist` (`firmware/` or the root) and the UEFI system partition
+     `efisp` (`firmware/` or the root).
+
+  Each of 2-4 is its own loader request, read into 64 KiB of DMA-pool
+  scratch returned right after the download. A group the loader cannot
+  read (an EROFS vendor partition without the GPL `CONFIG_FS_EROFS`, no
+  boot slot for the dynamic partitions) is logged and the next group is
+  tried. With no source the probe fails with one log line naming where to
+  put the file, and the gamepad controller stays off. Nothing hangs.
+
+Ways to provide `renesas_usb_fw.mem` on a device whose vendor partition is
+EROFS (most SM8650 Android builds):
+- let the device's UEFI start the controller (XhciDxe downloads it; the
+  running firmware is then inherited and nothing is read);
+- copy it to `persist` (ext4) or `efisp` (FAT), at the root or under
+  `firmware/`;
+- build it in with `CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED=<path>` for a
+  personal build.
+
+The image is Renesas' proprietary firmware. It is never committed. A
+runtime built with the embed option contains it and must not be
+redistributed unless Renesas' terms allow it.
 
 All 0xF4-0xFC writes use `kshim_pci_write_config_raw32()`: they are never
 journaled or replayed. The 0xF4 dword write keeps the ROM half (0xF6) at
@@ -167,8 +204,11 @@ invalidates; with the MMU off both reduce to barriers in effect.
 - Host (`tests/io/usb.cmake`): `usb_dma_test`, `usb_renesas_test`
   (register model of the download plus the PCI glue's decisions with a
   fake loader) and `usb_xhci_test` with a behavioural xHCI model
-  (`tests/io/xhci_model.c`), run as the scenarios irq, poll, lostirq,
-  takeover (with port power control), dead and stuck.
+  (`tests/io/xhci_model.c`, a level-triggered INTx that counts deliveries
+  the handler left asserted), run as the scenarios irq, poll, lostirq,
+  takeover (with port power control), dead, stuck, runwindow (Port Status
+  Changes posted as R/S is set), ehb (an interrupt after a drained ring)
+  and gone (all-ones reads at handoff).
 - QEMU: `tools/test_qemu_xhci.py` (qemu-xhci and nec-usb-xhci; usb-kbd
   and usb-storage; interrupt-driven and polled; EL1 and EL2) compares the
   xHCI function a payload finds after handoff with a direct boot. It runs
@@ -191,5 +231,8 @@ invalidates; with the MMU off both reduce to barriers in effect.
 - The Renesas sequence is written from the manual's description; the
   0xF4 dword write (ROM half zero) and the handshake timing were only
   exercised against a model.
-- `renesas_usb_fw.mem` may live on an EROFS vendor partition (GPL reader,
-  opt-in) or be absent; then only an already-running image works.
+- `renesas_usb_fw.mem` usually lives on an EROFS vendor partition (GPL
+  reader, opt-in, off). Then it must come from UEFI (already running),
+  persist, efisp or an embedded build; otherwise the gamepad stays off.
+  The partition labels `persist` and `efisp` are the usual Qualcomm ones
+  and are not verified on the Pocket S2.

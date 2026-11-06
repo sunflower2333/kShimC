@@ -8,7 +8,10 @@
  *
  * Handoff: the PCI core calls our quiesce (xhci_stop: halt, HCRST, restore
  * the legacy-support semaphores), then frees the interrupt and replays the
- * config journal (COMMAND, BARs). A downloaded Renesas image stays loaded.
+ * config journal (COMMAND, BARs). A downloaded Renesas image stays loaded
+ * only while the link and the controller's rails were inherited; after a
+ * kShimC cold start the host restores PERST# and the endpoint rails, and the
+ * payload has to download it again (renesas_fw.h).
  */
 #include "xhci.h"
 
@@ -73,7 +76,8 @@ static void xhci_pci_irq(uint32_t intid, void *context)
 
 #if KSHIM_RENESAS_FW_EMBEDDED
 /* Optional image linked in at build time (CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED,
- * renesas_fw_blob.S). Never committed to the tree. */
+ * renesas_fw_blob.S). Never committed to the tree; a runtime built with it
+ * contains Renesas' proprietary firmware. */
 extern const uint8_t kshim_renesas_fw_blob[];
 extern const uint8_t kshim_renesas_fw_blob_end[];
 #endif
@@ -92,58 +96,101 @@ static void cfg_delay(void *context, uint32_t us)
     (void)delay(us);
 }
 
+#if CONFIG_FIRMWARE_LOADER && !KSHIM_RENESAS_FW_EMBEDDED
+/* Where renesas_usb_fw.mem is looked for, one loader request per group (a
+ * group the loader cannot read, such as an EROFS vendor partition without
+ * the GPL CONFIG_FS_EROFS, does not stop the next one):
+ *  1. the loader defaults, the Android vendor firmware directories
+ *     (super/vendor{slot}/firmware, .../firmware/image, modem{slot}/image),
+ *     where Android ships it for Linux's request_firmware();
+ *  2. other dynamic partitions in super (odm, vendor_dlkm), which need the
+ *     current slot;
+ *  3. GPT partitions a user can provide it on without a slot: persist
+ *     (ext4) and the UEFI system partition efisp (FAT), in firmware/ or at
+ *     the root. */
+static const char *const RenesasSlotLocations[] = {
+    "super|odm{slot}|firmware",
+    "super|vendor_dlkm{slot}|firmware",
+};
+static const char *const RenesasPlainLocations[] = {
+    "persist||firmware", "persist||", "efisp||firmware", "efisp||",
+};
+static const struct {
+    const char *const *locations;
+    unsigned count;
+    const char *what;
+} RenesasSources[] = {
+    {NULL, 0, "vendor firmware (super/vendor{slot}, modem{slot})"},
+    {RenesasSlotLocations, 2, "super/odm{slot}, super/vendor_dlkm{slot}"},
+    {RenesasPlainLocations, 4, "persist, efisp"},
+};
+
+static const char *renesas_source_error(int status)
+{
+    switch (status) {
+    case ERROR_NOT_FOUND: return "absent";
+    case ERROR_NOT_SUPPORTED: return "filesystem not readable (EROFS needs the GPL CONFIG_FS_EROFS)";
+    case KSHIM_ERR_NOT_READY: return "storage or boot slot not ready";
+    default: return kshim_io_strerror(status);
+    }
+}
+#endif
+
+/* Sources after "already running" and "loaded from the external ROM": the
+ * image linked in at build time when CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED
+ * names one (opt-in; then no partition is read), else the firmware loader
+ * groups above in order. Nothing found: the controller stays off with one
+ * log line naming the places to provide the file (docs/usb.md). */
 static int renesas_download_from(const struct renesas_cfg *cfg, const char *name)
 {
-    const uint8_t *image = NULL;
-    size_t size = 0;
-    int status = ERROR_NOT_SUPPORTED;
-#if CONFIG_FIRMWARE_LOADER
+#if KSHIM_RENESAS_FW_EMBEDDED
+    (void)name;
+    size_t size = (size_t)(kshim_renesas_fw_blob_end - kshim_renesas_fw_blob);
+    printf("xhci: Renesas firmware (built in, %u bytes)\n", (unsigned)size);
+    return renesas_fw_download(cfg, kshim_renesas_fw_blob, size);
+#elif CONFIG_FIRMWARE_LOADER
     /* The loader reads into scratch memory borrowed from the DMA pool and
      * returned right after the download, before the rings are allocated. */
     uint64_t bus;
     void *buffer = kshim_dma_alloc(RENESAS_FW_MAX_SIZE, 64, 0, UINT64_MAX, &bus);
     if (!buffer) return KSHIM_IO_ERR_NO_MEMORY;
-#if KSHIM_RENESAS_FW_EMBEDDED
-    static struct kshim_fw_builtin builtin;
-    if (!builtin.data) {
-        builtin.path = name;
-        builtin.data = kshim_renesas_fw_blob;
-        builtin.size = (size_t)(kshim_renesas_fw_blob_end - kshim_renesas_fw_blob);
-        (void)kshim_firmware_builtin_register(&builtin);
-    }
-#endif
-    struct kshim_fw_request req = {
-        .kind = KSHIM_FW_FILE,
-        .max_size = RENESAS_FW_MAX_SIZE,
-        .buffer = buffer,
-        .buffer_size = RENESAS_FW_MAX_SIZE,
-        .allow_builtin = KSHIM_RENESAS_FW_EMBEDDED != 0,
-    };
-    struct kshim_firmware fw;
-    memset(&fw, 0, sizeof(fw));
-    status = kshim_firmware_request(name, &req, &fw);
-    if (!status) {
-        image = fw.data;
-        size = fw.size;
-        printf("xhci: Renesas firmware %s (%u bytes, %s)\n", fw.name[0] ? fw.name : name, (unsigned)size,
-               fw.origin == KSHIM_FW_ORIGIN_BUILTIN ? "built in" : "Android partition");
-        status = renesas_fw_download(cfg, image, size);
+    int status = ERROR_NOT_FOUND;
+    bool found = false;
+    for (unsigned i = 0; i < sizeof(RenesasSources) / sizeof(RenesasSources[0]) && !found; ++i) {
+        struct kshim_fw_request req = {
+            .locations = RenesasSources[i].locations,
+            .location_count = RenesasSources[i].count,
+            .kind = KSHIM_FW_FILE,
+            .max_size = RENESAS_FW_MAX_SIZE,
+            .buffer = buffer,
+            .buffer_size = RENESAS_FW_MAX_SIZE,
+        };
+        struct kshim_firmware fw;
+        memset(&fw, 0, sizeof(fw));
+        int request = kshim_firmware_request(name, &req, &fw);
+        if (request) {
+            printf("xhci: Renesas firmware %s: %s: %s\n", name, RenesasSources[i].what,
+                   renesas_source_error(request));
+            continue;
+        }
+        found = true;
+        printf("xhci: Renesas firmware %s (%u bytes, partition)\n", fw.name[0] ? fw.name : name,
+               (unsigned)fw.size);
+        status = renesas_fw_download(cfg, fw.data, fw.size);
         kshim_firmware_release(&fw);
-    } else {
-        printf("xhci: Renesas firmware %s not loaded (%d)\n", name, status);
     }
     kshim_dma_free(buffer, RENESAS_FW_MAX_SIZE);
-#elif KSHIM_RENESAS_FW_EMBEDDED
-    (void)name;
-    image = kshim_renesas_fw_blob;
-    size = (size_t)(kshim_renesas_fw_blob_end - kshim_renesas_fw_blob);
-    printf("xhci: Renesas firmware (built in, %u bytes)\n", (unsigned)size);
-    status = renesas_fw_download(cfg, image, size);
+    if (!found)
+        printf("xhci: Renesas firmware %s not found; the controller stays off. Put it in the vendor "
+               "firmware directory, persist or efisp (firmware/ or the root), or build it in with "
+               "CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED\n", name);
+    return status;
 #else
     (void)cfg;
-    printf("xhci: Renesas firmware %s needed but no firmware loader is configured\n", name);
+    printf("xhci: Renesas firmware %s needed but neither the firmware loader nor an embedded "
+           "image is configured; the controller stays off\n", name);
+    return ERROR_NOT_SUPPORTED;
 #endif
-    return status;
 }
 
 /* Inherit first: firmware already running (UEFI XhciDxe downloaded it) or

@@ -264,14 +264,35 @@ int kshim_pci_request_irq(struct kshim_pci_dev *dev, unsigned allowed, kshim_irq
 }
 int kshim_pci_free_irq(struct kshim_pci_dev *dev) { (void)dev; return 0; }
 
+/* Source groups in xhci_pci.c order: 0 loader defaults (vendor firmware),
+ * 1 super/odm, vendor_dlkm (slot), 2 persist and efisp (no slot). */
+static int FwGroupStatus[3];
+static unsigned FwGroupSeen;
+static int fw_group(const struct kshim_fw_request *req)
+{
+    if (!req->locations) { assert(!req->location_count); return 0; }
+    if (!strcmp(req->locations[0], "super|odm{slot}|firmware")) {
+        assert(req->location_count == 2 && !strcmp(req->locations[1], "super|vendor_dlkm{slot}|firmware"));
+        return 1;
+    }
+    assert(req->location_count == 4 && !strcmp(req->locations[0], "persist||firmware") &&
+           !strcmp(req->locations[1], "persist||") && !strcmp(req->locations[2], "efisp||firmware") &&
+           !strcmp(req->locations[3], "efisp||"));
+    for (unsigned i = 0; i < 4; ++i) assert(!strstr(req->locations[i], "{slot}"));
+    return 2;
+}
 int kshim_firmware_request(const char *name, const struct kshim_fw_request *req, struct kshim_firmware *fw)
 {
     ++FwRequests;
     snprintf(FwName, sizeof(FwName), "%s", name);
     FwBufferSize = req->buffer_size;
     FwMaxSize = req->max_size;
-    assert(req->kind == KSHIM_FW_FILE && req->buffer && !req->locations);
+    assert(req->kind == KSHIM_FW_FILE && req->buffer && !req->allow_builtin);
+    int group = fw_group(req);
+    assert(FwRequests == (unsigned)group + 1); /* groups in order, each once */
+    FwGroupSeen |= 1U << group;
     if (FwStatus) return FwStatus;
+    if (FwGroupStatus[group]) return FwGroupStatus[group];
     assert(FwSize <= req->buffer_size);
     memcpy(req->buffer, FwImage, FwSize);
     fw->data = req->buffer;
@@ -392,12 +413,32 @@ static void test_glue(void)
     reset_model(RENESAS_FW_ENABLE, 0);
     assert(probe(0x1912, 0x0014, 0x0c0330) == ERROR_DEVICE_ERROR && StartCalls == 0 && RawWrites == 0);
 
-    /* Firmware absent from the partitions: the controller stays off. */
+    /* Firmware absent from every source: the controller stays off, every
+     * group was asked once, in order, and the scratch went back. */
     reset_model(0, 0);
     FwStatus = ERROR_NOT_FOUND;
+    FwGroupSeen = 0;
     assert(probe(0x1912, 0x0014, 0x0c0330) == ERROR_NOT_FOUND && StartCalls == 0 && RawWrites == 0);
+    assert(FwRequests == 3 && FwGroupSeen == 7 && PrepareCalls == 0);
     assert(kshim_dma_in_use() == before);
     FwStatus = 0;
+
+    /* An EROFS vendor partition (not readable without the GPL reader) and no
+     * slot for the other dynamic partitions: persist/efisp still serve it. */
+    reset_model(0, 0);
+    M.expect = FwImage;
+    M.expect_len = FwSize;
+    FwGroupStatus[0] = ERROR_NOT_SUPPORTED;
+    FwGroupStatus[1] = KSHIM_ERR_NOT_READY;
+    assert(probe(0x1912, 0x0014, 0x0c0330) == 0 && FwRequests == 3 && StartCalls == 1);
+    assert(RENESAS_RESULT(M.fw) == RENESAS_RESULT_SUCCESS && !M.order_errors);
+    assert(kshim_dma_in_use() == before);
+    /* Found in the first group: the others are not asked. */
+    reset_model(0, 0);
+    M.expect = FwImage;
+    M.expect_len = FwSize;
+    FwGroupStatus[0] = FwGroupStatus[1] = 0;
+    assert(probe(0x1912, 0x0014, 0x0c0330) == 0 && FwRequests == 1);
 
     /* Any other xHCI: no Renesas register access at all. */
     reset_model(0, 0);

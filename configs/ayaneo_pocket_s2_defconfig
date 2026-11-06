@@ -24,13 +24,16 @@ CONFIG_KSHIM_TOUCH=y
 # fits the 4 MiB Manifest slot ("kShim runtime exceeds image slot"); slot
 # size is not treated as a blocker, every symbol resolves (checked with a
 # larger scratch slot).
-# Storage for renesas_usb_fw.mem (super/vendor{slot}/firmware). An EROFS
-# vendor partition needs CONFIG_FS_EROFS (GPL-2.0 opt-in, left off here);
-# without it the controller only starts if UEFI already loaded the firmware.
+# Storage for renesas_usb_fw.mem: super/vendor{slot}/firmware first, then
+# super/odm and vendor_dlkm, then persist and the efisp ESP (docs/usb.md).
+# An EROFS vendor partition needs CONFIG_FS_EROFS (GPL-2.0 opt-in, left off
+# here); it is then skipped and the other locations are tried. FAT reads the
+# efisp ESP and modem{slot}.
 CONFIG_BLOCK=y
 CONFIG_BLK_UFS=y
 CONFIG_FS_EXT4=y
 CONFIG_FS_F2FS=y
+CONFIG_FS_FAT=y
 CONFIG_FIRMWARE_LOADER=y
 # Platform layer (gpio, pinctrl, clk, regulators).
 CONFIG_KSHIM_REGULATOR=y
