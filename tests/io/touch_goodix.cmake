@@ -112,6 +112,6 @@ target_include_directories(touch_goodix_bus_test PRIVATE "${KSHIM_ROOT}/tests/in
     "${KSHIM_ROOT}/kernel/drivers/qup")
 target_link_libraries(touch_goodix_bus_test PRIVATE kshim_dt)
 set_tests_properties(touch_goodix_bus_test PROPERTIES ARGS s2)
-foreach(scenario s2-inherited s2-poll qrd)
+foreach(scenario s2-inherited s2-poll s2-lostedge qrd)
     add_test(NAME touch_goodix_bus_${scenario}_test COMMAND touch_goodix_bus_test ${scenario})
 endforeach()

@@ -73,6 +73,9 @@ Kconfig symbol.
 - **Polling fallback.** Every driver works without its interrupt: when the
   interrupt does not resolve from the DT, when a cascade seals it (TLMM or
   SPMI storm), or when a level stays asserted for 100 ms with no delivery.
+  Touch with an edge trigger, which leaves no level behind, also falls back
+  when a periodic handle pass finds events before any interrupt was
+  delivered (docs/touch.md).
   `kshim_completion_wait(c, timeout_us, poll, ctx)` covers both cases: it
   calls `poll` before every check and sleeps in WFI for at most 1 ms between
   checks while interrupts are live, or busy-waits in 10 µs steps otherwise.

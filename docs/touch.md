@@ -56,9 +56,14 @@ Events (`kshim_touch_framework_poll()`, from `kshim_input_touch_poll()`):
   re-fires at once; an edge latched while masked is kept by the TLMM.
 - Right after the interrupt is requested one handle pass runs, for anything
   latched before.
-- Polling fallback: no interrupt, a sealed TLMM pin, or the IRQ GPIO at its
-  active level for 100 ms without a delivery. Then each poll calls `handle`
-  when `driver->pending` (or the IRQ GPIO level) says so.
+- Polling fallback: no interrupt, a sealed TLMM pin, the IRQ GPIO at its
+  active level for 100 ms without a delivery, or an edge trigger whose
+  interrupt has never been delivered while a `handle` pass, run once per
+  250 ms until the first delivery, reports events (an edge leaves no level
+  to check; the GT911 on the Pocket S2 is falling-edge). Then each poll
+  calls `handle` when `driver->pending` (or the IRQ GPIO level) says so.
+  The edge check stops at the first delivered interrupt, so a working line
+  costs one status read per 250 ms only until the first touch.
 - A `handle` error cancels the contact, frees the interrupt and stops event
   processing. The device is still quiesced at stop. This is the legacy FTM5
   behaviour.

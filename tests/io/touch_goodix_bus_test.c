@@ -36,6 +36,11 @@
  *              the handoff.
  *  s2-poll     No GIC (kshim_irq_ready() false): the GENI engine busy-polls
  *              and the framework polls the GT911 status at its 10 ms cadence.
+ *  s2-lostedge The TLMM summary resolves and is requested but never reaches
+ *              the CPU (a misrouted summary, a wrong apps-target field). The
+ *              falling edge leaves no level behind, so the stuck-level check
+ *              cannot see it; the framework's edge check finds the frame
+ *              without an interrupt and falls back to polling.
  *  qrd         QRD8650 cold, spi4 GT9916: CS assert / TX / RX / deassert
  *              framing in mode 0, reset held while ldob14 comes up, level-low
  *              IRQ 162 deasserted by the event release before the unmask,
@@ -422,6 +427,15 @@ static void pocket_s2_cold(bool interrupts)
         uint32_t intr = FakeIo.read32(NULL, sm_tlmm_cfg(INT_PIN) + 8);
         assert((intr & 1U) && ((intr >> 2) & 3U) == 2U && ((intr >> 8) & 7U) == 3U && (intr & 0x10U));
         assert(!kshim_input_touch_poll());  /* the pass for anything latched before */
+        /* Idle for 1 s before the first touch: until an interrupt has been
+         * delivered, the edge check reads the status once per 250 ms and,
+         * finding nothing, keeps the interrupt. */
+        unsigned idle_reads = G.frames;
+        for (unsigned i = 0; i < 100; ++i) {
+            FakeNowUs += 10000;
+            assert(!kshim_input_touch_poll());
+        }
+        assert(G.frames - idle_reads == 4 && dev->irq_live && !EventCount);
 
         unsigned delivered = FakeGic[SE_IRQ].delivered;
         gt911_frame(1, 700, 1200);
@@ -438,9 +452,14 @@ static void pocket_s2_cold(bool interrupts)
         gt911_frame(0, 0, 0);
         irq_then_poll();
         assert(EventCount == 3 && Events[2].type == KSHIM_TOUCH_EVENT_RELEASE);
-        /* No spurious pass: nothing latched, nothing read. */
+        /* No spurious pass: nothing latched, nothing read, and with the
+         * interrupt proven no more edge checks. */
         unsigned frames = G.frames;
-        assert(fake_gic_run() == 0 && !kshim_input_touch_poll() && G.frames == frames);
+        for (unsigned i = 0; i < 100; ++i) {
+            FakeNowUs += 10000;
+            assert(fake_gic_run() == 0 && !kshim_input_touch_poll());
+        }
+        assert(G.frames == frames && dev->irq_live);
     } else {
         /* Polled: no GIC, so no SE or TLMM interrupt was requested. */
         assert(!adapter->irq_driven && !FakeGic[SE_IRQ].requested && !dev->irq_live);
@@ -469,6 +488,45 @@ static void pocket_s2_cold(bool interrupts)
     free(Fdt);
     printf("pocket-s2 GT911 %s over GENI I2C: ok (%u GENI commands, %u SE interrupts)\n",
            interrupts ? "interrupt-driven" : "polled", Geni.cmd_count, FakeGic[SE_IRQ].delivered);
+}
+
+static bool never(void) { return false; }
+
+static void pocket_s2_lost_edge(void)
+{
+    world("sm8650-ayaneo-pocket-s2.dtb", 3);
+    gt911_init();
+    fake_poke(sm_tlmm_cfg(RESET_PIN), 0x1);
+    fake_gic_line(SUMMARY, never);
+    assert(!kshim_io_init(Fdt));
+    assert(!kshim_input_touch_start(1440, 2560, menu_touch, &MenuContext));
+    const struct kshim_touch_dev *dev = kshim_touch_active();
+    s2_common_checks(dev);
+    assert(dev->irq_live && FakeGic[SUMMARY].requested);
+    /* Idle: no frame, nothing to find; the interrupt stays in use. */
+    for (unsigned i = 0; i < 100; ++i) {
+        FakeNowUs += 10000;
+        assert(!kshim_input_touch_poll());
+    }
+    assert(dev->irq_live && !EventCount);
+    /* A touch: the edge latches in the TLMM, the summary never arrives. */
+    gt911_frame(1, 700, 1200);
+    uint64_t touched = FakeNowUs;
+    while (!EventCount && FakeNowUs - touched < 2000000U) {
+        FakeNowUs += 10000;
+        assert(!kshim_input_touch_poll());
+    }
+    assert(EventCount == 1 && Events[0].type == KSHIM_TOUCH_EVENT_PRESS && Events[0].x == 700);
+    assert(FakeNowUs - touched <= 600000U && !FakeGic[SUMMARY].delivered);
+    /* Polling from now on, at the GT911 cadence. */
+    assert(!dev->irq_live && !FakeGic[SUMMARY].requested);
+    gt911_frame(0, 0, 0);
+    FakeNowUs += 11000;
+    assert(!kshim_input_touch_poll() && EventCount == 2 && Events[1].type == KSHIM_TOUCH_EVENT_RELEASE);
+    handoff();
+    assert(!rail_on() && G.rstb_released_with_rail_on && !G.rail_drops_with_rstb_driven_high);
+    free(Fdt);
+    puts("pocket-s2 GT911 lost edge interrupt: ok");
 }
 
 static void pocket_s2_inherited(void)
@@ -727,6 +785,7 @@ int main(int argc, char **argv)
     if (!strcmp(which, "s2")) pocket_s2_cold(true);
     else if (!strcmp(which, "s2-poll")) pocket_s2_cold(false);
     else if (!strcmp(which, "s2-inherited")) pocket_s2_inherited();
+    else if (!strcmp(which, "s2-lostedge")) pocket_s2_lost_edge();
     else if (!strcmp(which, "qrd")) qrd8650_cold();
     else return 2;
     printf("touch_goodix_bus_test %s: ok\n", which);

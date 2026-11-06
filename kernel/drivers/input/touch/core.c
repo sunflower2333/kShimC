@@ -28,6 +28,9 @@
 
 #define TOUCH_STUCK_MS 100U        /* docs/io-stack.md polling fallback */
 #define TOUCH_HINT_PERIOD_MS 10U   /* driver->pending hint rate in IRQ mode */
+/* Edge interrupts leave no level to check: until the first delivery, one
+ * handle pass per period looks for events the interrupt did not announce. */
+#define TOUCH_EDGE_CHECK_MS 250U
 #define TOUCH_PROVISIONAL_RANGE 4096U
 #define TOUCH_MAX_RANGE 65536U
 
@@ -61,8 +64,9 @@ static struct {
     bool irq_tried;
     volatile uint32_t irq_count;
     uint32_t stuck_count;
-    uint64_t stuck_since, hint_at;
+    uint64_t stuck_since, hint_at, edge_check_at;
     bool stuck_armed, hint_armed;
+    uint32_t reports;       /* kshim_touch_report() calls (edge check) */
 } T = {.tlmm = -1};
 
 const struct kshim_touch_dev *kshim_touch_active(void)
@@ -190,6 +194,7 @@ int kshim_touch_report(struct kshim_touch_dev *dev, uint8_t contact_id,
     /* Swap and inversion are the tracker's (tracker_setup()). */
     if (action == KSHIM_TOUCH_CONTACT_MOVE && !dev->tracker.contacts[contact_id].active)
         action = KSHIM_TOUCH_CONTACT_ENTER;
+    ++T.reports;
     return kshim_touch_update(&dev->tracker, contact_id, action, x, y) ? ERROR_INVALID_PARAMETER : 0;
 }
 
@@ -452,6 +457,7 @@ static void irq_start(struct kshim_touch_dev *dev)
     T.irq_tried = true;
     T.irq_count = 0;
     T.stuck_armed = T.hint_armed = false;
+    T.edge_check_at = get_current_time();
     int status = kshim_tlmm_irq_init(dev->fdt);
     if (!status) status = kshim_gpio_irq_request(dev->irq_pin, dev->irq_trigger, touch_irq, dev);
     dev->irq_live = !status;
@@ -519,6 +525,27 @@ static bool irq_stuck(struct kshim_touch_dev *dev)
         return false;
     }
     return now - T.stuck_since >= TOUCH_STUCK_MS && T.irq_count == T.stuck_count;
+#else
+    (void)dev;
+    return false;
+#endif
+}
+
+/* An edge trigger whose interrupt was never delivered since it was
+ * requested: due for a handle pass once per TOUCH_EDGE_CHECK_MS. A
+ * controller that reports (kshim_touch_report) in such a pass had events the
+ * interrupt never announced. A level trigger is covered by irq_stuck(). */
+static bool edge_check_due(struct kshim_touch_dev *dev)
+{
+#if CONFIG_KSHIM_INPUT_IRQ
+    unsigned t = dev->irq_trigger;
+    if (T.irq_count || (t != KSHIM_IRQ_TYPE_EDGE_RISING && t != KSHIM_IRQ_TYPE_EDGE_FALLING &&
+                        t != KSHIM_IRQ_TYPE_EDGE_BOTH))
+        return false;
+    uint64_t now = get_current_time();
+    if (now - T.edge_check_at < TOUCH_EDGE_CHECK_MS) return false;
+    T.edge_check_at = now;
+    return true;
 #else
     (void)dev;
     return false;
@@ -672,6 +699,14 @@ int kshim_touch_framework_poll(void)
             irq_stop(dev);
             printf("Touch: interrupt not delivered, polling\n");
             status = poll_once(dev);
+        } else if (edge_check_due(dev)) {
+            uint32_t seen = T.irq_count, reports = T.reports;
+            status = dev->driver->handle(dev);
+            /* An interrupt taken during the pass proves the line works. */
+            if (!status && T.reports != reports && T.irq_count == seen && !dev->irq_pending) {
+                irq_stop(dev);
+                printf("Touch: edge interrupt not delivered, polling\n");
+            }
         }
     } else {
         status = poll_once(dev);

@@ -219,7 +219,7 @@ SPI segments through, as the real helpers will.
   `kshim_dt_irq`, the reset specifiers, the driver supply tables against
   the case-sensitive properties, the RPMh rail behind them ("ldob14"),
   sizes, pinctrl states and the GT911 `match`.
-- `touch_goodix_bus_test` (s2, s2-inherited, s2-poll, qrd): the whole path
+- `touch_goodix_bus_test` (s2, s2-inherited, s2-poll, s2-lostedge, qrd): the whole path
   from the boot menu's touch callback to the registers, on the committed
   fixtures `tests/fixtures/io/sm8650-ayaneo-pocket-s2.dtb` (with the RFC
   touch node) and `sm8650-qrd.dtb`. Real code: `kernel/core/input.c`
@@ -253,6 +253,13 @@ SPI segments through, as the real helpers will.
     the handoff.
   - s2-poll: no GIC; the GENI engine busy-polls and the framework reads the
     GT911 status at its 10 ms cadence.
+  - s2-lostedge: the TLMM summary is requested but never reaches the CPU
+    (a misrouted summary or a wrong apps-target field would do this). The
+    falling edge latches in the TLMM and leaves no level, so the 100 ms
+    stuck-level check cannot see it; before the framework's edge check this
+    touchscreen never reported. Now the touch is delivered within 250 ms
+    and the framework polls from then on. In s2 the same check reads the
+    status 4 times in 1 s of idling and keeps the working interrupt.
   - qrd: spi4 at 1 MHz mode 0 (divider 20), every Berlin access one CS
     assertion, reset held while ldob14 comes up, the level-low IRQ masked
     with RAW_STATUS_EN off by the handler and released by the event write
