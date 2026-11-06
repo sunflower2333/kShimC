@@ -6,10 +6,17 @@ per-board data paths, the test plan and the licensing rules. The interfaces
 are the headers in `kernel/include/kshim/`. Each header's comment is the
 detailed contract, and this document says how the headers fit together.
 
-Status: interfaces, Kconfig, build hooks and the core orchestration
-(`kernel/core/io.c`) are committed. With every new symbol off (the default),
-the tree builds and behaves as before. No driver is implemented yet, and
-nothing here has run on hardware.
+Status: the interfaces, the core orchestration (`kernel/core/io.c`) and
+every driver below are implemented and merged on `integrate/io-stack`
+(QUP/GENI, I2C, SPI, UART, GPIO/pinctrl, clocks, regulators, PCI with the
+ECAM and Qualcomm hosts, xHCI with the Renesas download, the USB core, hub
+and HID, input injection, the touch framework with FTM4, FTM5, GT911 and
+GT9916). With every new symbol off (the default) the tree builds and behaves
+as before. The host register-model tests and the QEMU suites pass; nothing
+here has run on hardware. Sections 1-3 and 6-7 were the parallel-build
+contract; the per-subsystem docs (`docs/qup.md`, `sm8650.md`, `pci.md`,
+`usb.md`, `usb-hid.md`, `touch.md`, `touch-goodix.md`) describe what was
+built.
 
 ## 1. Layers
 
@@ -202,7 +209,10 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
   PcieLib with a `PcieIoOps` adapter onto kshim_clk, regulator and gpio and
   per-SoC `PcieTargetContext` data, and later shuts the port down with
   `PcieShutdownPort`. The SM8650 pcie1 target data is a kShimC file written
-  from DT and QMP facts (sm8650 owner) and must not edit CrDK.
+  from DT and QMP facts, `kernel/drivers/pci/qcom_sm8650.c` (owned by pci,
+  next to the adapter `qcom_pcielib.c`); CrDK is not edited. Its PIPE and
+  PHY-AUX muxes and the 100 MHz rchng rate go through `kshim_clk_set_parent()`
+  and `kshim_clk_set_rate()` (docs/pci.md).
 - `kshim_pci_init()` runs these steps for each host:
   1. Parse the DT: bus-range, linux,pci-domain, ranges (windows),
      dma-coherent and interrupt-map.
@@ -264,13 +274,16 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
   `probe`, `disconnect` and `service` hooks.
 - xHCI on PCI (`kshim_xhci_pci_register` from `kshim_usb_init`) matches
   class 0x0c0330 and 1912:0014/0015. The Renesas path
-  (`CONFIG_KSHIM_USB_XHCI_RENESAS`) checks for an external ROM and for
-  firmware that is already running, and otherwise loads
-  `renesas_usb_fw.mem` with `kshim_firmware_request()` and downloads it
-  through config space using the raw writes. A controller left running by
-  UEFI (XhciDxe) is taken over: halt, HCRST, new rings. Quiesce halts and
-  resets, and leaves the downloaded firmware in place so the payload can
-  skip its own download.
+  (`CONFIG_KSHIM_USB_XHCI_RENESAS`) uses firmware that is already running
+  or was loaded from an external ROM. Otherwise it takes the image linked in
+  with `CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED` when one is configured, or
+  loads `renesas_usb_fw.mem` with `kshim_firmware_request()` (the vendor
+  firmware directories, then `super/odm` and `vendor_dlkm`, then `persist`
+  and `efisp`; docs/usb.md), and downloads it through config space using the
+  raw writes. A controller left running by UEFI (XhciDxe) is taken over:
+  halt, HCRST, then the interrupt is requested, then new rings and run. Quiesce
+  halts and resets. The downloaded firmware stays for the payload only when
+  the link and the controller's rails were inherited (section 5).
 - DMA (`kshim/dma.h`): aligned, boundary-respecting allocations below an
   address limit, plus sync-for-device/cpu. The pool is cacheable heap with
   maintenance, which is also correct while the MMU is off.
@@ -282,8 +295,11 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
   flags and logical range. Limits: 192 items, 32 reports, Push/Pop depth 4,
   collection depth 8. `kshim_hid_find()` and `kshim_hid_get_value()` read
   values.
-- `kshim_hid_input_*` maps reports to injected input. Key events are edges
-  only, with no auto-repeat. Keys are reported with Linux codes.
+- `kshim_hid_input_*` maps reports to injected input. Keys are reported
+  with Linux codes. Key events are edges, except that a gamepad direction
+  held down repeats after 500 ms and then every 150 ms (`PRESS` with
+  `pressed = 2`, run from the class `service` hook); keyboards, buttons and
+  wheels never repeat (docs/usb-hid.md).
 
   | Source | UP | DOWN | SELECT | BACK | Pointer |
   | --- | --- | --- | --- | --- | --- |
@@ -334,18 +350,24 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
 - Drivers are `const struct kshim_touch_driver` objects, listed in match
   order in `kernel/drivers/input/touch/registry.c`: FTM5, FTM4, GT911,
   GT9916, each under its own `#if`. A driver provides compatibles, bus_mask,
-  the GPIO property overrides (Android `fts,reset-gpio`), its supply names
-  in order, the power and reset delays, priv_size, and the hooks `match`
-  (no I/O), `power_on` (optional override), `probe`, `handle`, `pending`
-  and `quiesce`.
+  the reset convention (`KSHIM_TOUCH_RESET_ASSERTED`, or
+  `KSHIM_TOUCH_RESET_LEVEL` for goodix,gt9xx, where the logical value is the
+  RSTB level), the GPIO property overrides (Android `fts,reset-gpio`), its
+  supply names in order with optional per-supply loads (handed to
+  `kshim_regulator_set_load()`), the power and reset delays, priv_size, and
+  the hooks `match` (no I/O), `power_on` (optional override), `probe`,
+  `handle`, `pending` and `quiesce`.
 - The framework resolves the bus client (I2C address or SPI device), the
   reset and IRQ GPIOs, the TLMM interrupt, the supplies and the
   `touchscreen-*` properties. It runs the common power sequence: reset
   asserted, supplies on, delay, reset released, delay. It then probes,
   takes the interrupt through `kshim_gpio_irq_request` (the handler masks
   and marks pending, and `kshim_input_touch_poll` runs `handle`, then
-  unmasks), and falls back to polling. It applies swap/invert/scale through
-  the existing tracker (`touch.h`, `kshim_touch_report`).
+  unmasks), and falls back to polling. The stuck-line check re-reads the
+  pending flag, so an interrupt taken during the check is not mistaken for
+  a sealed line, and the IRQ GPIO polarity follows the trigger `probe`
+  leaves. It applies swap/invert/scale through the existing tracker
+  (`touch.h`, `kshim_touch_report`).
 - FTM4 and FTM5 share `st,fts`. Their `match` hooks tell them apart by
   property family: FTM5 has `fts,irq-gpio`, FTM4 has `st,irq-gpio`. The
   Android panel selection and `qcom,i2c-touch-active` checks of
@@ -355,12 +377,11 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
   active-high `reset-gpios` against the GT911 sequence.
 - Stop and quiesce are idempotent and are called from
   `kshim_input_quiesce()` (step 1) and `kshim_io_quiesce()`.
-- Migration: with `CONFIG_KSHIM_TOUCH` and no `KSHIM_TOUCH_<chip>`, the
-  legacy FTM5 path keeps working unchanged. The touch-st owner retires it,
-  and moves `kernel/dt/touch.c`, the `CONFIG_KSHIM_TOUCH` block of
-  `kernel/dt/resources.c` and the touch part of `kernel/core/input.c` onto
-  the framework. The injection hooks in `kshim_input_touch_start/poll` must
-  be kept.
+- Migration (done): the legacy FTM5 path is retired. `kernel/dt/touch.c`
+  keeps only the Android board selection (`kshim_touch_dt_selected`) and is
+  built with the ST drivers, like `st_ftm5.c`. `CONFIG_KSHIM_TOUCH` alone is
+  the pointer service (injected HID pointers); the injection hooks in
+  `kshim_input_touch_start/poll` are kept.
 
 ## 4. Boot and handoff order
 
@@ -418,24 +439,38 @@ exception is an RPMh vote whose inherited value could not be observed.
     `gamepad_pwr_en` (GPIO28 output-high) is applied.
   - PHY rails vreg_l3e_0p9, vreg_l3i_1p2 and vreg_l1i_0p88 are needed only
     for a cold init.
-  - The Renesas firmware comes from `renesas_usb_fw.mem` in
-    `super/vendor{slot}/firmware`, unless it already runs because UEFI
-    XhciDxe loaded it.
+  - The Renesas firmware already runs when UEFI XhciDxe loaded it (the
+    expected case). Otherwise it comes from an embedded image (opt-in), or
+    `renesas_usb_fw.mem` in `super/vendor{slot}/firmware`, `super/odm` or
+    `vendor_dlkm`, `persist` or `efisp` (docs/usb.md).
+  - Expected consequence of the handoff contract: when kShimC cold-starts
+    pcie1 (it enabled the TLMM 121/122/123 rails and released PERST#), the
+    handoff asserts PERST# again and returns the rails to their inherited
+    off state. The controller's RAM image is lost and the payload must
+    download the firmware itself (it reads `RENESAS_FW_NEEDED`). Only an
+    inherited link and inherited rails keep a downloaded image.
   - xHCI, then the USB HID gamepad on one of the controller's root ports
     (a hub, if present, is handled by the hub driver), then hid_input:
     hat/stick/buttons become UP/DOWN/SELECT/BACK.
   - Inherit-first applies: UEFI ships XhciDxe/XhciPciEmulationDxe, so the
     link and the controller are probably live at entry.
   - The SMMU stream 0x1481 must be in bypass (risk).
-  - The vendor partition's filesystem must be supported: an EROFS vendor
-    needs `CONFIG_FS_EROFS` (GPL) or an explicit firmware location on
-    ext4/F2FS/FAT. Check this on hardware.
+  - The vendor partition is usually EROFS, which needs the GPL
+    `CONFIG_FS_EROFS` (off). The loader then logs it as unreadable and tries
+    `super/odm`, `vendor_dlkm`, `persist` (ext4) and `efisp` (FAT); with no
+    copy anywhere the probe fails with one log line and the gamepad stays
+    off. Check the partition labels on hardware.
 - **Touch:** from the RFC "add display nodes" patch. `&i2c4` (SE 0xa90000,
   wrapper qupv3_id_0, GCC_QUPV3_WRAP1_S4_CLK) at 400 kHz, then
   `touchscreen@5d` (`goodix,gt911`). IRQ is TLMM 162 falling edge, reset is
   TLMM 161, VDDIO and AVDD28 come from vreg_l14b_3p2, size 1440×2560,
   pinctrl ts_reset_default and ts_irq_default. The node is not in mainline,
-  so the board fixture must add it.
+  so the board fixture adds it (`tests/fixtures/io/sm8650-ayaneo-pocket-s2-rfc-touch.dts`).
+  The GT911 uses the goodix,gt9xx reset convention (logical value = RSTB
+  level, `KSHIM_TOUCH_RESET_LEVEL`): the handoff never pulses the reset of
+  an inherited controller, and after a cold start the RSTB pad is released
+  to its pull-down before the rail drops. The controller's configured INT
+  mode replaces the DT trigger, and the IRQ GPIO polarity follows it.
 - **Keys:** gpio-keys vol+ on pm8550_gpios 6 (active-low, debounce 15), the
   PON power key and pon_resin vol− (existing Qualcomm keys).
 
@@ -452,10 +487,12 @@ exception is an RPMh vote whose inherited value could not be observed.
 - **Touch:** ST FTM4 (`st,fts` with the `st,*` property family) at I2C 0x49
   on qupv3_se13_i2c (SE 0xa94000, wrapper 1 engine 5, 400 kHz, GPIO 36/37
   mux qup13). IRQ is GPIO39 active-low and reset is GPIO38. The rails are
-  RPMh LDOs (ldoa13 AVDD and others). Native size is 1440×2880, flipped on
-  both axes. See `configs/hdk8250-touch-provenance.json`. Android kona DTs
-  carry `qcom,pdc-ranges`. The FTM4 protocol is written from facts; the
-  GPL integration was removed in 6527d06.
+  RPMh LDOs (ldoa13 AVDD and others). The AVDD 20 mA load is passed to
+  `kshim_regulator_set_load()`, which votes ldoa13 HPM (PMIC5 mode 7) from
+  the node's `qcom,mode-threshold-currents`. Native size is 1440×2880,
+  flipped on both axes. See `configs/hdk8250-touch-provenance.json`.
+  Android kona DTs carry `qcom,pdc-ranges`. The FTM4 protocol is written
+  from facts; the GPL integration was removed in 6527d06.
 
 ### Xiaomi Mi MIX 3 5G "andromeda" (SM8150, Android DT `andromeda-fdt.dtb`)
 - **Touch:** ST FTM5 (`st,fts` with `fts,*`) at I2C 0x49 on qupv3_se17_i2c
@@ -487,8 +524,8 @@ merges are additive.
 | Implementer | Owns (create or edit freely) |
 | --- | --- |
 | **qup** | `kernel/drivers/qup/` (wrapper/SE core, `geni_i2c.c`, `geni_spi.c`, `geni_uart.c`), `kernel/dt/qup.c`, `kernel/drivers/i2c/`, `kernel/drivers/spi/`, `kernel/drivers/console.c`, `kernel/drivers/geni_rx_irq.c`, `kernel/include/kshim_console.h` (internal additions only), headers `kshim/qup.h`, `i2c.h`, `spi.h`, `uart.h`, `kernel/drivers/qup/Kconfig`, `cmake/io/qup.cmake`, `ports/crdk/io/qup.cmake`, `tests/io/qup.cmake`, tests `tests/io/qup_*` |
-| **sm8650** | `kernel/drivers/gpio/` (consumer, pinctrl, Kconfig), `kernel/drivers/clk/`, `kernel/drivers/regulator/`, `kernel/soc/` (SM8650 pin, function, clock, RPMh and PCIe1 target tables, plus SM8150/SM8250 adapters over CrAndroidPin/CrAndroidClock), `kernel/dt/gpio.c` (add SM8650 to `kshim_dt_soc`/`kshim_dt_gpio`), the SoC table entry in `kernel/drivers/irqchip/tlmm.c` and `irqchip.h` (`qcom,sm8650-tlmm`), headers `kshim/gpio.h`, `pinctrl.h`, `clk.h`, `regulator.h`, `cmake/io/platform.cmake`, `ports/crdk/io/platform.cmake`, `tests/io/platform.cmake`, new `configs/qrd8650_defconfig`, `configs/pocket_s2_defconfig` (and their provenance JSON), `tests/fixtures/io/sm8650-*` (mainline DTB fixtures, including the Pocket S2 RFC touch node) |
-| **pci** | `kernel/drivers/pci/` (core, ECAM host, Qualcomm host and its PcieLib adapter, DT parsing, journal), `kshim/pci.h`, `kernel/drivers/pci/Kconfig`, `cmake/io/pci.cmake`, `ports/crdk/io/pci.cmake`, `tests/io/pci.cmake`, `tools/test_qemu_pci.py`, optional `configs/qemu_pci_defconfig` |
+| **sm8650** | `kernel/drivers/gpio/` (consumer, pinctrl, Kconfig), `kernel/drivers/clk/`, `kernel/drivers/regulator/`, `kernel/soc/` (SM8650 pin, function, clock, mux, rate and RPMh tables, plus SM8150/SM8250 adapters over CrAndroidPin/CrAndroidClock), `kernel/dt/gpio.c` (add SM8650 to `kshim_dt_soc`/`kshim_dt_gpio`), the SoC table entry in `kernel/drivers/irqchip/tlmm.c` and `irqchip.h` (`qcom,sm8650-tlmm`), headers `kshim/gpio.h`, `pinctrl.h`, `clk.h`, `regulator.h`, `cmake/io/platform.cmake`, `ports/crdk/io/platform.cmake`, `tests/io/platform.cmake`, new `configs/qrd8650_defconfig`, `configs/ayaneo_pocket_s2_defconfig` (and their provenance JSON), `tests/fixtures/io/sm8650-*` (mainline DTB fixtures, including the Pocket S2 RFC touch node) |
+| **pci** | `kernel/drivers/pci/` (core, ECAM host, Qualcomm host and its PcieLib adapter, the SM8650 pcie1 target data `qcom_sm8650.c`, DT parsing, journal), `kshim/pci.h`, `kernel/drivers/pci/Kconfig`, `cmake/io/pci.cmake`, `ports/crdk/io/pci.cmake`, `tests/io/pci.cmake`, `tools/test_qemu_pci.py`, optional `configs/qemu_pci_defconfig` |
 | **xhci** | `kernel/drivers/usb/core/`, `kernel/drivers/usb/host/` (xHCI, xhci-pci, Renesas), `kernel/core/dma.c`, `kshim/usb.h`, `usb_hcd.h`, `dma.h`, `kernel/drivers/usb/Kconfig`, `cmake/io/usb.cmake`, `tests/io/usb.cmake`, `tools/test_qemu_xhci.py`, optional `configs/qemu_xhci_defconfig` |
 | **usbhid** | `kernel/drivers/usb/class/` (hub, HID transport, Kconfig), `kernel/drivers/hid/`, `kernel/core/input_inject.c`, `kshim/usb_class.h`, `hid.h`, `input_inject.h`, `user/ui/lvgl_port.c` and `user/bootmenu/bootmenu.c` (BACK/HOVER handling only), `cmake/io/usbhid.cmake`, `tests/io/usbhid.cmake`, `tools/test_qemu_usb_input.py` (the end-to-end test), `configs/qemu_io_defconfig` |
 | **touch-st** | `kernel/drivers/input/touch/core.c`, `registry.c`, FTM4 and FTM5 drivers, `Kconfig`, `kshim/touch_driver.h`, `kernel/include/touch.h`, `kernel/drivers/touch.c` (tracker), `kernel/include/st_ftm5.h`, `kernel/drivers/st_ftm5.c`, `kernel/dt/touch.c`, the touch part of `kernel/core/input.c` (everything under `CONFIG_KSHIM_TOUCH`, keeping the injection hooks), the `CONFIG_KSHIM_TOUCH` block of `kernel/dt/resources.c`, `kernel/drivers/input_irq.c` and `kernel/include/input_irq.h` (touch queue parts), the touch lines of `configs/andromeda_defconfig` and `configs/hdk8250_defconfig`, `cmake/io/touch.cmake`, `tests/io/touch.cmake`, the existing touch tests |
@@ -543,6 +580,7 @@ lines of andromeda and hdk8250.
 | `KSHIM_USB` | — | usb/Kconfig (xhci) |
 | `KSHIM_USB_XHCI` | USB && PCI | usb/Kconfig (xhci) |
 | `KSHIM_USB_XHCI_RENESAS` (+ string `_FW`, default `renesas_usb_fw.mem`) | USB_XHCI; uses FIRMWARE_LOADER when set | usb/Kconfig (xhci) |
+| `KSHIM_USB_XHCI_RENESAS_FW_EMBED` (string, default empty) | USB_XHCI_RENESAS; a build-time path whose image is linked in and used before any partition (Renesas proprietary firmware: never committed, see section 9) | usb/Kconfig (xhci) |
 | `KSHIM_USB_HUB` | USB | usb/class/Kconfig (usbhid) |
 | `KSHIM_USB_HID` | USB; selects INPUT_INJECT | usb/class/Kconfig (usbhid) |
 | `KSHIM_INPUT_INJECT` (hidden) | selected by USB_HID | usb/class/Kconfig (usbhid) |
@@ -604,9 +642,13 @@ Report exact counts and state plainly what was not run on hardware.
     models (FTM4, FTM5 existing tests kept green, GT911 address select and
     report, GT9916 SPI framing and report).
 - **Firmware matrix.** `tools/build_runtime.py --config configs/<x>_defconfig`
-  for every defconfig. All 7 pass at this commit. New defconfigs join the
-  matrix: qrd8650 and pocket_s2 from sm8650, qemu_io from usbhid. Report
-  only real link failures; the image size is not a concern.
+  for every defconfig. All 7 passed when this contract was written. New
+  defconfigs joined the matrix: `qrd8650` and `ayaneo_pocket_s2` from
+  sm8650, `qemu_io` from usbhid, plus `qemu_pci`, `qemu_xhci` and
+  `qemu_usb`. Report only real link failures; the image size is not a
+  concern. With the I/O stack, andromeda, hdk8250, qrd8650 and
+  ayaneo_pocket_s2 no longer fit the 4 MiB Manifest slot ("kShim runtime
+  exceeds image slot"); that is a packaging decision left open.
 - **QEMU.** `tools/test_qemu_irq.py`, `tools/test_qemu_smp.py`,
   `tests/handoff_qemu.py` and `tests/manifest_qemu.py --runtime
   <qemu_manifest_serial kShimC.bin>` stay green. From a worktree, run a
@@ -656,14 +698,22 @@ Report exact counts and state plainly what was not run on hardware.
 - CrDK is used unmodified through `ports/crdk`: new `CRDK_*` options and
   adapters are fine, but there are no new patches and no commits in
   `lib/CrDK`. A needed CrDK fix is reported as an open issue instead.
-- `renesas_usb_fw.mem` is loaded at runtime from the device's own
-  partitions. It is never committed or embedded.
+- `renesas_usb_fw.mem` is never committed. By default it is loaded at
+  runtime from the device's partitions (or used as UEFI left it running).
+  `CONFIG_KSHIM_USB_XHCI_RENESAS_FW_EMBED` can link a local copy in at build
+  time; a runtime built that way contains Renesas' proprietary firmware and
+  must not be redistributed unless Renesas' terms allow it.
+- The committed DTB test fixtures are binary builds of BSD-3-Clause Linux
+  DTS files; their notices and terms are in
+  `tests/fixtures/io/LICENSE.BSD-3-Clause`, with a `.license` sidecar per
+  blob.
 
 ## 10. Open risks
 
 - The SMMU bypass for PCIe DMA on the Pocket S2 is not programmed by kShimC.
-- The vendor partition filesystem on the Pocket S2 may be EROFS, which is
-  GPL opt-in (affects the Renesas firmware load).
+- The vendor partition filesystem on the Pocket S2 is probably EROFS, which
+  is GPL opt-in and off; the Renesas firmware then has to come from UEFI,
+  `persist`, `efisp` or an embedded build (section 5).
 - QUP and PCIe interconnect (ICC/BCM) votes are assumed inherited. A cold
   QUP SE whose QUP core clock was gated by the BCM cannot be revived.
 - The CrDK GENI FIFO core is synchronous. The IRQ-driven completion relies
@@ -672,5 +722,6 @@ Report exact counts and state plainly what was not run on hardware.
 - SM8650 pinctrl function names, GCC clock offsets and the pcie1 QMP tables
   are new kShimC data. Each table needs recorded provenance and a host
   check.
-- The GT911 reset polarity in the RFC (active-high) contradicts the usual
-  wiring and must be verified.
+- The GT911 reset polarity in the RFC (`GPIO_ACTIVE_HIGH`) matches the
+  goodix,gt9xx convention every mainline goodix,gt911 node uses (logical
+  value = RSTB level); it is still unverified on the Pocket S2.
