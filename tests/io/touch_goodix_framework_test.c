@@ -206,17 +206,97 @@ static void test_pocket_s2(void)
     assert(fake_pin(RESET_PIN)->refs == 0 && !fake_pin(RESET_PIN)->output);
     assert(fake_pin(INT_PIN)->refs == 0 && !fake_pin(INT_PIN)->output);
     assert(!fake_pin_level(RESET_PIN));
-    /* The framework's release() drives the reset GPIO's logical "asserted"
-     * value (true) while the rails drop. Under the goodix,gt9xx convention
-     * (logical value = RSTB level) that is RSTB high: no reset pulse, so a
-     * controller that was inherited keeps its I2C address, but RSTB stays
-     * driven high until the pad is restored right after kShimC drops its
-     * rail vote. Recorded here; see the integration notes. */
-    const char *const order[] = {"gpio161=1", RAIL "=off", "free161", NULL};
+    /* Cold path (kShimC reset and powered it): KSHIM_TOUCH_RESET_LEVEL
+     * turns the RSTB pad into an input before the rail drops, so no high
+     * level is driven into the unpowered chip until the pad restore (with a
+     * pinctrl state, at handoff step 9); RSTB is never driven low either. */
+    const char *const order[] = {"gpio161=in", RAIL "=off", RAIL "=off", "free161", NULL};
     assert(fake_log_order(order));
+    assert(!fake_log_has("gpio161=1") && !fake_log_has("gpio161=0"));
     assert(kshim_touch_quiesce_all() == 0 && FakeTlmmIrq.frees == 1);
     free(fdt);
     printf("touch_goodix_framework_test: pocket-s2 GT911 ok\n");
+}
+
+/* UEFI left the GT911 powered (another l14b user holds the rail), out of
+ * reset and addressed at 0x5d, with RSTB driven high. kShimC inherits it and
+ * the handoff must leave it running at the same address: no reset pulse. */
+static void test_pocket_s2_inherited(void)
+{
+    fake_touch_reset();
+    gt911_model_init();
+    EventCount = 0;
+    void *fdt = load(FIXTURES "/io/sm8650-ayaneo-pocket-s2.dtb");
+    FakePinHook = gt911_pin;
+    FakeI2cDevice = gt911_i2c;
+    fake_pin_input(INT_PIN, true);
+    /* The shared rail is on: a reference held by its other consumer. */
+    int touch = fdt_node_offset_by_compatible(fdt, -1, "goodix,gt911");
+    assert(touch >= 0);
+    struct kshim_regulator *other;
+    assert(!kshim_regulator_get(fdt, touch, "VDDIO", &other) && !kshim_regulator_enable(other));
+    /* RSTB driven high by the previous owner; the chip latched 0x5d. */
+    struct fake_pin *rst = fake_pin(RESET_PIN);
+    rst->output = rst->out_level = true;
+    rst->snapshot_output = rst->snapshot_level = true;
+    G.rstb = true;
+    G.address = 0x5d;
+
+    assert(kshim_touch_framework_start(fdt, 1440, 2560, emit, NULL) == 0);
+    const struct kshim_touch_dev *dev = kshim_touch_active();
+    assert(dev && dev->driver == &kshim_touch_driver_gt911 && dev->probed);
+    assert(G.latches == 0 && G.rstb && dev->i2c.addr == 0x5d);
+    assert(!fake_log_has("gpio161=0"));                /* no reset at start */
+    gt911_frame(1, 0, 10, 20);
+    assert(fake_irq_fire() && kshim_touch_framework_poll() == 0 && EventCount == 1);
+
+    fake_log_clear();
+    assert(kshim_touch_quiesce_all() == 0);
+    /* RSTB never left the high level: the chip still answers at 0x5d. */
+    assert(!fake_log_has("gpio161=0") && !fake_log_has("gpio161=in"));
+    assert(G.rstb && G.address == 0x5d && G.latches == 0);
+    assert(fake_pin(RESET_PIN)->output && fake_pin_level(RESET_PIN));
+    const struct fake_regulator *rail = fake_regulator_named(RAIL);
+    assert(rail && rail->refs == 1);                   /* only the other consumer's */
+    free(fdt);
+    printf("touch_goodix_framework_test: pocket-s2 GT911 inherited ok\n");
+}
+
+/* The GT911 configuration selects rising-edge INT (Module_Switch1 = 0)
+ * while the RFC node says falling: probe switches the trigger, and the IRQ
+ * GPIO's active level must follow, or INT idling low reads as an asserted
+ * level and the 100 ms stuck fallback drops a working interrupt. */
+static void test_pocket_s2_trigger(void)
+{
+    fake_touch_reset();
+    gt911_model_init();
+    uint8_t *config = gt911_reg(0x8047);
+    config[6] = 0x00;
+    uint8_t sum = 0;
+    for (unsigned i = 0; i < 184; ++i) sum = (uint8_t)(sum + config[i]);
+    config[184] = (uint8_t)(0U - sum);
+    EventCount = 0;
+    void *fdt = load(FIXTURES "/io/sm8650-ayaneo-pocket-s2.dtb");
+    FakePinHook = gt911_pin;
+    FakeI2cDevice = gt911_i2c;
+    fake_pin_input(RESET_PIN, false);
+    fake_pin_input(INT_PIN, false);                    /* rising-edge INT idles low */
+
+    assert(kshim_touch_framework_start(fdt, 1440, 2560, emit, NULL) == 0);
+    const struct kshim_touch_dev *dev = kshim_touch_active();
+    assert(dev && dev->irq_trigger == KSHIM_IRQ_TYPE_EDGE_RISING);
+    assert(FakeTlmmIrq.trigger == KSHIM_IRQ_TYPE_EDGE_RISING);
+    assert(dev->has_irq_gpio && !dev->irq_gpio.active_low);
+    for (unsigned i = 0; i < 15; ++i) {
+        assert(kshim_touch_framework_poll() == 0);
+        fake_advance_us(10000);
+    }
+    assert(dev->irq_live && FakeTlmmIrq.requested && !FakeTlmmIrq.frees);
+    gt911_frame(1, 0, 100, 200);
+    assert(fake_irq_fire() && kshim_touch_framework_poll() == 0 && EventCount == 1);
+    assert(kshim_touch_quiesce_all() == 0);
+    free(fdt);
+    printf("touch_goodix_framework_test: pocket-s2 GT911 trigger ok\n");
 }
 
 /* ---- GT9916 model (Berlin SPI) ---------------------------------------------- */
@@ -418,6 +498,8 @@ static void test_qrd8650(void)
 int main(void)
 {
     test_pocket_s2();
+    test_pocket_s2_inherited();
+    test_pocket_s2_trigger();
     test_qrd8650();
     printf("touch_goodix_framework_test: OK\n");
     return 0;

@@ -143,7 +143,11 @@ int kshim_touch_power_supplies(struct kshim_touch_dev *dev, bool on)
 int kshim_touch_set_reset(struct kshim_touch_dev *dev, bool asserted)
 {
     assert(dev->has_reset);
-    bool physical = asserted != dev->reset_gpio.active_low;
+    /* As core.c: "held in reset" through the driver's reset convention,
+     * then the GPIO's DT flags. */
+    bool logical = dev->driver && dev->driver->reset_convention == KSHIM_TOUCH_RESET_LEVEL ?
+                   !asserted : asserted;
+    bool physical = logical != dev->reset_gpio.active_low;
     bool before = fake.reset_driven ? fake.reset_physical : fake.reset_pull_high;
     fake.reset_driven = true;
     fake.reset_physical = physical;

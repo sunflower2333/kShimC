@@ -153,6 +153,7 @@ static void reset(void)
     memset(&S, 0, sizeof(S));
     S.max_x = 4000; S.max_y = 8000;
     DrvA.power_on = NULL;
+    DrvA.reset_convention = KSHIM_TOUCH_RESET_ASSERTED;
     EventCount = 0;
 }
 
@@ -258,6 +259,90 @@ static void test_lifecycle(void)
     assert(!FakeLog[0] && S.quiesces == 1);
     assert(!kshim_touch_framework_poll());
     puts("lifecycle: ok");
+}
+
+/* An interrupt taken between the poll's irq_pending read and its
+ * stuck-line check: the handler's own mask must not read as a sealed line. */
+static unsigned RaceFires;
+static void fire_once(void)
+{
+    if (RaceFires) return;
+    ++RaceFires;
+    assert(fake_irq_fire());
+}
+
+static void test_irq_race(void)
+{
+    reset();
+    const void *f = fresh_dt();
+    S.release_pin = 10;
+    assert(!kshim_touch_framework_start(f, 500, 1000, emit, &EventCount));
+    const struct kshim_touch_dev *dev = kshim_touch_active();
+    assert(dev && dev->irq_live);
+    poll_ok();                                       /* the pass after the request */
+    unsigned handles = S.handles;
+    S.queue[S.queued++] = (struct report){0, KSHIM_TOUCH_CONTACT_ENTER, 100, 200};
+    fake_pin_input(10, false);
+    RaceFires = 0;
+    FakeIrqLiveHook = fire_once;
+    poll_ok();                                       /* irq_pending read false, then the IRQ */
+    FakeIrqLiveHook = NULL;
+    assert(RaceFires == 1 && dev->irq_live && FakeTlmmIrq.requested && !FakeTlmmIrq.frees);
+    assert(dev->irq_pending && FakeTlmmIrq.masked && S.handles == handles);
+    assert(!fake_log_has("irq-free"));
+    poll_ok();                                       /* the deferred work runs next */
+    assert(S.handles == handles + 1 && !FakeTlmmIrq.masked && dev->irq_live && EventCount == 1);
+    puts("irq race: ok");
+}
+
+/* KSHIM_TOUCH_RESET_LEVEL: set_reset maps "held in reset" to logical 0;
+ * stop never drives the reset level. Cold (reset was asserted): the pad
+ * becomes an input before the rails drop. Inherited (never asserted): the
+ * pad is left driven as it was until the restore. */
+static int drv_level_power_on(struct kshim_touch_dev *dev)
+{
+    ++S.power_ons;
+    if (S.use_power_on) {
+        /* inherited running: just keep it out of reset */
+        int status = kshim_touch_power_supplies(dev, true);
+        return status ? status : kshim_touch_set_reset(dev, false);
+    }
+    int status = kshim_touch_set_reset(dev, true);
+    if (!status) status = kshim_touch_power_supplies(dev, true);
+    if (!status) status = kshim_touch_set_reset(dev, false);
+    return status;
+}
+
+static void test_reset_level(void)
+{
+    for (unsigned inherited = 0; inherited < 2; ++inherited) {
+        reset();
+        const void *f = fresh_dt();
+        DrvA.power_on = drv_level_power_on;
+        DrvA.reset_convention = KSHIM_TOUCH_RESET_LEVEL;
+        S.use_power_on = inherited;
+        fake_pin_input(11, false);
+        assert(!kshim_touch_framework_start(f, 500, 1000, emit, &EventCount));
+        const struct kshim_touch_dev *dev = kshim_touch_active();
+        /* touch@10's reset GPIO is active low: logical 1 (running) = pad low. */
+        assert(dev && dev->reset_gpio.active_low);
+        static const char *const cold_on[] = {"gpio11=1", "vreg_a=on", "gpio11=0", "probe:a", NULL};
+        static const char *const warm_on[] = {"vreg_a=on", "gpio11=0", "probe:a", NULL};
+        assert(fake_log_order(inherited ? warm_on : cold_on));
+        assert(inherited || fake_log_count("gpio11=1") == 1);
+        fake_log_clear();
+        assert(!kshim_touch_quiesce_all());
+        assert(!fake_log_has("gpio11=1"));           /* never held in reset at stop */
+        if (inherited) {
+            assert(!fake_log_has("gpio11=in"));
+        } else {
+            static const char *const stop[] = {"quiesce", "gpio11=in", "vreg_b=off", "vreg_a=off",
+                "free11", NULL};
+            assert(fake_log_order(stop));
+        }
+        DrvA.reset_convention = KSHIM_TOUCH_RESET_ASSERTED;
+    }
+    puts("reset level convention: ok");
 }
 
 /* touchscreen.yaml: invert in controller space, then swap. */
@@ -478,6 +563,8 @@ int main(void)
 {
     load_fixture();
     test_lifecycle();
+    test_irq_race();
+    test_reset_level();
     test_transform();
     test_android_style();
     test_selection();

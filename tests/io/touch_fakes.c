@@ -431,8 +431,11 @@ void kshim_gpio_irq_mask(uint32_t pin, bool masked)
     if (masked) ++q->masks; else ++q->unmasks;
 }
 
+void (*FakeIrqLiveHook)(void);
+
 bool kshim_gpio_irq_live(uint32_t pin)
 {
+    if (FakeIrqLiveHook) FakeIrqLiveHook();
     struct fake_tlmm_irq *q = &FakeTlmmIrq;
     return q->requested && q->pin == pin && !q->masked && !q->sealed;
 }
@@ -467,6 +470,7 @@ void fake_touch_reset(void)
     FakeSpiDevice = NULL;
 #if TOUCH_FAKE_TLMM
     memset(&FakeTlmmIrq, 0, sizeof(FakeTlmmIrq));
+    FakeIrqLiveHook = NULL;
     FakeIrqReady = true;
 #endif
 }

@@ -69,10 +69,13 @@
  *     if it fails and a reset GPIO exists, holding reset for
  *     power_on_delay_us stops the controller instead, otherwise the error
  *     is returned and the next call retries), cancel the active contact,
- *     reset asserted, supplies disabled newest first (back to the inherited
- *     state), IRQ and reset GPIOs freed (the GPIO registry restores their
- *     snapshots, so reset ends as it was found). Idempotent;
- *     kshim_input_quiesce() (step 1) and kshim_io_quiesce() both call it.
+ *     reset asserted (KSHIM_TOUCH_RESET_LEVEL: see that enum; never driven
+ *     to the reset level), supplies disabled newest first (back to the
+ *     inherited state), IRQ and reset GPIOs freed (the GPIO registry
+ *     restores their snapshots, so reset ends as it was found; a pad that
+ *     also has a pinctrl state is restored with the pinctrl snapshots at
+ *     handoff). Idempotent; kshim_input_quiesce() (step 1) and
+ *     kshim_io_quiesce() both call it.
  *
  * Return codes: 0 or a positive ERROR_ or KSHIM_IO_ERR_ code (kshim/io.h); a driver
  * wrapping legacy negative-errno code converts at its boundary.
@@ -102,10 +105,25 @@ struct kshim_touch_props {
     bool swap_xy, invert_x, invert_y;
 };
 
+/* Meaning of the reset GPIO's logical value (driver->reset_convention). */
+enum kshim_touch_reset_convention {
+    /* Generic *-reset-gpios: logical 1 = held in reset (the DT flags give
+     * the physical level). Stop asserts reset while the rails go down. */
+    KSHIM_TOUCH_RESET_ASSERTED = 0,
+    /* goodix,gt9xx: the logical value is the RSTB level, 0 = held in reset
+     * (all mainline goodix,gt911 nodes write GPIO_ACTIVE_HIGH).
+     * kshim_touch_set_reset(dev, asserted) drives the logical !asserted.
+     * Stop never drives RSTB low: a controller kShimC never held in reset
+     * (inherited running) keeps RSTB as it was; one kShimC reset and powered
+     * itself has its RSTB pad turned into an input before the rails drop. */
+    KSHIM_TOUCH_RESET_LEVEL,
+};
+
 struct kshim_touch_driver {
     const char *name;
     const char *const *compatibles;     /* NULL-terminated */
     unsigned bus_mask;                  /* KSHIM_TOUCH_BUS_* */
+    unsigned reset_convention;          /* enum kshim_touch_reset_convention */
     /* Optional overrides of the GPIO property names (NULL-terminated lists,
      * first present wins); NULL = the generic names. */
     const char *const *reset_gpio_names;
@@ -183,7 +201,8 @@ int kshim_touch_i2c_write_read(struct kshim_touch_dev *dev, const void *tx, size
 int kshim_touch_spi_sync(struct kshim_touch_dev *dev, const struct kshim_spi_xfer *xfers,
                          size_t count);
 
-/* Power-sequence building blocks for driver->power_on. */
+/* Power-sequence building blocks for driver->power_on. set_reset takes
+ * "held in reset" and maps it through driver->reset_convention. */
 int kshim_touch_power_supplies(struct kshim_touch_dev *dev, bool on);
 int kshim_touch_set_reset(struct kshim_touch_dev *dev, bool asserted);
 /* Drive / release the IRQ GPIO before the interrupt is requested. */

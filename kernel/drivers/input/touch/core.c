@@ -55,6 +55,7 @@ static struct {
     bool active;            /* Dev powered and probed */
     bool failed;            /* a handle error disabled event processing */
     bool reset_held, irq_gpio_held;
+    bool reset_asserted;    /* kShimC held the controller in reset at some point */
     uint8_t supplies_on;    /* bit i: supplies[i] enabled by us */
     int tlmm;               /* TLMM node of the interrupt, or -1 */
     bool irq_tried;
@@ -132,6 +133,11 @@ int kshim_touch_power_supplies(struct kshim_touch_dev *dev, bool on)
     return first;
 }
 
+static bool reset_is_level(const struct kshim_touch_dev *dev)
+{
+    return dev->driver && dev->driver->reset_convention == KSHIM_TOUCH_RESET_LEVEL;
+}
+
 int kshim_touch_set_reset(struct kshim_touch_dev *dev, bool asserted)
 {
     if (!dev) return ERROR_INVALID_PARAMETER;
@@ -141,7 +147,10 @@ int kshim_touch_set_reset(struct kshim_touch_dev *dev, bool asserted)
         if (status) return status;
         T.reset_held = true;
     }
-    return kshim_gpio_direction_output(&dev->reset_gpio, asserted);
+    if (asserted) T.reset_asserted = true;
+    /* KSHIM_TOUCH_RESET_LEVEL (goodix,gt9xx): the logical value is the RSTB
+     * level, so "held in reset" is logical 0. */
+    return kshim_gpio_direction_output(&dev->reset_gpio, reset_is_level(dev) ? !asserted : asserted);
 }
 
 static int irq_gpio_hold(struct kshim_touch_dev *dev)
@@ -384,11 +393,25 @@ static int power_on(struct kshim_touch_dev *dev)
 }
 
 /* Back to the inherited state: reset asserted while the rails go down, then
- * the GPIO registry restores both pins (reset ends as it was found). */
+ * the GPIO registry restores both pins (reset ends as it was found).
+ *
+ * KSHIM_TOUCH_RESET_LEVEL (goodix,gt9xx) differs. A controller kShimC never
+ * held in reset was inherited running: RSTB stays as it is (high), so the
+ * payload finds it running at the address it had, with no reset pulse. A
+ * controller kShimC powered and reset itself (cold path) has RSTB driven
+ * high; the pad goes to an input before the rails drop, so no high level is
+ * driven into an unpowered chip until the registry restores the pad (with a
+ * pinctrl state that is only at handoff step 9, after the rails); the
+ * pinctrl bias holds it meanwhile. RSTB is never driven low here. */
 static int release(struct kshim_touch_dev *dev)
 {
     int first = 0, status;
-    if (T.reset_held) (void)kshim_gpio_direction_output(&dev->reset_gpio, true);
+    if (T.reset_held) {
+        if (!reset_is_level(dev))
+            (void)kshim_gpio_direction_output(&dev->reset_gpio, true);
+        else if (T.reset_asserted)
+            (void)kshim_gpio_direction_input(&dev->reset_gpio, KSHIM_GPIO_PULL_KEEP);
+    }
     if ((status = kshim_touch_power_supplies(dev, false)) && !first) first = status;
     if (T.irq_gpio_held) {
         if ((status = kshim_gpio_free(&dev->irq_gpio)) && !first) first = status;
@@ -510,7 +533,7 @@ static void dev_reset(struct kshim_touch_dev *dev, const struct kshim_touch_driv
     dev->max_contacts = KSHIM_TOUCH_MAX_CONTACTS;
     unsigned mask = drv->bus_mask & (KSHIM_TOUCH_BUS_I2C | KSHIM_TOUCH_BUS_SPI);
     dev->bus = mask == KSHIM_TOUCH_BUS_I2C || mask == KSHIM_TOUCH_BUS_SPI ? mask : 0;
-    T.reset_held = T.irq_gpio_held = false;
+    T.reset_held = T.irq_gpio_held = T.reset_asserted = false;
     T.supplies_on = 0;
 }
 
@@ -561,6 +584,12 @@ static int try_node(const struct kshim_touch_driver *drv, const void *fdt, int n
         if (!status) status = tracker_setup(dev, false);
         if (status && drv->quiesce) (void)drv->quiesce(dev);
     }
+    /* probe may replace the trigger with the controller's own INT mode
+     * (GT911 Module_Switch1). The IRQ GPIO's active level follows it as in
+     * step 4, or the idle level would read as asserted and the stuck-level
+     * fallback would drop a working interrupt. */
+    if (!status && dev->has_irq && dev->has_irq_gpio && dev->irq_trigger != TRIGGER_NONE)
+        dev->irq_gpio.active_low = trigger_active_low(dev->irq_trigger);
     if (status) {
         (void)release(dev);
         printf("Touch: %s %s: %s\n", drv->name, node_name(dev), kshim_io_strerror(status));
@@ -629,7 +658,11 @@ int kshim_touch_framework_poll(void)
 #if CONFIG_KSHIM_INPUT_IRQ
             if (!status) kshim_gpio_irq_mask(dev->irq_pin, false);
 #endif
-        } else if (irq_stuck(dev)) {
+        } else if (irq_stuck(dev) && !dev->irq_pending) {
+            /* irq_pending is read again: an interrupt taken between the
+             * first read and irq_stuck() masked the pin, which
+             * kshim_gpio_irq_live() reports like a sealed line. The handler
+             * runs on this CPU, so both of its writes are visible here. */
             irq_stop(dev);
             printf("Touch: interrupt not delivered, polling\n");
             status = poll_once(dev);

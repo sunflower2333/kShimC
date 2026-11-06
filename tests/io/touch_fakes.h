@@ -91,6 +91,9 @@ struct fake_tlmm_irq {
     int fail;
 };
 extern struct fake_tlmm_irq FakeTlmmIrq;
+/* Runs at the start of kshim_gpio_irq_live() (an interrupt taken between
+ * the framework's reads). */
+extern void (*FakeIrqLiveHook)(void);
 /* Deliver the interrupt if requested and unmasked; bus access asserts. */
 bool fake_irq_fire(void);
 #endif

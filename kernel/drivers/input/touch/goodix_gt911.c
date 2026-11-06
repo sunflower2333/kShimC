@@ -102,11 +102,12 @@ static int gt911_write_u8(struct kshim_touch_dev *dev, uint16_t reg, uint8_t val
 }
 
 /* RSTB level. Per the goodix,gt9xx binding convention (file header) the
- * reset GPIO's logical value is the RSTB level, and the framework helper
- * drives the logical value: "asserted" == RSTB high == running. */
+ * reset GPIO's logical value is the RSTB level; the driver declares
+ * KSHIM_TOUCH_RESET_LEVEL, so the framework maps "held in reset" to RSTB
+ * low and its stop never pulses the reset of an inherited controller. */
 static int gt911_rstb(struct kshim_touch_dev *dev, bool high)
 {
-    return dev->has_reset ? kshim_touch_set_reset(dev, high) : 0;
+    return dev->has_reset ? kshim_touch_set_reset(dev, !high) : 0;
 }
 
 /* Answers at its DT address with a product ID: the previous bootloader left
@@ -267,7 +268,8 @@ static int gt911_probe(struct kshim_touch_dev *dev)
         dev->max_contacts = (uint8_t)(points && points <= GT911_MAX_POINTS ? points
                                                                           : GT911_DEFAULT_POINTS);
         unsigned trigger = gt911_trigger(config[GT911_CFG_SWITCH1]);
-        /* The INT waveform is whatever the chip's configuration says. */
+        /* The INT waveform is whatever the chip's configuration says. The
+         * framework re-derives the IRQ GPIO's active level from it. */
         if (dev->has_irq && dev->irq_trigger != trigger) {
             printf("GT911: DT IRQ type %u, controller configured for %u: using %u\n",
                    dev->irq_trigger, trigger, trigger);
@@ -370,6 +372,7 @@ const struct kshim_touch_driver kshim_touch_driver_gt911 = {
     .name = "Goodix GT911",
     .compatibles = gt911_compatibles,
     .bus_mask = KSHIM_TOUCH_BUS_I2C,
+    .reset_convention = KSHIM_TOUCH_RESET_LEVEL,
     .supplies = gt911_supplies,
     .priv_size = sizeof(struct gt911),
     .match = gt911_match,
