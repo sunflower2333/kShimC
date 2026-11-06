@@ -1,0 +1,64 @@
+Compiled Linux device trees in tests/fixtures/io
+================================================
+
+The following test fixtures are binary (DTB) builds of BSD-3-Clause device
+tree sources from Linux arch/arm64/boot/dts/qcom, revision
+40288c9206c17eb66a603262e06a58d300d0f279 (how each was built: README.md in
+the fixture's directory):
+
+  tests/fixtures/io/sm8650-qrd.dtb
+  tests/fixtures/io/sm8650-ayaneo-pocket-s2.dtb   (plus the MIT RFC touch node
+                                                   of sm8650-ayaneo-pocket-s2-rfc-touch.dts)
+  tests/fixtures/io/qup/sm8250-hdk.dtb
+  tests/fixtures/io/qup/sm8150-hdk.dtb
+  tests/fixtures/io/goodix/sm8650-qrd.dtb
+  tests/fixtures/io/goodix/sm8650-ayaneo-pocket-s2.dtb
+
+Each blob has a REUSE-style "<file>.license" sidecar naming its licence.
+The rest of kShimC is MIT (LICENSE at the top of the tree). The compiled
+sources and their copyright notices:
+
+  sm8650.dtsi, sm8650-qrd.dts               Copyright (c) 2023, Linaro Limited
+  sm8650-ayaneo-pocket-s2.dts               Copyright (c) 2023, Linaro Limited
+                                            Copyright (c) 2025, Kancy Joe <kancy2333@outlook.com>
+  pm8010.dtsi, pm8550.dtsi, pm8550b.dtsi,
+  pm8550ve.dtsi, pm8550vs.dtsi,
+  pmk8550.dtsi, pmr735d_a.dtsi              Copyright (c) 2022, Linaro Limited
+  sm8250.dtsi, sm8250-hdk.dts,
+  sm8150-hdk.dts                            Copyright (c) 2020, The Linux Foundation. All rights reserved.
+  sm8150.dtsi, pm8150.dtsi, pm8150b.dtsi,
+  pm8150l.dtsi                              Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+                                            Copyright (c) 2019, Linaro Limited
+
+The include/dt-bindings headers the preprocessor used contribute only
+numeric constants (clock, reset, interrupt and GPIO IDs) to the blobs; no
+header text is contained in them.
+
+All of the sources above carry SPDX-License-Identifier: BSD-3-Clause, whose
+terms follow:
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from this
+   software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.

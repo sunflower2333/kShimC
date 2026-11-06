@@ -316,9 +316,9 @@ static void test_map_resources(const void *f)
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
-    void *s2 = qup_load_fixture(QUP_FIXTURES, "sm8650-ayaneo-pocket-s2-touch.dtb");
+    void *s2 = qup_load_fixture(IO_FIXTURES, "sm8650-ayaneo-pocket-s2.dtb");
     void *andromeda = qup_load_fixture(FIXTURES, "andromeda-fdt.dtb");
-    Other = qup_load_fixture(QUP_FIXTURES, "sm8650-qrd.dtb");
+    Other = qup_load_fixture(IO_FIXTURES, "sm8650-qrd.dtb");
     test_registry(s2, andromeda);
     test_acquire(s2);
     test_irq_and_quiesce(s2);

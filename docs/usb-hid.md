@@ -80,6 +80,15 @@ controllers copy them. Their fixed 20-byte input report is mapped as follows:
 No start, LED or rumble command is sent. Xbox One (GIP, 0xff/0x47/0xd0) pads
 need a start command and are not handled.
 
+Provenance: the interface triples and the 20-byte layout are facts from
+Linux `drivers/input/joystick/xpad.c` (GPL-2.0-or-later) at
+`40288c9206c17eb66a603262e06a58d300d0f279` (sha256 `92d10718...8bf200`):
+`XPAD_XBOX360_VENDOR_PROTOCOL` (0xff/93/1), `XPAD_XBOXONE_VENDOR_PROTOCOL`
+(0xff/71/208) and the byte and bit positions read by
+`xpad360_process_packet`. No xpad code was used. kShimC feeds an equivalent
+HID report descriptor to its own parser, which is unrelated to xpad's
+structure.
+
 ## Core ownership
 
 The USB core is the xhci implementer's `kernel/drivers/usb/core/` (`core.c`,

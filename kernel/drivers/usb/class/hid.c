@@ -25,6 +25,16 @@
  * HID convention (positive down). No initialisation or rumble/LED output
  * is sent; controllers that need a start command (Xbox One GIP, class
  * 0xff/0x47/0xd0) are not handled.
+ *
+ * Provenance of the XInput facts (the interface triples and the 20-byte
+ * layout): Linux drivers/input/joystick/xpad.c (GPL-2.0-or-later) at
+ * 40288c9206c17eb66a603262e06a58d300d0f279, sha256 92d10718912544a5360eb7e3
+ * c12b12bc151b0070621f478bcf0b787dbd8bf200: XPAD_XBOX360_VENDOR_PROTOCOL
+ * (class 0xff, subclass 93 = 0x5d, wired protocol 1),
+ * XPAD_XBOXONE_VENDOR_PROTOCOL (subclass 71 = 0x47, protocol 208 = 0xd0) and
+ * the byte/bit positions xpad360_process_packet reads. Facts only: no xpad
+ * code was used; kShimC describes the layout as a HID report descriptor for
+ * its own parser.
  */
 #include <kshim/usb.h>
 #include <kshim/usb_class.h>

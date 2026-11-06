@@ -1,7 +1,9 @@
 # Goodix touch fixtures
 
 Used by `tests/io/touch_goodix_dt_test.c` (owner: touch-goodix). The DTB
-sources are BSD-3-Clause Linux DTS files; the blobs are build products.
+sources are BSD-3-Clause Linux DTS files; the blobs are build products. The
+copyright notices, conditions and disclaimer that come with them are in
+`../LICENSE.BSD-3-Clause`, and each blob has a `.license` sidecar.
 
 | File | What | sha256 |
 | --- | --- | --- |
@@ -48,6 +50,6 @@ dtc -@ -I dts -O dtb -o pocket-s2-touch.dtbo pocket-s2-touch.dtso
 fdtoverlay -i sm8650-ayaneo-pocket-s2.dtb -o pocket-s2+touch.dtb pocket-s2-touch.dtbo
 ```
 
-The sm8650 implementer owns `tests/fixtures/io/sm8650-*`. These copies keep
-the Goodix tests independent of that branch. After both merge, the Goodix
-test can switch to those fixtures if they are built with `-@`.
+These two blobs are not duplicates of `../sm8650-*.dtb`: they are built
+with `-@` (`__symbols__` for the overlay), and the Pocket S2 one is pure
+mainline, without the RFC touch node the shared fixture already contains.

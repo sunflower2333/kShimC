@@ -27,3 +27,16 @@ reset polarity is unverified on hardware.
 
 Neither blob is a hardware capture: `memory@a0000000` has a zero size (the
 bootloader fills it) and nothing here proves board wiring.
+
+## Licence of the compiled blobs
+
+The DTBs here and in `qup/` and `goodix/` are binary builds of BSD-3-Clause
+Linux DTS files. `LICENSE.BSD-3-Clause` reproduces the copyright notices,
+the conditions and the disclaimer that a binary redistribution must carry,
+and lists the covered blobs; each blob has a REUSE-style `<file>.license`
+sidecar. `sm8650-ayaneo-pocket-s2.dtb` also contains the RFC touch node
+restated in the MIT `sm8650-ayaneo-pocket-s2-rfc-touch.dts`.
+
+The QUP tests use the two SM8650 blobs here; their former byte-identical
+copies under `qup/` were removed.
+

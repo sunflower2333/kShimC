@@ -231,7 +231,7 @@ static void test_kona(void)
 
 static void test_sm8650_qrd(void)
 {
-    const void *f = load(QUP_FIXTURES, "sm8650-qrd.dtb");
+    const void *f = load(IO_FIXTURES, "sm8650-qrd.dtb");
     discover(f, "sm8650-qrd");
     /* &spi4 is enabled for the GT9916, &i2c4 shares its window. */
     const struct kshim_qup_se *se4 = window(0xa90000);
@@ -266,7 +266,7 @@ static void test_sm8650_qrd(void)
 
 static void test_pocket_s2(void)
 {
-    const void *f = load(QUP_FIXTURES, "sm8650-ayaneo-pocket-s2-touch.dtb");
+    const void *f = load(IO_FIXTURES, "sm8650-ayaneo-pocket-s2.dtb");
     discover(f, "pocket-s2");
     const struct kshim_qup_se *se4 = window(0xa90000);
     assert(se4 && se4->dt_protocol == KSHIM_QUP_PROTOCOL_I2C && node_count(se4) == 2);

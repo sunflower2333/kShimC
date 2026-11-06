@@ -36,7 +36,7 @@ static uint32_t clk_cfg(uint32_t divisor) { return (divisor << 4) | GENI_SE_SER_
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
-    void *qrd = qup_load_fixture(QUP_FIXTURES, "sm8650-qrd.dtb");
+    void *qrd = qup_load_fixture(IO_FIXTURES, "sm8650-qrd.dtb");
     int spi4 = node_named(qrd, "/soc@0/geniqup@ac0000/spi@a90000");
     int ts = node_named(qrd, "/soc@0/geniqup@ac0000/spi@a90000/touchscreen@0");
 

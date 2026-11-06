@@ -224,7 +224,7 @@ static void test_quiesce(void)
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
-    void *s2 = qup_load_fixture(QUP_FIXTURES, "sm8650-ayaneo-pocket-s2-touch.dtb");
+    void *s2 = qup_load_fixture(IO_FIXTURES, "sm8650-ayaneo-pocket-s2.dtb");
     void *andromeda = qup_load_fixture(FIXTURES, "andromeda-fdt.dtb");
     S2 = s2;
     I2c4Node = node_named(s2, "/soc@0/geniqup@ac0000/i2c@a90000");

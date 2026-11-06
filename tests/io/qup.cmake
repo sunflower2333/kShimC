@@ -15,6 +15,7 @@ add_custom_target(qup_fixtures DEPENDS ${QUP_GENERATED_DIR}/kona-qup.dtb)
 set(QUP_TEST_DEFINITIONS
     "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
     "QUP_FIXTURES=\"${QUP_FIXTURE_DIR}\""
+    "IO_FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures/io\""
     "QUP_GENERATED=\"${QUP_GENERATED_DIR}\"")
 set(QUP_CORE_SOURCES io/qup_fakes.c ${KSHIM_IRQCHIP_SOURCES}
     "${KSHIM_ROOT}/kernel/dt/qup.c" "${KSHIM_ROOT}/kernel/drivers/qup/qup.c"
