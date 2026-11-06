@@ -139,10 +139,24 @@ int kshim_clk_get_reset(const void *f, int consumer, const char *name, struct ks
     *r = clk_entry(consumer, key);
     return 0;
 }
+/* GCC muxes by name: the PIPE and PHY AUX muxes (source field, 2 = XO
+ * after a clean shutdown, as Linux clk-regmap-phy-mux parks it). */
+static struct kshim_clk PipeMux = {-1, "pipe_mux", false, false, 0};
+static struct kshim_clk AuxMux = {-1, "aux_mux", false, false, 0};
+static uint32_t PipeMuxSrc = 2, AuxMuxSrc = 2;
 int kshim_clk_get_by_name(const char *controller, const char *name, struct kshim_clk **clk)
 {
-    (void)controller; (void)name; (void)clk;
+    if (!strcmp(controller, "gcc") && !strcmp(name, "gcc_pcie_1_pipe_clk_src")) { *clk = &PipeMux; return 0; }
+    if (!strcmp(controller, "gcc") && !strcmp(name, "gcc_pcie_1_phy_aux_clk_src")) { *clk = &AuxMux; return 0; }
     return ERROR_NOT_SUPPORTED;
+}
+int kshim_clk_set_parent(struct kshim_clk *mux, uint32_t source)
+{
+    assert(mux == &PipeMux || mux == &AuxMux);
+    uint32_t *src = mux == &PipeMux ? &PipeMuxSrc : &AuxMuxSrc;
+    event("%s=%u", mux->name, source);
+    *src = source;
+    return 0;
 }
 bool kshim_clk_is_on(const struct kshim_clk *clk) { return clk->on; }
 int kshim_clk_enable(struct kshim_clk *clk)
@@ -165,10 +179,10 @@ int kshim_clk_reset(struct kshim_clk *r, bool asserted)
     event("%s %s.%s", asserted ? "assert" : "deassert", short_node(r->node), r->name + 4);
     return 0;
 }
-int kshim_clk_set_rate_cxo(struct kshim_clk *clk, uint8_t *dfs)
+int kshim_clk_set_rate(struct kshim_clk *clk, uint32_t hz)
 {
-    *dfs = 0;
-    event("cxo %s.%s", short_node(clk->node), clk->name);
+    if (hz == 19200000U) event("cxo %s.%s", short_node(clk->node), clk->name);
+    else event("rate %s.%s %u", short_node(clk->node), clk->name, (unsigned)hz);
     return 0;
 }
 
@@ -476,6 +490,16 @@ int main(void)
         int pipe = first("on phy.pipe");
         assert(pipe > first("on phy.rchng") && first("deassert phy.phy_nocsr") > pipe);
         assert(perst_off > pipe);
+        /* rchng at the DT's 100 MHz before its gate (CXO cannot give it). */
+        int rchng = first("rate phy.rchng 100000000");
+        assert(rchng >= 0 && rchng < first("on phy.rchng"));
+        /* PIPE mux on the PHY output once the GDSCs are up, before the
+         * PIPE gate; AUX mux on XO before the halt-checked PHY aux gate and
+         * on the PHY output once the PHY reports ready (after PCS start). */
+        int pipe_phy = first("pipe_mux=0"), aux_ref = first("aux_mux=2"), aux_phy = first("aux_mux=0");
+        assert(pipe_phy > pgdsc && pipe_phy < pipe);
+        assert(aux_ref >= 0 && aux_ref < first("on phy.aux") && aux_phy > first("on phy.aux"));
+        assert(aux_phy > pipe && PipeMuxSrc == 0 && AuxMuxSrc == 0);
         /* QMP tables: serdes, both lanes of TX/RX, PCS, PCS misc, lane shared. */
         assert(get(Phy, 0x1000, 4) == 0x26);            /* SSC_STEP_SIZE1_MODE1 */
         assert(get(Phy, 0x0000 + 0x34, 4) == get(Phy, 0x0800 + 0x34, 4));
@@ -507,6 +531,12 @@ int main(void)
         assert(last("off ctl.gdsc") > last("off ctl.aux"));
         assert(last("gpio- 97") > last("perst=1"));
         assert(last("rail- vdda-phy") > last("perst=1"));
+        /* Both muxes back on XO: PIPE after its gate stopped, AUX before the
+         * PHY gates and GDSC go (the clock layer then restores the
+         * inherited values with its own snapshot). */
+        assert(PipeMuxSrc == 2 && AuxMuxSrc == 2);
+        assert(last("pipe_mux=2") > last("off phy.pipe"));
+        assert(last("aux_mux=2") < last("off phy.aux") && last("aux_mux=2") < last("off phy.gdsc"));
     }
     assert(!kshim_pci_quiesce());
     printf("pci_qcom_test scenario %d: ok\n", SCENARIO);

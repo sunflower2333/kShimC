@@ -4,8 +4,9 @@
  * vote clocks wait for CLK_OFF, inherited running branches are never
  * written, reference counts, the votable pcie_1_gdsc, BCR resets, CXO
  * selection on a plain RCG and on a DFS RCG, a timeout that undoes its
- * write, and restore newest first. "kona": the SM8250 Android table
- * (CrAndroidClock) through the same API.
+ * write, and restore newest first; the PCIe1 PIPE and PHY-AUX muxes and
+ * the rchng 100 MHz rate row (GPLL0_OUT_EVEN verified running or refused).
+ * "kona": the SM8250 Android table (CrAndroidClock) through the same API.
  */
 #include "platform_fake.h"
 
@@ -21,6 +22,13 @@
 #define GDSC_VOTE (GCC + 0x5214c)
 #define GDSCR (GCC + 0x8d004)
 #define BCR (GCC + 0x8d000)
+#define PIPE_MUX (GCC + 0x8d078)
+#define AUX_MUX (GCC + 0x8d094)
+#define RCHNG_CBCR (GCC + 0x8d05c)
+#define RCHNG_RCG (GCC + 0x8d060)
+#define GPLL0_VOTE (GCC + 0x52020)
+#define GPLL0_MODE (GCC + 0x0)
+#define GPLL0_USER (GCC + 0x18)
 
 static bool Responsive = true;
 
@@ -34,9 +42,71 @@ static void gcc_model(uintptr_t a, uint32_t v)
         fake_poke(AHB_M_CBCR, (v & (1U << 20)) ? 0 : 1U << 31);
     } else if (a == GDSC_VOTE) {
         fake_poke(GDSCR, (v & 2U) ? 0 : 1U << 31);
-    } else if (a == S4_RCG && (v & 1U)) {
-        fake_poke(S4_RCG, v & ~1U);
+    } else if ((a == S4_RCG || a == RCHNG_RCG) && (v & 1U)) {
+        fake_poke(a, v & ~1U);
     }
+}
+
+/* PCIe1 cold-path clock facts: muxes and the rchng rate. */
+static void sm8650_pcie_muxes(const void *f)
+{
+    struct kshim_clk *pipe_mux, *aux_mux, *rchng, *pipe;
+    assert(!kshim_clk_get_by_name("gcc", "gcc_pcie_1_pipe_clk_src", &pipe_mux));
+    assert(!kshim_clk_get_by_name("gcc", "gcc_pcie_1_phy_aux_clk_src", &aux_mux));
+    const struct kshim_clk_desc *d = kshim_clk_desc(pipe_mux);
+    assert(d->kind == KSHIM_CLK_MUX && d->enable_reg == PIPE_MUX && d->enable_mask == 3U);
+    assert(kshim_clk_desc(aux_mux)->enable_reg == AUX_MUX);
+    int phy = fake_path(f, "/soc@0/phy@1c0e000");
+    assert(!kshim_clk_get(f, phy, "rchng", &rchng) && kshim_clk_desc(rchng)->rcg == RCHNG_RCG);
+    assert(!kshim_clk_get(f, phy, "pipe", &pipe));
+    struct kshim_clk *rchng_rcg;
+    assert(kshim_clk_get_by_name("gcc", "gcc_pcie_1_phy_rchng_clk_src", &rchng_rcg) == ERROR_NOT_SUPPORTED);
+
+    /* A clean shutdown left both muxes on XO (2) and the RCG parked on XO. */
+    fake_poke(PIPE_MUX, 0x2);
+    fake_poke(AUX_MUX, 0x10 | 0x2);          /* unrelated bits are kept */
+    fake_poke(RCHNG_CBCR, 1U << 31);
+    fake_poke(RCHNG_RCG + 4, 0);
+    uint32_t src = 9;
+    assert(!kshim_clk_get_parent(pipe_mux, &src) && src == 2);
+    unsigned writes = FakeWrites;
+    assert(!kshim_clk_set_parent(aux_mux, 2) && FakeWrites == writes); /* no change, no write */
+    assert(!kshim_clk_set_parent(pipe_mux, 0) && fake_peek(PIPE_MUX) == 0);
+    assert(!kshim_clk_set_parent(aux_mux, 0) && fake_peek(AUX_MUX) == 0x10);
+    assert(kshim_clk_set_parent(aux_mux, 4) == ERROR_INVALID_PARAMETER);
+    assert(kshim_clk_set_parent(pipe, 0) == ERROR_NOT_SUPPORTED);     /* a gate, not a mux */
+    assert(!kshim_clk_enable(pipe_mux) && !kshim_clk_disable(pipe_mux) && kshim_clk_is_on(pipe_mux));
+
+    /* rchng 100 MHz needs GPLL0_OUT_EVEN: refused (nothing written) unless
+     * the APPS vote, LOCK_DET, the even output and its /2 divider hold. */
+    fake_poke(GPLL0_VOTE, 0);
+    fake_poke(GPLL0_MODE, 1U << 31);
+    fake_poke(GPLL0_USER, (1U << 10) | 0x7U);
+    writes = FakeWrites;
+    assert(kshim_clk_set_rate(rchng, 100000000) == ERROR_NOT_READY && FakeWrites == writes);
+    fake_poke(GPLL0_VOTE, 1);
+    fake_poke(GPLL0_USER, (1U << 10) | 0x1U); /* even output off */
+    assert(kshim_clk_set_rate(rchng, 100000000) == ERROR_NOT_READY && FakeWrites == writes);
+    fake_poke(GPLL0_USER, (1U << 10) | 0x7U);
+    fake_poke(GPLL0_MODE, 0);                  /* not locked */
+    assert(kshim_clk_set_rate(rchng, 100000000) == ERROR_NOT_READY && FakeWrites == writes);
+    fake_poke(GPLL0_MODE, 1U << 31);
+    assert(kshim_clk_set_rate(rchng, 50000000) == ERROR_NOT_SUPPORTED);  /* no row */
+    assert(!kshim_clk_set_rate(rchng, 100000000));
+    /* CFG_RCGR: SRC_SEL 6 (GPLL0_OUT_EVEN), SRC_DIV 5 (/3), latched. */
+    assert(fake_peek(RCHNG_RCG + 4) == ((6U << 8) | 5U) && !(fake_peek(RCHNG_RCG) & 1U));
+    writes = FakeWrites;
+    assert(!kshim_clk_set_rate(rchng, 100000000) && FakeWrites == writes); /* already there */
+    /* An rchng the previous owner left running at another rate: not retuned. */
+    fake_poke(RCHNG_RCG + 4, 0);
+    fake_poke(RCHNG_CBCR, 0);
+    assert(kshim_clk_set_rate(rchng, 100000000) == ERROR_BUSY && FakeWrites == writes);
+    fake_poke(RCHNG_RCG + 4, (6U << 8) | 5U);
+    fake_poke(RCHNG_CBCR, 1U << 31);
+
+    /* Handoff: muxes and the RCG back to their inherited values. */
+    assert(!kshim_clk_restore_all());
+    assert(fake_peek(PIPE_MUX) == 0x2 && fake_peek(AUX_MUX) == 0x12 && fake_peek(RCHNG_RCG + 4) == 0);
 }
 
 static int index_of(uintptr_t address, unsigned from)
@@ -131,6 +201,7 @@ static void sm8650(void)
     int gcc = fake_path(f, "/soc@0/clock-controller@100000");
     assert(kshim_clk_get(f, gcc, NULL, &rpmh_cxo) == ERROR_NOT_SUPPORTED);
     assert(!kshim_clk_restore_all());
+    sm8650_pcie_muxes(f);
     free(f);
 }
 

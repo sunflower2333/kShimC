@@ -201,13 +201,13 @@ framework cannot tell, the host is left alone.
 | --- | --- |
 | Read/Write 8/16/32 | `pci_mmio_*` (identity mapped) |
 | DelayUs, GetTimeUs | `delay()`, `kshim_smp_time_us()` |
-| SetClock | DT first: `kshim_clk_get(controller or PHY node, clock-names)`. Fallback: `kshim_clk_get_by_name(Controller, Id)`. A 19.2 MHz request on an off branch first calls `kshim_clk_set_rate_cxo()`. PHY-output and always-on CXO entries are no-ops |
+| SetClock | DT first: `kshim_clk_get(controller or PHY node, clock-names)`. Fallback: `kshim_clk_get_by_name(Controller, Id)`. A rate request on an off branch first calls `kshim_clk_set_rate()`: 19.2 MHz selects CXO; other rates use the SoC rate rows (SM8650 rchng 100 MHz = GPLL0_OUT_EVEN / 3) and refuse the cold start (`ERROR_NOT_READY`, logged) when that PLL output is not verified running; a rate without facts is logged and left as found. PHY-output and always-on CXO entries are no-ops |
 | SetReset | `kshim_clk_get_reset(node, reset-names)`, fallback by name, then `kshim_clk_reset()` |
 | SetPowerDomain | the controller and PHY `power-domains` (fallback: target GDSC names), enabled controller first and disabled PHY first |
 | SetSupply | `kshim_regulator_get(PHY node, then controller node, Name)`. A supply missing from the DT is left as found and logged |
 | SetGpio | PERST#: `kshim_gpio` from the DT (else the target pin). WAKE# and CLKREQ#: covered by pinctrl default. Board `enable` lines: the target pin |
 | SetInterconnect, SetIommu | logged no-ops: kShimC votes no ICC path and does not program the SMMU (assumed inherited, docs/io-stack.md) |
-| SetClockParent, SetPipeClockParent | unsupported: `kshim_clk` has no mux API |
+| SetClockParent, SetPipeClockParent | the PHY AUX and PIPE muxes of the target (`Aux/PipeMuxController`, `Aux/PipeMuxId`) by name, then `kshim_clk_set_parent()`; snapshot and restored at handoff |
 | SetEndpointPower, SetEndpointStage | success: the core powers endpoints from the DT. NTN3 switch boards are unsupported |
 
 PcieLib is built unmodified (`ports/crdk/io/pci.cmake`, `CRDK_PCIE`) with
@@ -236,6 +236,20 @@ layout:
   ln_shrd rows are lane-0 TX rows at absolute offset `0xe00 + reg`.
 - The no-CSR PHY reset is CrDK's PIPE reset. The PHY GDSC is the PHY power
   domain. `MaxLinkSpeed` 0 keeps the Gen4 capability.
+- Muxes: `gcc_pcie_1_pipe_clk_src` (GCC 0x8d078, a Linux
+  `clk_regmap_phy_mux`: 0 = PHY PIPE output, 2 = XO) and
+  `gcc_pcie_1_phy_aux_clk_src` (GCC 0x8d094, `gcc_parent_map_8`: 0 = PHY
+  AUX, 2 = TCXO). PcieLib selects the PIPE mux's PHY source once the GDSCs
+  are up and parks it on XO after the PIPE gates stop. It keeps the AUX mux
+  on TCXO while the halt-checked PHY aux branch comes up and moves it to the
+  PHY once the PHY reports ready. A previous stage that shut PCIe down
+  cleanly leaves both on XO, which cannot clock the PIPE interface.
+- `rchng`: `sm8650.dtsi` assigns 100 MHz to `GCC_PCIE_1_PHY_RCHNG_CLK`. The
+  generated rate row (`ftbl_gcc_pcie_0_phy_rchng_clk_src`: GPLL0_OUT_EVEN
+  / 3, CFG_RCGR SRC_SEL 6, SRC_DIV 5) is applied by `kshim_clk_set_rate()`
+  only when the gcc_gpll0 APPS vote, its LOCK_DET, the even output enable
+  and the /2 post divider all read back as expected. kShimC never starts or
+  votes a PLL.
   `ParfSysControlSetMask` 0 keeps PARF_SYS_CTRL, as Linux does.
 
 ## Tests
@@ -284,10 +298,11 @@ layout:
     clocks.
 - The cold path depends on:
   - the PCIe NoC/ICC and SMMU state left by the bootloader;
-  - `gcc_pcie_1_pipe_clk_src` being switched to the PHY by the clock
-    driver. kshim_clk has no mux API, and Linux treats it as a regmap PHY
-    mux.
+  - GPLL0 running with its even output enabled (checked; the cold start is
+    refused otherwise).
 
-  The CrDK SM8450 pcie1 target's AUX mux makes its cold start fail cleanly
-  as unsupported.
+  The mux and rchng sequencing is checked against register models only
+  (`platform_clk_test`, `pci_qcom_test_3`). The CrDK SM8450 pcie1 target
+  names its AUX mux by a branch ID that the Android clock tables cannot
+  resolve, so its cold start still fails cleanly as unsupported.
 - MSI (DesignWare iMSI) is not implemented. INTx is used instead.

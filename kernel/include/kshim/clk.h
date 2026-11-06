@@ -18,9 +18,13 @@
  *
  * Policy: prefer the inherited state. enable() writes nothing when the
  * branch already runs (CLK_OFF clear); disable() only undoes kShimC's own
- * enable. Rates: only kshim_clk_set_rate_cxo() (select the 19.2 MHz CXO
- * undivided source, DFS-table aware, the CrDK ClockLib clock_poll policy) is
- * offered; an RCG that is already running is never retuned.
+ * enable. Rates: kshim_clk_set_rate_cxo() (select the 19.2 MHz CXO
+ * undivided source, DFS-table aware, the CrDK ClockLib clock_poll policy),
+ * and kshim_clk_set_rate() for the SoC table's rate rows (an RCG fed by a
+ * fixed PLL output that is verified running; kShimC never starts or votes
+ * a PLL); an RCG that is already running is never retuned. Muxes
+ * (KSHIM_CLK_MUX: Linux clk_regmap_mux / clk_regmap_phy_mux) are set with
+ * kshim_clk_set_parent(). Every write is snapshot and restored at handoff.
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -33,6 +37,7 @@ enum kshim_clk_kind {
     KSHIM_CLK_VOTE,        /* APCS vote register bit; halt = the branch CBCR */
     KSHIM_CLK_GDSC,        /* GDSCR: SW_COLLAPSE bit 0, PWR_ON bit 31 */
     KSHIM_CLK_RESET,       /* BCR: BLK_ARES bit 0 */
+    KSHIM_CLK_MUX,         /* mux register: source field = enable_mask, no gate */
 };
 
 enum kshim_clk_halt {
@@ -75,7 +80,8 @@ const struct kshim_clk_desc *kshim_clk_desc(const struct kshim_clk *clk);
 bool kshim_clk_is_on(const struct kshim_clk *clk);
 
 /* Thread context. Branch/vote/GDSC: refcounted on/off, inherited-on
- * branches are not written. Reset: assert/deassert the BCR (not counted). */
+ * branches are not written. Reset: assert/deassert the BCR (not counted).
+ * Mux: no gate; enable/disable succeed without a write. */
 int kshim_clk_enable(struct kshim_clk *clk);
 int kshim_clk_disable(struct kshim_clk *clk);
 int kshim_clk_reset(struct kshim_clk *reset, bool asserted);
@@ -83,6 +89,18 @@ int kshim_clk_reset(struct kshim_clk *reset, bool asserted);
  * when DFS is enabled (*dfs_index set), else CFG_RCGR SRC_SEL=0, divider 1.
  * ERROR_BUSY when the RCG feeds an active engine. Restored at handoff. */
 int kshim_clk_set_rate_cxo(struct kshim_clk *clk, uint8_t *dfs_index);
+/* Program the branch's RCG for `hz` from the controller's rate rows
+ * (19.2 MHz: as kshim_clk_set_rate_cxo). 0 when the RCG already gives it
+ * or was set; ERROR_NOT_SUPPORTED without a row (or with DFS enabled);
+ * ERROR_NOT_READY when the row's parent PLL output is not verified running
+ * (nothing written); ERROR_BUSY for a branch someone else left running at
+ * another rate. Restored at handoff. */
+int kshim_clk_set_rate(struct kshim_clk *clk, uint32_t hz);
+/* Mux source field value (KSHIM_CLK_MUX; Linux parent_map index, e.g. the
+ * PCIe PIPE/PHY-AUX muxes: 0 = PHY output, 2 = TCXO). set_parent writes
+ * only on a change and is restored at handoff. */
+int kshim_clk_set_parent(struct kshim_clk *mux, uint32_t source);
+int kshim_clk_get_parent(const struct kshim_clk *mux, uint32_t *source);
 
 /* Handoff: every enable bit, RCG configuration and GDSC kShimC changed goes
  * back to its snapshot, newest first. Resets are left deasserted. */

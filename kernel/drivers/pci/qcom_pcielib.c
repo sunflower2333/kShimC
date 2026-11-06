@@ -10,16 +10,20 @@
  *  - clocks, resets and GDSCs through kshim_clk: the DT consumer first
  *    (controller node for the controller slice, QMP PHY node for the PHY
  *    slice, by clock-names/reset-names/power-domains), then the target's
- *    Linux name through kshim_clk_get_by_name(); a 19.2 MHz rate request
- *    selects CXO with kshim_clk_set_rate_cxo() when the branch is off;
+ *    Linux name through kshim_clk_get_by_name(); a rate request is applied
+ *    with kshim_clk_set_rate() when the branch is off (19.2 MHz: CXO; other
+ *    rates from the SoC rate rows, e.g. the SM8650 rchng 100 MHz from
+ *    GPLL0_OUT_EVEN, which refuses the cold start when that PLL output is
+ *    not verified running);
+ *  - the PHY AUX and PIPE muxes (PcieTargetPhy Aux/PipeMux*) through
+ *    kshim_clk_set_parent() on the named mux leaf;
  *  - supplies through kshim_regulator_get() on the PHY node, then the
  *    controller node; a supply the DT does not describe is left as found;
  *  - PERST# through kshim_gpio (DT perst-gpios first, else the target pin);
  *    WAKE#/CLKREQ# come from the controller's pinctrl "default" state;
  *  - interconnect and SMMU: kShimC votes no ICC path and does not program
  *    the SMMU (docs/io-stack.md): both callbacks only log that the state is
- *    assumed inherited. PHY clock-mux parents are not offered by kshim_clk
- *    and are reported unsupported (targets that need them fail cleanly).
+ *    assumed inherited.
  * Every resource taken here is released by PcieShutdownPort() through the
  * same callbacks (disable/deassert), and the platform restore steps put
  * anything else back to its state at entry.
@@ -255,10 +259,17 @@ static CR_STATUS set_clock(VOID *context, CONST PcieTargetClock *clock, BOOLEAN 
     }
     if (enable) {
         if (*enabled) return CR_SUCCESS;
-        if (clock->RateHz == 19200000U && !kshim_clk_is_on(clk)) {
-            uint8_t dfs;
-            int rate = kshim_clk_set_rate_cxo(clk, &dfs);
-            if (rate && rate != ERROR_NOT_SUPPORTED && rate != ERROR_BUSY)
+        if (clock->RateHz && !kshim_clk_is_on(clk)) {
+            int rate = kshim_clk_set_rate(clk, clock->RateHz);
+            if (rate == ERROR_NOT_READY) {
+                LOG("clock %s (%s): %u Hz needs its parent PLL running; cold start refused\n",
+                    clock->Name, clock->Id, (unsigned)clock->RateHz);
+                return cr(rate);
+            }
+            if (rate == ERROR_NOT_SUPPORTED && clock->RateHz != 19200000U)
+                LOG("clock %s (%s): no rate facts for %u Hz, left as found\n", clock->Name,
+                    clock->Id, (unsigned)clock->RateHz);
+            else if (rate && rate != ERROR_NOT_SUPPORTED && rate != ERROR_BUSY)
                 return cr(rate);
         }
         status = kshim_clk_enable(clk);
@@ -376,11 +387,32 @@ static CR_STATUS set_iommu(VOID *context, CONST PcieTargetController *c, BOOLEAN
     return CR_SUCCESS;
 }
 
-static CR_STATUS set_clock_parent(VOID *context, CONST PcieTargetPhy *phy, UINT32 source)
+static CR_STATUS set_mux(const PcieTargetPhy *phy, const char *what, const char *controller,
+                         const char *id, UINT32 source)
+{
+    struct kshim_clk *mux = NULL;
+    int status = controller && id ? kshim_clk_get_by_name(controller, id, &mux) : ERROR_NOT_SUPPORTED;
+    if (!status) status = kshim_clk_set_parent(mux, source);
+    if (status)
+        LOG("%s: %s mux %s source %u: %s\n", phy->Label, what, id ? id : "?", (unsigned)source,
+            kshim_io_strerror(status));
+    return cr(status);
+}
+
+/* PcieIoOps.SetClockParent: the PHY AUX mux (reference during the cold PHY
+ * init, PHY output once ready, reference again before power-down). */
+static CR_STATUS set_aux_parent(VOID *context, CONST PcieTargetPhy *phy, UINT32 source)
 {
     (void)context;
-    LOG("%s: clock mux source %u not supported by kshim_clk\n", phy->Label, (unsigned)source);
-    return CR_UNSUPPORTED;
+    return set_mux(phy, "AUX", phy->AuxMuxController, phy->AuxMuxId, source);
+}
+
+/* PcieIoOps.SetPipeClockParent: the PIPE mux (PHY output with the GDSCs
+ * up, reference after the PIPE gates stop). */
+static CR_STATUS set_pipe_parent(VOID *context, CONST PcieTargetPhy *phy, UINT32 source)
+{
+    (void)context;
+    return set_mux(phy, "PIPE", phy->PipeMuxController, phy->PipeMuxId, source);
 }
 
 static struct qcom_pcie *port_of_gpio(const PcieTargetGpio *gpio)
@@ -452,11 +484,11 @@ static const PcieIoOps Ops = {
     .Read16 = io_read16,
     .Write8 = io_write8,
     .Write16 = io_write16,
-    .SetClockParent = set_clock_parent,
+    .SetClockParent = set_aux_parent,
     .DiagnoseLink = NULL,
     .SetEndpointPower = set_endpoint_power,
     .GetTimeUs = io_time,
-    .SetPipeClockParent = set_clock_parent,
+    .SetPipeClockParent = set_pipe_parent,
     .SetEndpointStage = set_endpoint_stage,
 };
 

@@ -28,6 +28,14 @@
  *    -qserdes-ln-shrd-v6.h, -pcs-v6_20.h and -pcs-pcie-v6_20.h register
  *    definitions (Linux drivers/phy/qualcomm), symbol named per row. No
  *    Linux code is used; only these register/value facts.
+ *  - GCC muxes and the rchng rate: gcc-sm8650.c gcc_pcie_1_pipe_clk_src
+ *    (clk_regmap_phy_mux, 0x8d078) and gcc_pcie_1_phy_aux_clk_src
+ *    (clk_regmap_mux 0x8d094, gcc_parent_map_8), clk-regmap-phy-mux.c
+ *    PHY_MUX_PHY_SRC 0 / PHY_MUX_REF_SRC 2; sm8650.dtsi pcie1_phy
+ *    assigned-clock-rates 100 MHz for GCC_PCIE_1_PHY_RCHNG_CLK, which
+ *    kshim_clk_set_rate() takes from the generated rate rows
+ *    (ftbl_gcc_pcie_0_phy_rchng_clk_src: GPLL0_OUT_EVEN / 3). CrDK
+ *    Target/Sm8450 and Sm8550 describe the same muxes for their PCIe PHYs.
  *  - CrDK PcieTargetPhy has no lane-shared block: like CrDK Target/Sm8550
  *    (flattened rows anchored at the zero-offset block), the ln_shrd rows
  *    are TX-block, lane-0-only rows at absolute PHY offset 0xe00 + register.
@@ -310,9 +318,23 @@ STATIC CONST PcieTargetPhy mPhys[] = {
         .ClockCount = SM8650_PCIE1_PHY_CLOCK_COUNT,
         .ResetOffset = SM8650_PCIE1_PHY_RESET_OFFSET,
         .ResetCount = SM8650_PCIE1_PHY_RESET_COUNT,
+        /* AUX mux gcc_pcie_1_phy_aux_clk_src (GCC 0x8d094 bits 1:0,
+         * gcc_parent_map_8: 0 = PCIE_1_PHY_AUX, 2 = BI_TCXO): TCXO while the
+         * halt-checked PHY aux branch comes up, the PHY output once ready. */
+        .AuxMuxController = "gcc",
+        .AuxMuxId = "gcc_pcie_1_phy_aux_clk_src",
+        .AuxReferenceSource = 2,
+        .AuxPhySource = 0,
         /* No-CSR reset: held through the tables, released after PIPE. */
         .PipeResetOffset = SM8650_PCIE1_PHY_NOCSR_RESET_OFFSET,
         .PipeResetCount = SM8650_PCIE1_PHY_NOCSR_RESET_COUNT,
+        /* PIPE mux gcc_pcie_1_pipe_clk_src (GCC 0x8d078, clk_regmap_phy_mux:
+         * PHY_MUX_PHY_SRC 0, PHY_MUX_REF_SRC 2): a clean shutdown parks it
+         * at XO, which cannot clock the controller's PIPE interface. */
+        .PipeMuxController = "gcc",
+        .PipeMuxId = "gcc_pcie_1_pipe_clk_src",
+        .PipeReferenceSource = 2,
+        .PipePhySource = 0,
         .PowerDomainController = "gcc",
         .PowerDomainId = "pcie_1_phy_gdsc",
     },

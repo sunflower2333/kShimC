@@ -10,6 +10,8 @@
  *    powered by clearing its bit in the collapse-vote register (SM8650
  *    pcie_1_gdsc: 0x5214c bit 1). Both power on by clearing the bit.
  *  - BCR: BLK_ARES bit 0 (or the listed bit).
+ *  - Mux (clk_regmap_mux / clk_regmap_phy_mux): a source field in its own
+ *    register; the PHY muxes take 0 = PHY output, 2 = reference (TCXO).
  *  - RCG2: CMD_RCGR UPDATE bit 0 / ROOT_OFF bit 31; CFG_RCGR (+4) SRC_DIV
  *    4:0, SRC_SEL 10:8, MODE 13:12; CMD_DFSR (+0x14) DFS_EN bit 0 and
  *    PERF_DFSR(n) at +0x1c + 4n. CXO undivided is SRC_SEL 0, MODE 0,
@@ -42,6 +44,7 @@
 struct kshim_clk {
     bool used;
     const struct kshim_soc_clock_controller *ctrl;
+    uintptr_t base;          /* controller base (rate rows, PLL checks) */
     const char *name;
     uint8_t space;
     uint32_t id;
@@ -152,7 +155,7 @@ static int handle(unsigned controller, const struct kshim_soc_clk *leaf, struct 
     size_t size = C.controllers[controller].size;
     if (leaf->enable_reg + 4U > size || leaf->halt_reg + 4U > size || leaf->rcg + 0x5cU > size)
         return ERROR_NOT_SUPPORTED;
-    *free_slot = (struct kshim_clk){.used = true, .ctrl = ctrl, .name = leaf->name,
+    *free_slot = (struct kshim_clk){.used = true, .ctrl = ctrl, .base = base, .name = leaf->name,
         .space = leaf->space, .id = leaf->id,
         .desc = {.kind = leaf->kind, .halt_check = leaf->halt, .enable_reg = base + leaf->enable_reg,
                  .enable_mask = leaf->enable_mask, .halt_reg = base + leaf->halt_reg,
@@ -231,6 +234,8 @@ bool kshim_clk_is_on(const struct kshim_clk *clk)
         return (rd(d->halt_reg) & CLK_OFF) != 0; /* PWR_ON */
     case KSHIM_CLK_RESET:
         return (rd(d->enable_reg) & d->enable_mask) != 0; /* asserted */
+    case KSHIM_CLK_MUX:
+        return true; /* no gate */
     default:
         return false;
     }
@@ -256,6 +261,7 @@ static void restore_enable(struct kshim_clk *k)
 int kshim_clk_enable(struct kshim_clk *clk)
 {
     if (!clk || !clk->used || clk->desc.kind == KSHIM_CLK_RESET) return ERROR_INVALID_PARAMETER;
+    if (clk->desc.kind == KSHIM_CLK_MUX) return 0;
     if (clk->refs++) return 0;
     if (kshim_clk_is_on(clk)) { clk->ours = false; return 0; } /* inherited */
     const struct kshim_clk_desc *d = &clk->desc;
@@ -280,6 +286,7 @@ int kshim_clk_enable(struct kshim_clk *clk)
 
 int kshim_clk_disable(struct kshim_clk *clk)
 {
+    if (clk && clk->used && clk->desc.kind == KSHIM_CLK_MUX) return 0;
     if (!clk || !clk->used || clk->desc.kind == KSHIM_CLK_RESET || !clk->refs)
         return ERROR_INVALID_PARAMETER;
     if (--clk->refs) return 0;
@@ -298,6 +305,8 @@ int kshim_clk_reset(struct kshim_clk *reset, bool asserted)
     return 0;
 }
 
+static int write_rcg(struct kshim_clk *k, uint32_t cfg, uint32_t next);
+
 int kshim_clk_set_rate_cxo(struct kshim_clk *clk, uint8_t *dfs_index)
 {
     if (!clk || !clk->used || !dfs_index) return ERROR_INVALID_PARAMETER;
@@ -315,10 +324,67 @@ int kshim_clk_set_rate_cxo(struct kshim_clk *clk, uint8_t *dfs_index)
     uint32_t cfg = rd(rcg + 4U), next = (cfg & ~RCG_CFG_FIELDS) | 1U;
     *dfs_index = 0;
     if (next == cfg) return 0;
-    if (!clk->rcg_saved) { clk->rcg_saved = true; clk->rcg_cfg = cfg; clk->rcg_seq = ++C.seq; }
+    return write_rcg(clk, cfg, next);
+}
+
+static int write_rcg(struct kshim_clk *k, uint32_t cfg, uint32_t next)
+{
+    uintptr_t rcg = k->desc.rcg;
+    if (!k->rcg_saved) { k->rcg_saved = true; k->rcg_cfg = cfg; k->rcg_seq = ++C.seq; }
     wr(rcg + 4U, next);
     wr(rcg, rd(rcg) | RCG_UPDATE);
     return wait_field(rcg, RCG_UPDATE, 0, RCG_TIMEOUT_US);
+}
+
+int kshim_clk_set_rate(struct kshim_clk *clk, uint32_t hz)
+{
+    if (!clk || !clk->used || !hz) return ERROR_INVALID_PARAMETER;
+    if (hz == 19200000U) {
+        uint8_t dfs;
+        return kshim_clk_set_rate_cxo(clk, &dfs);
+    }
+    uintptr_t rcg = clk->desc.rcg;
+    const struct kshim_soc_clk_rate *row =
+        rcg ? kshim_soc_clock_rate(clk->ctrl, (uint32_t)(rcg - clk->base), hz) : NULL;
+    if (!row || (rd(rcg + 0x14U) & 1U)) return ERROR_NOT_SUPPORTED;
+    uint32_t cfg = rd(rcg + 4U);
+    uint32_t next = (cfg & ~RCG_CFG_FIELDS) | (uint32_t)row->src_sel << 8 | row->src_div;
+    if ((cfg & RCG_CFG_FIELDS) == (next & RCG_CFG_FIELDS)) return 0; /* already there */
+    if (kshim_clk_is_on(clk) && !clk->ours) return ERROR_BUSY;
+    for (unsigned i = 0; i < KSHIM_SOC_CLK_PLL_CHECKS; ++i) {
+        const struct kshim_soc_clk_check *c = &row->pll[i];
+        if (!c->mask) continue;
+        uint32_t v = rd(clk->base + c->reg);
+        if ((v & c->mask) != c->value) {
+            printf("clk: %s: %s not running (0x%x = 0x%08x), %u Hz not set\n",
+                   clk->name ? clk->name : "leaf", row->parent, (unsigned)c->reg, (unsigned)v,
+                   (unsigned)hz);
+            return ERROR_NOT_READY;
+        }
+    }
+    return write_rcg(clk, cfg, next);
+}
+
+int kshim_clk_set_parent(struct kshim_clk *mux, uint32_t source)
+{
+    if (!mux || !mux->used || mux->desc.kind != KSHIM_CLK_MUX) return ERROR_NOT_SUPPORTED;
+    uint32_t m = mux->desc.enable_mask;
+    if (!m) return ERROR_NOT_SUPPORTED;
+    unsigned shift = (unsigned)__builtin_ctz(m);
+    if (source > (m >> shift)) return ERROR_INVALID_PARAMETER;
+    uint32_t now = rd(mux->desc.enable_reg), want = (now & ~m) | (source << shift);
+    if (want == now) return 0;
+    save_enable(mux);
+    wr(mux->desc.enable_reg, want);
+    return 0;
+}
+
+int kshim_clk_get_parent(const struct kshim_clk *mux, uint32_t *source)
+{
+    if (!mux || !mux->used || mux->desc.kind != KSHIM_CLK_MUX || !source) return ERROR_NOT_SUPPORTED;
+    uint32_t m = mux->desc.enable_mask;
+    *source = (rd(mux->desc.enable_reg) & m) >> __builtin_ctz(m);
+    return 0;
 }
 
 static int restore_rcg(struct kshim_clk *k)

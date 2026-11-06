@@ -66,11 +66,13 @@ bool kshim_soc_pin_function(unsigned soc, uint32_t pin, const char *function, ui
 }
 
 static const struct kshim_soc_clock_controller Controllers[] = {
-    {"qcom,sm8650-gcc", "gcc", KSHIM_SOC_SM8650, kshim_sm8650_gcc, &kshim_sm8650_gcc_count},
-    {"qcom,sm8650-tcsr", "tcsr", KSHIM_SOC_SM8650, kshim_sm8650_tcsr, &kshim_sm8650_tcsr_count},
+    {"qcom,sm8650-gcc", "gcc", KSHIM_SOC_SM8650, kshim_sm8650_gcc, &kshim_sm8650_gcc_count,
+     kshim_sm8650_gcc_rates, &kshim_sm8650_gcc_rates_count},
+    {"qcom,sm8650-tcsr", "tcsr", KSHIM_SOC_SM8650, kshim_sm8650_tcsr, &kshim_sm8650_tcsr_count,
+     NULL, NULL},
     /* Android IDs only: mainline qcom,gcc-sm8150/-sm8250 use other IDs. */
-    {"qcom,gcc-sm8150-v2", "gcc", KSHIM_SOC_SM8150, NULL, NULL},
-    {"qcom,gcc-kona", "gcc", KSHIM_SOC_SM8250, NULL, NULL},
+    {"qcom,gcc-sm8150-v2", "gcc", KSHIM_SOC_SM8150, NULL, NULL, NULL, NULL},
+    {"qcom,gcc-kona", "gcc", KSHIM_SOC_SM8250, NULL, NULL, NULL, NULL},
 };
 
 const struct kshim_soc_clock_controller *kshim_soc_clock_controller(const char *compatible)
@@ -117,4 +119,13 @@ bool kshim_soc_clock_leaf_by_name(const struct kshim_soc_clock_controller *c,
     for (size_t i = 0; i < *c->count; ++i)
         if (!strcmp(c->leaves[i].name, name)) { *leaf = c->leaves[i]; return true; }
     return false;
+}
+
+const struct kshim_soc_clk_rate *kshim_soc_clock_rate(const struct kshim_soc_clock_controller *c,
+                                                      uint32_t rcg, uint32_t hz)
+{
+    if (!c || !c->rates || !rcg) return NULL;
+    for (size_t i = 0; i < *c->rate_count; ++i)
+        if (c->rates[i].rcg == rcg && c->rates[i].hz == hz) return &c->rates[i];
+    return NULL;
 }

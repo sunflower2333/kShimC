@@ -5,14 +5,19 @@
  * extracted from Linux 40288c9206c17eb66a603262e06a58d300d0f279 (facts only, no code):
  *   drivers/pinctrl/qcom/pinctrl-sm8650.c sha256 8952c2892f20fb15252cc3dcfd147f605d803b915c1c3bd11390675573bae282
  *   drivers/clk/qcom/gcc-sm8650.c sha256 786f10e9095a2477beb5a938b10d2bfe75cd5a954bdc95b15c0ecd1b2070a8c0
+ *   drivers/clk/qcom/clk-alpha-pll.c sha256 d81f628af746854dbdd6ef8b0f2e36f85ba38858404690759199a026cac77109
+ *   drivers/clk/qcom/clk-regmap-phy-mux.c sha256 76be83dfd9ad18692d3f09d85589be6cff60cec62573344bdf2fd4eb47357380
  *   drivers/clk/qcom/tcsrcc-sm8650.c sha256 91742be435be5d65efa45c2fa85caaae36750d3353401d7af799a18d6a68c9f8
  *   include/dt-bindings/clock/qcom,sm8650-gcc.h sha256 55de0f6123506df038d2a7af7b9aded3159cba5e0b57bb7ef73436e6f7302275
  *   include/dt-bindings/clock/qcom,sm8650-tcsr.h sha256 9428f372241e900c75a99e14eacf32631536918dd2b0a0e5de837714a9feef4e
  * TLMM: mux slot 0 is "gpio"; slots 1..10 index kshim_sm8650_pin_names
  * (0 = no function). Clock rows: name, id space (0 clock, 1 GDSC, 2 reset),
- * dt-binding id, kind (1 branch, 2 vote, 3 GDSC, 4 BCR), halt check
- * (1 = CLK_OFF/PWR_ON bit 31), enable register and mask, halt register
- * and the CMD_RCGR of the parent RCG (0 = none).
+ * dt-binding id, kind (1 branch, 2 vote, 3 GDSC, 4 BCR, 5 mux), halt check
+ * (1 = CLK_OFF/PWR_ON bit 31), enable register and mask (a mux: its
+ * register and source field), halt register and the CMD_RCGR of the
+ * parent RCG (0 = none). Rate rows: CMD_RCGR, Hz, CFG_RCGR SRC_SEL and
+ * SRC_DIV (2 x div - 1), the parent PLL output and the register checks
+ * (offset, mask, value) that show it runs.
  */
 #include <kshim/soc_tables.h>
 
@@ -396,14 +401,17 @@ const struct kshim_soc_clk kshim_sm8650_gcc[] = {
     {"gcc_pcie_0_mstr_axi_clk", 0, 39, 2, 0, 0x52008, 0x2, 0x6b02c, 0x0},
     {"gcc_pcie_0_phy_rchng_clk", 0, 40, 2, 1, 0x52000, 0x400000, 0x6b054, 0x6b058},
     {"gcc_pcie_0_pipe_clk", 0, 42, 2, 0, 0x52008, 0x10, 0x6b048, 0x0},
+    {"gcc_pcie_0_pipe_clk_src", 0, 43, 5, 0, 0x6b070, 0x3, 0x6b070, 0x0},
     {"gcc_pcie_0_slv_axi_clk", 0, 44, 2, 1, 0x52008, 0x1, 0x6b020, 0x0},
     {"gcc_pcie_0_slv_q2a_axi_clk", 0, 45, 2, 1, 0x52008, 0x20, 0x6b01c, 0x0},
     {"gcc_pcie_1_aux_clk", 0, 46, 2, 1, 0x52000, 0x20000000, 0x8d038, 0x8d07c},
     {"gcc_pcie_1_cfg_ahb_clk", 0, 48, 2, 1, 0x52000, 0x10000000, 0x8d034, 0x0},
     {"gcc_pcie_1_mstr_axi_clk", 0, 49, 2, 0, 0x52000, 0x8000000, 0x8d028, 0x0},
     {"gcc_pcie_1_phy_aux_clk", 0, 50, 2, 1, 0x52000, 0x1000000, 0x8d044, 0x0},
+    {"gcc_pcie_1_phy_aux_clk_src", 0, 51, 5, 0, 0x8d094, 0x3, 0x8d094, 0x0},
     {"gcc_pcie_1_phy_rchng_clk", 0, 52, 2, 1, 0x52000, 0x800000, 0x8d05c, 0x8d060},
     {"gcc_pcie_1_pipe_clk", 0, 54, 2, 0, 0x52000, 0x40000000, 0x8d050, 0x0},
+    {"gcc_pcie_1_pipe_clk_src", 0, 55, 5, 0, 0x8d078, 0x3, 0x8d078, 0x0},
     {"gcc_pcie_1_slv_axi_clk", 0, 56, 2, 1, 0x52000, 0x4000000, 0x8d01c, 0x0},
     {"gcc_pcie_1_slv_q2a_axi_clk", 0, 57, 2, 1, 0x52000, 0x2000000, 0x8d018, 0x0},
     {"gcc_pdm2_clk", 0, 58, 1, 1, 0x3300c, 0x1, 0x3300c, 0x33010},
@@ -477,8 +485,11 @@ const struct kshim_soc_clk kshim_sm8650_gcc[] = {
     {"gcc_ufs_phy_phy_aux_clk", 0, 161, 1, 1, 0x770b0, 0x1, 0x770b0, 0x770b4},
     {"gcc_ufs_phy_phy_aux_hw_ctl_clk", 0, 163, 2, 1, 0x770b0, 0x2, 0x770b0, 0x770b4},
     {"gcc_ufs_phy_rx_symbol_0_clk", 0, 164, 1, 0, 0x7702c, 0x1, 0x7702c, 0x0},
+    {"gcc_ufs_phy_rx_symbol_0_clk_src", 0, 165, 5, 0, 0x77064, 0x3, 0x77064, 0x0},
     {"gcc_ufs_phy_rx_symbol_1_clk", 0, 166, 1, 0, 0x770cc, 0x1, 0x770cc, 0x0},
+    {"gcc_ufs_phy_rx_symbol_1_clk_src", 0, 167, 5, 0, 0x770e0, 0x3, 0x770e0, 0x0},
     {"gcc_ufs_phy_tx_symbol_0_clk", 0, 168, 1, 0, 0x77028, 0x1, 0x77028, 0x0},
+    {"gcc_ufs_phy_tx_symbol_0_clk_src", 0, 169, 5, 0, 0x77054, 0x3, 0x77054, 0x0},
     {"gcc_ufs_phy_unipro_core_clk", 0, 170, 1, 1, 0x77068, 0x1, 0x77068, 0x77098},
     {"gcc_ufs_phy_unipro_core_hw_ctl_clk", 0, 172, 2, 1, 0x77068, 0x2, 0x77068, 0x77098},
     {"gcc_usb30_prim_master_clk", 0, 173, 1, 1, 0x39018, 0x1, 0x39018, 0x3902c},
@@ -487,6 +498,7 @@ const struct kshim_soc_clk kshim_sm8650_gcc[] = {
     {"gcc_usb3_prim_phy_aux_clk", 0, 179, 1, 1, 0x39060, 0x1, 0x39060, 0x39070},
     {"gcc_usb3_prim_phy_com_aux_clk", 0, 181, 1, 1, 0x39064, 0x1, 0x39064, 0x39070},
     {"gcc_usb3_prim_phy_pipe_clk", 0, 182, 1, 0, 0x39068, 0x1, 0x39068, 0x0},
+    {"gcc_usb3_prim_phy_pipe_clk_src", 0, 183, 5, 0, 0x3906c, 0x3, 0x3906c, 0x0},
     {"gcc_video_axi0_clk", 0, 185, 1, 0, 0x32018, 0x1, 0x32018, 0x0},
     {"gcc_video_axi1_clk", 0, 186, 1, 0, 0x32024, 0x1, 0x32024, 0x0},
     {"pcie_0_gdsc", 1, 0, 3, 1, 0x5214c, 0x1, 0x6b004, 0x0},
@@ -535,6 +547,12 @@ const struct kshim_soc_clk kshim_sm8650_gcc[] = {
     {"gcc_video_bcr", 2, 35, 4, 0, 0x32000, 0x1, 0x32000, 0x0},
 };
 const size_t kshim_sm8650_gcc_count = sizeof(kshim_sm8650_gcc) / sizeof(kshim_sm8650_gcc[0]);
+
+const struct kshim_soc_clk_rate kshim_sm8650_gcc_rates[] = {
+    {0x6b058, 100000000, 6, 5, "gcc_gpll0_out_even", {{0x52020, 0x1, 0x1}, {0x0, 0x80000000, 0x80000000}, {0x18, 0x3c02, 0x402}}},
+    {0x8d060, 100000000, 6, 5, "gcc_gpll0_out_even", {{0x52020, 0x1, 0x1}, {0x0, 0x80000000, 0x80000000}, {0x18, 0x3c02, 0x402}}},
+};
+const size_t kshim_sm8650_gcc_rates_count = sizeof(kshim_sm8650_gcc_rates) / sizeof(kshim_sm8650_gcc_rates[0]);
 
 const struct kshim_soc_clk kshim_sm8650_tcsr[] = {
     {"tcsr_pcie_0_clkref_en", 0, 0, 1, 0, 0x31100, 0x1, 0x31100, 0x0},
