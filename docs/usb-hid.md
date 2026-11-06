@@ -115,8 +115,10 @@ the first boot record everything needed to map it.
    differ from the previous one are printed, at most
    `CONFIG_KSHIM_USB_TRACE_REPORTS` (32) per interface, so one control per
    report lets you see which bits change.
-4. `grep '^usbtrace:' pocket-s2-usb.log > capture.txt` and keep the file
-   with the board, firmware version and date.
+4. `grep -ao 'usbtrace:.*' pocket-s2-usb.log | tr -d '\r' > capture.txt` and
+   keep the file with the board, firmware version and date. Do not anchor
+   the pattern at the start of the line: a record printed while the serial
+   menu prompt is up follows the prompt on the same line.
 
 ### Record format
 
@@ -178,7 +180,7 @@ usbtrace: gone path=0-2.1 vid=045e pid=028e
 ```
 
 To turn a dump back into bytes:
-`grep '^usbtrace: rdesc path=0-1 if=0 ' capture.txt | sed 's/.*hex=//; s/ .*//' | tr -d '\n' | xxd -r -p > rdesc.bin`;
+`grep 'usbtrace: rdesc path=0-1 if=0 ' capture.txt | sed 's/.*hex=//; s/ .*//' | tr -d '\n' | xxd -r -p > rdesc.bin`;
 any HID descriptor decoder (for example `hidrd-convert -o spec rdesc.bin`)
 then lists its items.
 
@@ -274,3 +276,10 @@ contract on these points:
   a controller that never halts refuses the handoff with bus mastering off.
 - `tools/test_qemu_usb_input.py` is the end-to-end test over the PCI core
   (ECAM), xHCI, a usb-hub and HID devices.
+- The trace on real firmware: `configs/qemu_usb_defconfig` plus
+  `CONFIG_KSHIM_USB_TRACE=y`, built with `tools/build_runtime.py` and run
+  with `tools/test_qemu_usb.py --runtime <kShimC.bin>`, passes all four
+  cases with the handoff register dump identical to a direct boot; its
+  serial log has the records of the QEMU hub, usb-kbd and usb-mouse
+  (strings, report descriptors, `map=keyboard`/`map=mouse`, the
+  `sendkey down`/`ret` reports as `held=6c:down` and `held=1c:select`).
