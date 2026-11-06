@@ -22,7 +22,11 @@ def main():
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     runtime = args.runtime.resolve()
-    assert runtime.stat().st_size == 4 * 1024 * 1024, "Manifest ABI requires the 4 MiB slot"
+    # The runtime fills exactly the slot its ARM64 Image header advertises
+    # (image_size at 0x10): 4 MiB by default, larger for full I/O profiles.
+    slot = int.from_bytes(runtime.read_bytes()[0x10:0x18], "little")
+    if not slot or slot % (2 * 1024 * 1024) or runtime.stat().st_size != slot:
+        raise RuntimeError(f"Manifest runtime size {runtime.stat().st_size:#x} != header slot {slot:#x}")
     with (out / "packer-build.log").open("w") as log:
         run(["cmake", "-S", packer_root, "-B", out / "packer", "-DBUILD_SHIMS=OFF"],
             stdout=log, stderr=subprocess.STDOUT)

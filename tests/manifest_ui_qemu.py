@@ -217,8 +217,11 @@ def main():
                 stderr=subprocess.STDOUT)
 
     runtime = out / "kShimC.bin"
-    if runtime.stat().st_size != 4 * 1024 * 1024:
-        raise RuntimeError("Manifest ABI requires an exact 4 MiB runtime slot")
+    # The runtime fills exactly the slot its ARM64 Image header advertises
+    # (image_size at 0x10): 4 MiB by default, larger for full I/O profiles.
+    slot = int.from_bytes(runtime.read_bytes()[0x10:0x18], "little")
+    if not slot or slot % (2 * 1024 * 1024) or runtime.stat().st_size != slot:
+        raise RuntimeError(f"Manifest runtime size {runtime.stat().st_size:#x} != header slot {slot:#x}")
 
     packer_build = out / "packer"
     with (out / "packer-build.log").open("w") as log:

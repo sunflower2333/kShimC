@@ -68,7 +68,9 @@ input. Pads and interconnect votes stay as inherited. Only default speed
 
 ## Size
 
-The Manifest runtime slot is fixed at 4 MiB. On hdk8250, `BLK_UFS` adds
+The Manifest runtime slot is `CONFIG_KSHIM_RUNTIME_SLOT_SIZE`: 4 MiB by default, 8 MiB
+for the full-I/O profiles (andromeda, hdk8250, qrd8650, ayaneo_pocket_s2). The
+table below predates that change and was measured against 4 MiB. On hdk8250, `BLK_UFS` adds
 about 56 KiB and fits. `BLK_QCOM_CLOCKS` adds the SM8250 GCC graph
 (37 KiB of data plus about 24 KiB of code). Results with `tools/build_runtime.py`:
 

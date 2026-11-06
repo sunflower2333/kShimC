@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 
 
@@ -21,14 +22,17 @@ def main():
     (out / "hdk8250_defconfig").write_text(config)
     for name, command in (
         ("configure", ["cmake", "-S", root, "-B", firmware, "-G", "Ninja",
-                       "-DKSHIM_STANDALONE=OFF", "-DKSHIM_RUNTIME_SLOT_SIZE=0x400000"]),
+                       "-DKSHIM_STANDALONE=OFF", "-DKSHIM_RUNTIME_SLOT_SIZE="]),
         ("build", ["cmake", "--build", firmware, "-j", args.jobs]),
     ):
         with (out / (name + ".log")).open("w") as log:
             subprocess.run([str(x) for x in command], stdout=log, stderr=subprocess.STDOUT, check=True)
     binary = firmware / "kShimC.bin"
-    if binary.stat().st_size != 0x400000:
-        raise ValueError("Manifest slot must remain exactly 4 MiB")
+    header = (firmware / "generated" / "include" / "config.h").read_text()
+    match = re.search(r"^#define CONFIG_KSHIM_RUNTIME_SLOT_SIZE (0x[0-9a-fA-F]+)", header, re.M)
+    slot = int(match.group(1), 16) if match else 0x400000
+    if binary.stat().st_size != slot:
+        raise ValueError(f"Manifest runtime must occupy exactly its {slot:#x}-byte slot")
     undefined = subprocess.check_output(["aarch64-linux-gnu-nm", "-u", firmware / "kShimC.elf"], text=True)
     if undefined.strip():
         raise ValueError("Runtime has unresolved symbols: " + undefined)

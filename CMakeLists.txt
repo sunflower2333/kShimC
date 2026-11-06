@@ -51,10 +51,11 @@ project(${OUTPUT_NAME} C ASM)
 
 option(KSHIM_STANDALONE "Boot directly as an ARM64 Image instead of an attached manifest runtime" OFF)
 set(KSHIM_LINK_ADDRESS "0x40200000" CACHE STRING "Runtime link address")
-set(KSHIM_RUNTIME_SLOT_SIZE "0x400000" CACHE STRING "Reserved runtime bytes (4 MiB for manifest protocol)")
+set(KSHIM_RUNTIME_SLOT_SIZE "" CACHE STRING
+    "Override CONFIG_KSHIM_RUNTIME_SLOT_SIZE (reserved runtime bytes; Kconfig default 4 MiB)")
 set(KSHIM_UEFI_PAYLOAD "" CACHE FILEPATH "Optional raw UEFI FD for standalone test menu")
 add_compile_definitions(KSHIM_STANDALONE=$<BOOL:${KSHIM_STANDALONE}>
-    KSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} KSHIM_RUNTIME_SLOT_SIZE=${KSHIM_RUNTIME_SLOT_SIZE})
+    KSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS})
 
 # Generate common variables pass to Kconfig
 set(HOST_ARCH "${CMAKE_HOST_SYSTEM_PROCESSOR}")
@@ -90,6 +91,18 @@ if(NOT CONFIG_STATUS EQUAL 0)
 endif()
 include(${CMAKE_BINARY_DIR}/generated/config.cmake)
 add_custom_target(generate_config)
+
+# Runtime slot: an explicit -DKSHIM_RUNTIME_SLOT_SIZE wins, else the profile's
+# CONFIG_KSHIM_RUNTIME_SLOT_SIZE, else the 4 MiB Manifest default.
+if(KSHIM_RUNTIME_SLOT_SIZE)
+    set(KSHIM_SLOT_SIZE "${KSHIM_RUNTIME_SLOT_SIZE}")
+elseif(CONFIG_KSHIM_RUNTIME_SLOT_SIZE)
+    set(KSHIM_SLOT_SIZE "${CONFIG_KSHIM_RUNTIME_SLOT_SIZE}")
+else()
+    set(KSHIM_SLOT_SIZE "0x400000")
+endif()
+add_compile_definitions(KSHIM_RUNTIME_SLOT_SIZE=${KSHIM_SLOT_SIZE})
+message(STATUS "kShimC runtime slot: ${KSHIM_SLOT_SIZE}")
 
 # Build Picolibc for the existing kShimC runtime and startup environment.
 set(__THREAD_LOCAL_STORAGE OFF CACHE BOOL "" FORCE)
@@ -242,7 +255,7 @@ set(PROCESSED_LINKER_SCRIPT "${CMAKE_BINARY_DIR}/aarch64.lds")
 file(GLOB LINKER_HEADERS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/kernel/include/ld/*")
 add_custom_command(
     OUTPUT ${PROCESSED_LINKER_SCRIPT}
-    COMMAND ${CMAKE_C_COMPILER} -E -P -x c ${LINKER_SCRIPT} -o ${PROCESSED_LINKER_SCRIPT} -I${CMAKE_SOURCE_DIR}/kernel/include/ -D__LD_SCRIPT__ -DKSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} -DKSHIM_RUNTIME_SLOT_SIZE=${KSHIM_RUNTIME_SLOT_SIZE}
+    COMMAND ${CMAKE_C_COMPILER} -E -P -x c ${LINKER_SCRIPT} -o ${PROCESSED_LINKER_SCRIPT} -I${CMAKE_SOURCE_DIR}/kernel/include/ -D__LD_SCRIPT__ -DKSHIM_LINK_ADDRESS=${KSHIM_LINK_ADDRESS} -DKSHIM_RUNTIME_SLOT_SIZE=${KSHIM_SLOT_SIZE}
     DEPENDS ${LINKER_SCRIPT} ${LINKER_HEADERS}
     COMMENT "Preprocessing linker script"
 )

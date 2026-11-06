@@ -129,6 +129,17 @@ menu "Display"
 endmenu
 
 menu "Generic"
+    config KSHIM_RUNTIME_SLOT_SIZE
+        hex "Runtime image slot size"
+        default 0x400000
+        help
+            Bytes reserved for the kShimC runtime, including its stack. The
+            image header advertises this size and MultiBootKernelPatcher
+            takes the runtime size from the image, so a larger slot needs no
+            packer change. 4 MiB fits the minimal profiles; boards with the
+            full I/O stack use 8 MiB. A -DKSHIM_RUNTIME_SLOT_SIZE= CMake
+            override (tools/build_hdk.py) still wins.
+
     config KSHIM_UEFI_TEST_MENU
         bool "Two entries that both launch the embedded UEFI FD"
         default n

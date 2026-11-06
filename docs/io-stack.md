@@ -647,8 +647,12 @@ Report exact counts and state plainly what was not run on hardware.
   sm8650, `qemu_io` from usbhid, plus `qemu_pci`, `qemu_xhci` and
   `qemu_usb`. Report only real link failures; the image size is not a
   concern. With the I/O stack, andromeda, hdk8250, qrd8650 and
-  ayaneo_pocket_s2 no longer fit the 4 MiB Manifest slot ("kShim runtime
-  exceeds image slot"); that is a packaging decision left open.
+  ayaneo_pocket_s2 outgrew 4 MiB, so their defconfigs set
+  `CONFIG_KSHIM_RUNTIME_SLOT_SIZE=0x800000`. The slot is advertised in the
+  ARM64 Image header (`image_size`), and MultiBootKernelPatcher takes the
+  runtime size from the image, so the packer needs no change.
+  `build_runtime.py` and the manifest tests check the image against the
+  header's slot instead of a fixed 4 MiB.
 - **QEMU.** `tools/test_qemu_irq.py`, `tools/test_qemu_smp.py`,
   `tests/handoff_qemu.py` and `tests/manifest_qemu.py --runtime
   <qemu_manifest_serial kShimC.bin>` stay green. From a worktree, run a
