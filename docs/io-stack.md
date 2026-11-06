@@ -290,6 +290,12 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
 - DMA (`kshim/dma.h`): aligned, boundary-respecting allocations below an
   address limit, plus sync-for-device/cpu. The pool is cacheable heap with
   maintenance, which is also correct while the MMU is off.
+- Bring-up trace (`CONFIG_KSHIM_USB_TRACE`, `kernel/drivers/usb/core/trace.c`):
+  one `usbtrace:` console line per fact (device, strings, interfaces, raw
+  configuration and report descriptors, driver binding, the HID mapping
+  decision, the first distinct input reports), on the UART and its USB
+  ACM mirror, to capture an unknown device on its first boot
+  (docs/usb-hid.md).
 
 ### 3.8 HID (`kshim/hid.h`, `usb_class.h`, owner usbhid)
 - `kshim_hid_parse()` flattens a report descriptor into items: one per
@@ -312,6 +318,11 @@ RX interrupt code (`geni_rx_irq.c`) moves behind this API.
   | Mouse | Wheel + | Wheel − | | | relative X/Y, Button 1 = press |
   | Tablet / digitizer | | | | | absolute X/Y, Button 1 or Tip Switch = press |
 
+- Per-device quirks (`kernel/drivers/usb/class/hid_quirks.c`, the
+  extension point, shipped empty): rows keyed by VID:PID and interface
+  either ignore an interface, bind it with the XInput layout, or give a
+  hand-written report descriptor that replaces a HID interface's own or
+  describes a vendor interface's reports (docs/usb-hid.md).
 - The USB HID transport: GET_DESCRIPTOR(Report), parse and map. Boot
   keyboards and mice whose descriptor does not parse or map fall back to
   SET_PROTOCOL(boot). SET_IDLE(0) is sent and a STALL ignored. Reports come
@@ -455,6 +466,11 @@ exception is an RPMh vote whose inherited value could not be observed.
   - xHCI, then the USB HID gamepad on one of the controller's root ports
     (a hub, if present, is handled by the hub driver), then hid_input:
     hat/stick/buttons become UP/DOWN/SELECT/BACK.
+  - The gamepad's VID:PID, interface classes and report format are not
+    public. `configs/ayaneo_pocket_s2_defconfig` sets
+    `CONFIG_KSHIM_USB_TRACE`, so the first boot prints them; a capture that
+    the generic HID or XInput mapping does not handle becomes a quirk row
+    (docs/usb-hid.md).
   - Inherit-first applies: UEFI ships XhciDxe/XhciPciEmulationDxe, so the
     link and the controller are probably live at entry.
   - The SMMU stream 0x1481 must be in bypass (risk).
@@ -584,6 +600,7 @@ lines of andromeda and hdk8250.
 | `KSHIM_USB_XHCI` | USB && PCI | usb/Kconfig (xhci) |
 | `KSHIM_USB_XHCI_RENESAS` (+ string `_FW`, default `renesas_usb_fw.mem`) | USB_XHCI; uses FIRMWARE_LOADER when set | usb/Kconfig (xhci) |
 | `KSHIM_USB_XHCI_RENESAS_FW_EMBED` (string, default empty) | USB_XHCI_RENESAS; a build-time path whose image is linked in and used before any partition (Renesas proprietary firmware: never committed, see section 9) | usb/Kconfig (xhci) |
+| `KSHIM_USB_TRACE` (+ int `_REPORTS`, default 32) | USB | usb/Kconfig (xhci) |
 | `KSHIM_USB_HUB` | USB | usb/class/Kconfig (usbhid) |
 | `KSHIM_USB_HID` | USB; selects INPUT_INJECT | usb/class/Kconfig (usbhid) |
 | `KSHIM_INPUT_INJECT` (hidden) | selected by USB_HID | usb/class/Kconfig (usbhid) |
@@ -652,6 +669,12 @@ Report exact counts and state plainly what was not run on hardware.
     `kshim_io_init/quiesce`, with only the GIC, the GENI serial engine (the
     chips as bus devices on it) and the SM8650 TLMM/GCC/RPMh registers
     modelled (docs/touch-goodix.md, Tests).
+    `usb_gamepad_test` runs a Pocket S2-shaped gamepad path from
+    `kshim_io_init` through the PCI core (ECAM host), `xhci_pci.c` on the
+    Renesas path, the xHCI driver, the USB core with the trace, the hub,
+    HID and XInput drivers and the quirk table, to `kshim_key_source_poll`
+    menu actions and `kshim_io_quiesce`, over the PCI config-space and xHCI
+    models (docs/usb-hid.md, Tests).
 - **Firmware matrix.** `tools/build_runtime.py --config configs/<x>_defconfig`
   for every defconfig. All 7 passed when this contract was written. New
   defconfigs joined the matrix: `qrd8650` and `ayaneo_pocket_s2` from
