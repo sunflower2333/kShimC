@@ -97,17 +97,34 @@ static void post_port(unsigned port)
     Xm.usbsts |= STS_PCD;
 }
 
+/* INTx is level-triggered: asserted while IP, IE and INTE are all set. */
+static bool line_high(void)
+{
+    return (Xm.iman & IMAN_IP) && (Xm.iman & IMAN_IE) && (Xm.usbcmd & CMD_INTE);
+}
+
 static void deliver(void)
 {
-    if (Xm.depth || !Xm.irq_due) return;
+    static bool in_handler;
+    if (Xm.depth || !Xm.irq_due || in_handler) return;
     Xm.irq_due = false;
-    /* A level-triggered line is taken again for as long as it stays high. */
+    in_handler = true;
+    /* A level-triggered line is taken again for as long as it stays high
+     * (the GIC has no storm guard; the bound only keeps the test finite). */
     for (unsigned guard = 0; guard < 10000; ++guard) {
         ++Xm.irqs_raised;
-        if (Xm.irq) Xm.irq(Xm.irq_context);
-        if (!Xm.level_stuck || !(Xm.iman & IMAN_IP) || !(Xm.iman & IMAN_IE) || !(Xm.usbcmd & CMD_INTE))
-            break;
+        if (!Xm.irq) break;
+        Xm.irq(Xm.irq_context);
+        if (!line_high()) break;
+        if (!Xm.level_stuck) ++Xm.unacked;
     }
+    in_handler = false;
+}
+
+void xm_raise_irq(void)
+{
+    raise_irq();
+    deliver();
 }
 
 /* ---- Contexts --------------------------------------------------------------- */
@@ -573,6 +590,7 @@ static void doorbell(unsigned slot, uint32_t value)
 uint32_t xm_read32(void *context, uintptr_t address)
 {
     (void)context;
+    if (Xm.gone) return UINT32_MAX;
     uintptr_t off = address - XM_BASE;
     if (off < CAPLEN) {
         switch (off) {
@@ -650,7 +668,13 @@ static void op_write(uintptr_t reg, uint32_t v)
                 for (unsigned i = 0; i < Xm.scratchpads; ++i) assert(array[i] && !(array[i] & 0xfffU));
                 Xm.scratch_seen = Xm.scratchpads;
             }
+            /* Ports already connected when the schedule starts report
+             * their change at once. */
+            if (Xm.psc_at_run)
+                for (unsigned p = 1; p <= XM_PORTS; ++p)
+                    if (Xm.portsc[p] & P_CSC) post_port(p);
         }
+        if (!(old & CMD_INTE) && line_high()) Xm.irq_due = true; /* INTE set over a pending IP */
         if ((old & CMD_RS) && !(v & CMD_RS)) {
             ++Xm.stop_count;
             Xm.rs_clear_seq = ++Xm.seq;
@@ -676,10 +700,13 @@ static void op_write(uintptr_t reg, uint32_t v)
 static void rt_write(uintptr_t reg, uint32_t v)
 {
     switch (reg) {
-    case 0x20:
+    case 0x20: {
+        bool was = line_high();
         Xm.iman = (Xm.iman & ~(Xm.level_stuck ? 0 : (v & IMAN_IP))) & ~IMAN_IE;
         Xm.iman |= v & IMAN_IE;
+        if (!was && line_high()) Xm.irq_due = true; /* IE set over a pending IP */
         return;
+    }
     case 0x24: Xm.imod = v; return;
     case 0x28: Xm.erstsz = v; return;
     case 0x30: Xm.erstba_lo = v; return;
@@ -714,6 +741,7 @@ static void rt_write(uintptr_t reg, uint32_t v)
 void xm_write32(void *context, uintptr_t address, uint32_t value)
 {
     (void)context;
+    if (Xm.gone) return;
     uintptr_t off = address - XM_BASE;
     ++Xm.depth;
     if (off >= OP + 0x400 && off < OP + 0x400 + 0x10 * XM_PORTS) {

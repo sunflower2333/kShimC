@@ -305,9 +305,17 @@ int xhci_process_events(struct xhci *x)
             x->event_cycle ^= 1U;
         }
     }
+    /* EHB is set together with IP whenever the interrupter fires (4.17.2).
+     * An interrupt may arrive after a poll already drained the ring, so the
+     * pass that follows it finds nothing; EHB must still be cleared there,
+     * or the interrupter raises nothing more until a later poll happens to
+     * find an event. */
+    bool ehb = handled || (x->irq_enabled && (xhci_rt_read(x, XHCI_IR(0) + XHCI_ERDP_LO) & XHCI_ERDP_EHB));
     if (handled) {
         x->event_count += (uint32_t)handled;
         x->polls_with_work++;
+    }
+    if (ehb) {
         /* Consumed: advance ERDP and clear Event Handler Busy (RW1C). */
         uint64_t erdp = x->events_dma + (uint64_t)x->event_dequeue * sizeof(struct xhci_trb);
         rt_write64(x, XHCI_IR(0) + XHCI_ERDP_LO, erdp | XHCI_ERDP_EHB);
@@ -325,7 +333,11 @@ int xhci_process_events(struct xhci *x)
 
 bool xhci_irq(struct xhci *x)
 {
-    if (!x || !x->running || !x->irq_enabled) return false;
+    /* irq_enabled is set only once the register windows are known, and
+     * cleared before the controller is stopped. The acknowledge must not
+     * depend on running: a level INTx that is not acknowledged is taken
+     * again at once, and the GIC has no storm guard. */
+    if (!x || !x->irq_enabled) return false;
     uint32_t sts = xhci_op_read(x, XHCI_USBSTS);
     if (sts == UINT32_MAX) return false;
     uint32_t iman = xhci_rt_read(x, XHCI_IR(0) + XHCI_IMAN);
@@ -339,7 +351,9 @@ bool xhci_irq(struct xhci *x)
     if (sts & XHCI_STS_EINT) xhci_op_write(x, XHCI_USBSTS, XHCI_STS_EINT);
     xhci_rt_write(x, XHCI_IR(0) + XHCI_IMAN, XHCI_IMAN_IP | XHCI_IMAN_IE);
     ++x->irqs;
-    x->hcd.irq_pending = true;
+    /* Not running yet (xhci_run before running = true): the events stay on
+     * the ring and the first poll consumes them. */
+    if (x->running) x->hcd.irq_pending = true;
     /* While EHB is set nothing re-raises IP, so an IP that survives its
      * acknowledge is a level that will not drop (INTx storm). After
      * XHCI_IRQ_STUCK_LIMIT such calls in a row, stop interrupt generation;
@@ -518,8 +532,8 @@ static int reset_controller(struct xhci *x)
     return 0;
 }
 
-int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
-               uint64_t dma_limit, bool irq)
+int xhci_prepare(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
+                 uint64_t dma_limit)
 {
     x->name = name ? name : "xhci";
     x->io = *io;
@@ -573,6 +587,17 @@ int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xh
         legacy_restore(x);
         return status;
     }
+    /* HCRST cleared USBCMD.INTE and IMAN: the function cannot raise an
+     * interrupt until xhci_run enables one. */
+    x->prepared = true;
+    return 0;
+}
+
+int xhci_run(struct xhci *x, bool irq)
+{
+    if (!x->prepared) return ERROR_NOT_READY;
+    x->prepared = false;
+    int status;
     uint32_t pagesize = xhci_op_read(x, XHCI_PAGESIZE) & 0xffffU;
     x->page_size = 4096;
     for (unsigned bit = 0; bit < 16; ++bit) {
@@ -601,9 +626,17 @@ int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xh
     x->irq_enabled = irq;
     xhci_rt_write(x, XHCI_IR(0) + XHCI_IMAN, XHCI_IMAN_IP | (irq ? XHCI_IMAN_IE : 0));
     xhci_barrier();
-    xhci_op_write(x, XHCI_USBCMD, XHCI_CMD_RS | (irq ? XHCI_CMD_INTE : 0));
+    /* Run with USBCMD.INTE still clear: events posted as the schedule
+     * starts (a Port Status Change for a port that is already connected)
+     * stay on the ring and cannot assert the line before running is set.
+     * INTE follows once the controller runs (5.4.1: INTE gates the
+     * interrupter's IP onto the bus). */
+    xhci_op_write(x, XHCI_USBCMD, XHCI_CMD_RS);
     if (!wait_op(x, XHCI_USBSTS, XHCI_STS_HCH, 0, XHCI_RUN_TIMEOUT_US)) {
         printf("xhci: %s: controller does not run\n", x->name);
+        x->irq_enabled = false;
+        xhci_op_write(x, XHCI_USBCMD, 0);
+        (void)wait_op(x, XHCI_USBSTS, XHCI_STS_HCH, XHCI_STS_HCH, XHCI_HALT_TIMEOUT_US);
         (void)reset_controller(x);
         free_memory(x);
         legacy_restore(x);
@@ -611,6 +644,10 @@ int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xh
     }
     x->running = true;
     x->quiesced = false;
+    if (irq) {
+        xhci_barrier();
+        xhci_op_write(x, XHCI_USBCMD, XHCI_CMD_RS | XHCI_CMD_INTE);
+    }
     /* Port power (4.19.1.1): with PPC the ports start unpowered after HCRST. */
     if (x->ppc) {
         bool powered = false;
@@ -639,11 +676,41 @@ int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xh
     return 0;
 }
 
+int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
+               uint64_t dma_limit, bool irq)
+{
+    int status = xhci_prepare(x, name, base, io, dma_limit);
+    return status ? status : xhci_run(x, irq);
+}
+
+/* A function that reads all-ones has left the bus (surprise removal, link
+ * down, power lost): it can no longer master DMA, so there is nothing to
+ * halt or reset. */
+static bool xhci_gone(struct xhci *x)
+{
+    return xhci_op_read(x, XHCI_USBCMD) == UINT32_MAX && xhci_op_read(x, XHCI_USBSTS) == UINT32_MAX;
+}
+
 int xhci_stop(struct xhci *x)
 {
     if (!x || x->quiesced) return 0;
     if (!x->base) {
         x->quiesced = true;
+        return 0;
+    }
+    x->prepared = false;
+    if (xhci_gone(x)) {
+        /* The rings are no longer reachable by the controller: give every
+         * URB back, release the memory and report success, so the handoff
+         * is not refused for a function that vanished. The PCI core still
+         * clears its bus-master enable and replays the config journal. */
+        x->irq_enabled = false;
+        x->running = false;
+        xhci_fail_all(x, KSHIM_IO_ERR_CANCELLED);
+        free_memory(x);
+        x->legacy_taken = false;
+        x->quiesced = true;
+        printf("xhci: %s: controller gone (registers read all-ones); nothing to reset\n", x->name);
         return 0;
     }
     int result = 0;

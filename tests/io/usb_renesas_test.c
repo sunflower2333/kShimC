@@ -210,7 +210,8 @@ static void test_core(void)
 /* ---- xhci_pci.c with fakes ------------------------------------------------- */
 
 static struct kshim_pci_driver *Driver;
-static unsigned JournaledWrites, RawWrites, StartCalls, FwRequests, IrqRequests;
+static unsigned JournaledWrites, RawWrites, StartCalls, FwRequests, IrqRequests, PrepareCalls;
+static bool IrqBeforePrepare;
 static int FwStatus, IrqStatus;
 static bool StartIrq;
 static uint8_t *FwImage;
@@ -254,6 +255,9 @@ int kshim_pci_request_irq(struct kshim_pci_dev *dev, unsigned allowed, kshim_irq
 {
     (void)dev; (void)handler; (void)context;
     ++IrqRequests;
+    /* The line may only be unmasked once the controller was halted and
+     * reset (xhci_prepare): an inherited one may hold INTx asserted. */
+    if (!PrepareCalls) IrqBeforePrepare = true;
     assert(allowed & KSHIM_PCI_IRQ_INTX);
     if (!IrqStatus && intid) *intid = 434;
     return IrqStatus;
@@ -289,11 +293,19 @@ void kshim_wait_event(uint64_t deadline_ms) { (void)deadline_ms; }
 /* xHCI core fakes: the glue only decides whether and how to start it. */
 #include "../../kernel/drivers/usb/host/xhci.h"
 void xhci_io_mmio(struct xhci_io *io) { memset(io, 0, sizeof(*io)); }
-int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
-               uint64_t dma_limit, bool irq)
+int xhci_prepare(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
+                 uint64_t dma_limit)
 {
-    (void)x; (void)name; (void)io; (void)dma_limit;
+    (void)name; (void)io; (void)dma_limit;
     assert(base == (uintptr_t)FakeBar);
+    ++PrepareCalls;
+    x->prepared = true;
+    return 0;
+}
+int xhci_run(struct xhci *x, bool irq)
+{
+    assert(x->prepared && PrepareCalls == 1);
+    x->prepared = false;
     ++StartCalls;
     StartIrq = irq;
     return 0;
@@ -324,8 +336,10 @@ static int probe(uint16_t vendor, uint16_t device, uint32_t class_code)
     dev->bus = 1;
     const struct kshim_pci_device_id *id = match(dev);
     assert(id);
-    StartCalls = FwRequests = RawWrites = JournaledWrites = IrqRequests = 0;
-    return Driver->probe(dev, id);
+    StartCalls = FwRequests = RawWrites = JournaledWrites = IrqRequests = PrepareCalls = 0;
+    int status = Driver->probe(dev, id);
+    assert(!IrqBeforePrepare);
+    return status;
 }
 
 #include <kshim/dma.h>

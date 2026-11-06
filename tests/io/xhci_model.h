@@ -71,6 +71,8 @@ struct xm {
     struct xm_dev devs[XM_PORTS + 1];
     bool ignore_commands;
     bool level_stuck;              /* IMAN.IP cannot be cleared: the INTx level stays */
+    bool psc_at_run;               /* R/S 0->1 posts a Port Status Change per connected port */
+    bool gone;                     /* function left the bus: reads all-ones, writes dropped */
     /* Interrupt line. */
     void (*irq)(void *context);
     void *irq_context;
@@ -78,6 +80,9 @@ struct xm {
     unsigned depth;
     /* Statistics. */
     unsigned irqs_raised, hcrst_count, run_count, stop_count, commands[64], doorbells;
+    /* Deliveries after which the handler left the level asserted although
+     * it could have been acknowledged (not level_stuck): an INTx storm. */
+    unsigned unacked;
     unsigned td_trbs, last_td_trbs;   /* Normal TRBs of the last chained TD */
     uint32_t hi_at_reset;             /* DCBAAP/ERSTBA/ERDP upper halves at the last HCRST */
     unsigned rs_clear_before_hcrst; /* a takeover cleared R/S before HCRST */
@@ -92,6 +97,9 @@ uint32_t xm_read32(void *context, uintptr_t address);
 void xm_write32(void *context, uintptr_t address, uint32_t value);
 void xm_attach(unsigned port, const struct xm_dev *dev);
 void xm_detach(unsigned port);
+/* Raise interrupter 0 now with no new event, as an IMOD-delayed interrupt
+ * for events a poll already consumed does. */
+void xm_raise_irq(void);
 /* Queue an interrupt report and serve a pending interrupt-IN TD. */
 void xm_report(unsigned port, const uint8_t report[8]);
 struct xm_slot *xm_slot_of_port(unsigned port);

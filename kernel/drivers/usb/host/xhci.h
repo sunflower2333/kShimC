@@ -295,6 +295,7 @@ struct xhci {
     bool legacy_taken;
     /* State. */
     bool running, dead, quiesced, inherited_running, processing;
+    bool prepared;                      /* xhci_prepare done, xhci_run not yet */
     bool irq_enabled;
     bool irq_stuck_disabled;            /* set in IRQ context: polled from then on */
     uint32_t irq_stuck;
@@ -307,9 +308,20 @@ void xhci_io_mmio(struct xhci_io *io);
 /* Halt a controller the previous firmware left running, take ownership
  * from the BIOS semaphore, reset, allocate the DCBAA/scratchpads/rings,
  * program the event ring and run. irq selects interrupter 0's IE/INTE.
- * Registers the HCD with the USB core. */
+ * Registers the HCD with the USB core. xhci_start = xhci_prepare +
+ * xhci_run. */
 int xhci_start(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
                uint64_t dma_limit, bool irq);
+/* First half: read the capabilities, halt an inherited controller, take
+ * the BIOS semaphore and HCRST. Afterwards USBCMD.INTE and IMAN.IE are
+ * clear, so the function cannot assert its interrupt; bus glue requests
+ * its interrupt only after this (a level INTx left asserted by the
+ * previous owner would otherwise be taken with no way to acknowledge it). */
+int xhci_prepare(struct xhci *x, const char *name, uintptr_t base, const struct xhci_io *io,
+                 uint64_t dma_limit);
+/* Second half: rings, interrupter 0, run (R/S first, INTE once running),
+ * port power, HCD registration. */
+int xhci_run(struct xhci *x, bool irq);
 /* IRQ context: acknowledge interrupter 0 and mark the HCD pending.
  * Returns true when the controller had an event interrupt pending. */
 bool xhci_irq(struct xhci *x);

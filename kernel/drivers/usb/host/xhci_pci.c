@@ -216,6 +216,17 @@ static int xhci_pci_probe(struct kshim_pci_dev *dev, const struct kshim_pci_devi
         return ERROR_NOT_SUPPORTED;
     }
     if ((status = kshim_pci_enable_device(dev, true))) return status;
+    struct xhci_io io;
+    xhci_io_mmio(&io);
+    xp->x.quirk_zero_64b = dev->vendor == 0x1912;
+    /* Halt and reset first: a controller inherited from UEFI may still
+     * hold its interrupt asserted, and only after HCRST (INTE and IMAN.IE
+     * clear) is it safe to unmask the line. */
+    status = xhci_prepare(&xp->x, xp->name, (uintptr_t)base, &io, UINT64_MAX);
+    if (status) {
+        printf("xhci: %s: start failed: %s (%d)\n", xp->name, kshim_io_strerror(status), status);
+        return status;
+    }
     xp->irq = false;
 #if !CONFIG_KSHIM_USB_XHCI_FORCE_POLL
     status = kshim_pci_request_irq(dev, KSHIM_PCI_IRQ_MSI | KSHIM_PCI_IRQ_INTX, xhci_pci_irq, xp,
@@ -224,10 +235,7 @@ static int xhci_pci_probe(struct kshim_pci_dev *dev, const struct kshim_pci_devi
     if (status && status != ERROR_NOT_SUPPORTED)
         printf("xhci: %s: interrupt unavailable (%d), polling\n", xp->name, status);
 #endif
-    struct xhci_io io;
-    xhci_io_mmio(&io);
-    xp->x.quirk_zero_64b = dev->vendor == 0x1912;
-    status = xhci_start(&xp->x, xp->name, (uintptr_t)base, &io, UINT64_MAX, xp->irq);
+    status = xhci_run(&xp->x, xp->irq);
     if (status) {
         printf("xhci: %s: start failed: %s (%d)\n", xp->name, kshim_io_strerror(status), status);
         if (xp->irq) (void)kshim_pci_free_irq(dev);

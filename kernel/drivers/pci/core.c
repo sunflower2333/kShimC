@@ -977,21 +977,31 @@ int kshim_pci_request_irq(struct kshim_pci_dev *dev, unsigned allowed,
         if (Lines[i].users && Lines[i].intid == dev->intx_intid) line = i;
         if (!Lines[i].users && free_line == INTX_LINES) free_line = i;
     }
-    if (line == INTX_LINES) {
+    bool new_line = line == INTX_LINES;
+    if (new_line) {
         if (free_line == INTX_LINES) return ERROR_NOT_SUPPORTED;
         line = free_line;
-        unsigned trigger = dev->intx_trigger ? dev->intx_trigger : KSHIM_IRQ_TYPE_LEVEL_HIGH;
-        if (kshim_irq_request(dev->intx_intid, trigger, intx_dispatch,
-                              (void *)(uintptr_t)line))
-            return ERROR_NOT_SUPPORTED;
-        Lines[line] = (struct intx_line){dev->intx_intid, trigger, 0};
     }
+    /* The handler is in place before the GIC line is enabled: a level that
+     * is already asserted is taken as soon as kshim_irq_request unmasks it,
+     * and intx_dispatch must find someone to acknowledge it. */
     unsigned long flags = kshim_irq_save();
     p->handler = handler;
     p->context = context;
     p->line = line;
+    if (new_line) Lines[line] = (struct intx_line){dev->intx_intid,
+        dev->intx_trigger ? dev->intx_trigger : KSHIM_IRQ_TYPE_LEVEL_HIGH, 0};
     ++Lines[line].users;
     kshim_irq_restore(flags);
+    if (new_line && kshim_irq_request(dev->intx_intid, Lines[line].trigger, intx_dispatch,
+                                      (void *)(uintptr_t)line)) {
+        flags = kshim_irq_save();
+        p->handler = NULL;
+        p->context = NULL;
+        Lines[line].users = 0;
+        kshim_irq_restore(flags);
+        return ERROR_NOT_SUPPORTED;
+    }
     uint32_t cmd = rd(dev, KSHIM_PCI_COMMAND, 2);
     if (cmd & KSHIM_PCI_COMMAND_INTX_DISABLE)
         (void)jwr(dev, KSHIM_PCI_COMMAND, 2, cmd & ~KSHIM_PCI_COMMAND_INTX_DISABLE);

@@ -37,13 +37,20 @@ void kshim_wait_event(uint64_t deadline_ms) { now_us = deadline_ms * 1000 + 1; }
 
 struct irq_rec { uint32_t intid; unsigned trigger; kshim_irq_handler_t handler; void *ctx; bool live; };
 static struct irq_rec Irqs[8];
-static unsigned IrqRequests, IrqFrees;
+static unsigned IrqRequests, IrqFrees, Handled;
 int kshim_irq_request(uint32_t intid, unsigned trigger, kshim_irq_handler_t handler, void *ctx)
 {
     for (unsigned i = 0; i < 8; ++i)
         if (!Irqs[i].live) {
             Irqs[i] = (struct irq_rec){intid, trigger, handler, ctx, true};
             ++IrqRequests;
+            /* The level is already asserted (a controller the previous
+             * firmware left interrupting): the GIC takes it as soon as
+             * the line is enabled, before kshim_irq_request returns. A
+             * driver handler must already be reachable to acknowledge it. */
+            unsigned before = Handled;
+            handler(intid, ctx);
+            assert(Handled == before + 1);
             return 0;
         }
     return ERROR_BUSY;
@@ -102,6 +109,7 @@ static unsigned QuiesceCount, ProbesX, ProbesY;
 static void count_irq(uint32_t intid, void *ctx)
 {
     (void)intid;
+    ++Handled;
     ++*(unsigned *)ctx;
 }
 
@@ -300,8 +308,9 @@ int main(void)
 
     /* Shared INTx line 36 (A and C2): one GIC request, both handlers run. */
     assert(IrqRequests == 1 && Irqs[0].intid == 36 && Irqs[0].trigger == 4);
+    assert(IrqCount[0] == 1 && IrqCount[1] == 0); /* taken while the line was enabled */
     fire(36);
-    assert(IrqCount[0] == 1 && IrqCount[1] == 1);
+    assert(IrqCount[0] == 2 && IrqCount[1] == 1);
     assert(!(model_get(a, 0x04, 2) & KSHIM_PCI_COMMAND_INTX_DISABLE));
     assert(kshim_pci_request_irq(A, KSHIM_PCI_IRQ_INTX, count_irq, NULL, NULL) == ERROR_BUSY);
     assert(kshim_pci_request_irq(D0, KSHIM_PCI_IRQ_MSI, count_irq, NULL, NULL) ==
@@ -309,7 +318,7 @@ int main(void)
     assert(!kshim_pci_free_irq(A));
     assert(IrqFrees == 0);              /* C2 still uses the line */
     fire(36);
-    assert(IrqCount[0] == 1 && IrqCount[1] == 2);
+    assert(IrqCount[0] == 2 && IrqCount[1] == 2);
     assert(model_get(a, 0x04, 2) & KSHIM_PCI_COMMAND_INTX_DISABLE);
 
     /* Config API, capabilities, lookups. */

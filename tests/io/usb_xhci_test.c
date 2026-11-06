@@ -15,6 +15,14 @@
  *             handoff still resets it
  *   stuck     the INTx level never drops after the acknowledge: interrupt
  *             generation stopped after a bounded storm, polling continues
+ *   runwindow connected ports post a Port Status Change as R/S is set: the
+ *             level INTx must not assert before the driver can acknowledge
+ *             it (INTE only once running)
+ *   ehb       an interrupt that arrives after a poll already drained the
+ *             ring: the empty pass still clears Event Handler Busy, so the
+ *             next event interrupts again
+ *   gone      the function leaves the bus (all-ones reads): handoff quiesce
+ *             succeeds without a reset and releases the memory
  */
 #include "../../kernel/drivers/usb/host/xhci.h"
 #include "xhci_model.h"
@@ -98,13 +106,14 @@ struct kbd {
     uint8_t last[8];
 };
 static struct kbd Kbds[4];
-static unsigned Probes, Disconnects;
+static unsigned Probes, Disconnects, KbdErrors;
 
 static void kbd_done(struct kshim_usb_urb *urb)
 {
     struct kbd *k = urb->context;
     if (urb->status == KSHIM_IO_ERR_CANCELLED) { ++k->cancelled; return; }
-    assert(urb->status == 0 && urb->actual == 8);
+    if (urb->status) { ++KbdErrors; return; } /* only the gone scenario */
+    assert(urb->actual == 8);
     memcpy(k->last, k->data, 8);
     ++k->reports;
     assert(kshim_usb_submit_urb(urb) == 0);
@@ -323,6 +332,8 @@ static void check_cancel_and_hotplug(void)
 
 static void check_quiesce(uint32_t legsup_before, uint32_t legctl_before)
 {
+    /* No delivery ever left an acknowledgeable level asserted. */
+    assert(Xm.unacked == 0 && KbdErrors == 0);
     assert(kshim_usb_quiesce() == 0);
     assert(Disconnects == Probes);
     for (unsigned p = 1; p <= XM_PORTS; ++p) assert(!X.hcd.root[p - 1] && !xm_slot_of_port(p));
@@ -464,6 +475,79 @@ static void scenario_dead(void)
     assert(Xm.usbcmd == 0 && !Xm.dcbaap_lo && kshim_dma_in_use() == 0);
 }
 
+static void scenario_runwindow(void)
+{
+    xm_init(32, 0, false);
+    Xm.irq = line;
+    Xm.irq_context = &X;
+    Xm.psc_at_run = true;
+    IrqReady = true;
+    uint32_t legsup = Xm.legsup, legctl = Xm.legctl;
+    attach_all();
+    assert(kshim_usb_class_register(&KbdDriver) == 0);
+    unsigned raised = Xm.irqs_raised;
+    assert(start(true) == 0);
+    /* The PSCs posted at R/S interrupted only once INTE was set, with
+     * running already true: acknowledged at once, never re-taken. */
+    assert(Xm.irqs_raised > raised && X.irqs > 0 && Xm.unacked == 0);
+    assert(Xm.usbcmd == 5U && X.hcd.irq_pending);
+    assert(kshim_usb_settle(3000) == 0);
+    check_enumerated();
+    check_reports(1, 5);
+    check_quiesce(legsup, legctl);
+}
+
+static void scenario_ehb(void)
+{
+    xm_init(32, 0, false);
+    Xm.irq = line;
+    Xm.irq_context = &X;
+    IrqReady = true;
+    uint32_t legsup = Xm.legsup, legctl = Xm.legctl;
+    attach_all();
+    assert(kshim_usb_class_register(&KbdDriver) == 0);
+    assert(start(true) == 0);
+    assert(kshim_usb_settle(3000) == 0);
+    check_enumerated();
+    check_reports(1, 3);
+    kshim_usb_poll();
+    assert(!(Xm.erdp_lo & (1U << 3)));
+    /* IMOD-delayed interrupt for events a poll already consumed. */
+    unsigned events = X.event_count;
+    xm_raise_irq();
+    assert(X.hcd.irq_pending && (Xm.erdp_lo & (1U << 3)));
+    kshim_usb_poll(); /* nothing on the ring */
+    assert(X.event_count == events && !X.hcd.irq_pending);
+    assert(!(Xm.erdp_lo & (1U << 3))); /* EHB cleared by the empty pass */
+    /* The next report interrupts again instead of waiting for a poll. */
+    unsigned raised = Xm.irqs_raised, irqs = X.irqs;
+    check_reports(1, 2);
+    assert(Xm.irqs_raised == raised + 2 && X.irqs == irqs + 2);
+    check_quiesce(legsup, legctl);
+}
+
+static void scenario_gone(void)
+{
+    xm_init(32, 0, false);
+    Xm.irq = line;
+    Xm.irq_context = &X;
+    IrqReady = true;
+    attach_all();
+    assert(kshim_usb_class_register(&KbdDriver) == 0);
+    assert(start(true) == 0);
+    assert(kshim_usb_settle(3000) == 0);
+    check_enumerated();
+    assert(kshim_dma_in_use() != 0);
+    /* Surprise removal / link down: every access now reads all-ones. */
+    Xm.gone = true;
+    assert(kshim_usb_quiesce() == 0);
+    unsigned hcrst = Xm.hcrst_count;
+    assert(kshim_usb_hcd_quiesce_all() == 0);
+    assert(X.quiesced && !X.running && !X.irq_enabled && Xm.hcrst_count == hcrst);
+    assert(kshim_dma_in_use() == 0);
+    assert(kshim_usb_hcd_quiesce_all() == 0); /* idempotent */
+}
+
 int main(int argc, char **argv)
 {
     const char *which = argc > 1 ? argv[1] : "irq";
@@ -473,6 +557,9 @@ int main(int argc, char **argv)
     else if (!strcmp(which, "takeover")) scenario_takeover();
     else if (!strcmp(which, "dead")) scenario_dead();
     else if (!strcmp(which, "stuck")) scenario_stuck();
+    else if (!strcmp(which, "runwindow")) scenario_runwindow();
+    else if (!strcmp(which, "ehb")) scenario_ehb();
+    else if (!strcmp(which, "gone")) scenario_gone();
     else return 2;
     printf("usb_xhci_test %s: ok\n", which);
     return 0;

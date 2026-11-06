@@ -30,6 +30,6 @@ kshim_test(usb_xhci_test io/usb_xhci_test.c io/xhci_model.c
     ${KSHIM_USB_CORE_SOURCES})
 target_include_directories(usb_xhci_test PRIVATE "${KSHIM_ROOT}/tests/include")
 set_tests_properties(usb_xhci_test PROPERTIES ARGS irq)
-foreach(scenario poll lostirq takeover dead stuck)
+foreach(scenario poll lostirq takeover dead stuck runwindow ehb gone)
     add_test(NAME usb_xhci_${scenario}_test COMMAND usb_xhci_test ${scenario})
 endforeach()
