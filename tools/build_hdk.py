@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -271,7 +272,12 @@ def main(default_board="hdk8450"):
                         help="Matching mu_aloha build directory containing FV and BUILD_REPORT.TXT")
     parser.add_argument("--require-debug-uart", action="store_true",
                         help="Require matching build evidence for DEBUG with GENI UART output")
-    parser.add_argument("--out", type=Path, help="Output directory (default: build/<board>)")
+    parser.add_argument("--out", type=Path,
+                        help="Work directory (default: build/hdk/<board>-<variant>)")
+    parser.add_argument("--variant", default="default",
+                        help="Image variant name: build ID tag and image file name")
+    parser.add_argument("--image-dir", type=Path,
+                        help="Folder collecting every final image (default: build/images)")
     parser.add_argument("--jobs", type=int, default=12)
     parser.add_argument("--set", action="append", default=[], metavar="CONFIG_X=VALUE",
                         help="Override or add a Kconfig line, e.g. CONFIG_ENABLE_BANNER=y or "
@@ -285,7 +291,10 @@ def main(default_board="hdk8450"):
     aloha = args.aloha.resolve()
     board = args.board
     package, version = BOARDS[board]
-    out = (args.out or root / "build" / board).resolve()
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", args.variant):
+        parser.error("--variant may contain only letters, digits, '-' and '_'")
+    out = (args.out or root / "build" / "hdk" / f"{board}-{args.variant}").resolve()
+    image_dir = (args.image_dir or root / "build" / "images").resolve()
     out.mkdir(parents=True, exist_ok=True)
     (out / "tmp").mkdir(exist_ok=True)
     env = dict(os.environ, TMPDIR=str(out / "tmp"))
@@ -363,7 +372,8 @@ def main(default_board="hdk8450"):
 
     run(["cmake", "-S", root, "-B", firmware, "-G", "Ninja",
          "-DKSHIM_STANDALONE=ON", "-DKSHIM_RUNTIME_SLOT_SIZE=0x02800000",
-         f"-DKSHIM_LINK_ADDRESS={hex(base)}", f"-DKSHIM_UEFI_PAYLOAD={fd_path}"], "configure")
+         f"-DKSHIM_LINK_ADDRESS={hex(base)}", f"-DKSHIM_UEFI_PAYLOAD={fd_path}",
+         f"-DKSHIM_BUILD_TAG={board}-{args.variant}"], "configure")
     run(["cmake", "--build", firmware, "--parallel", args.jobs], "build")
     elf = firmware / "kShimC.elf"
     binary = firmware / "kShimC.bin"
@@ -476,7 +486,15 @@ def main(default_board="hdk8450"):
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (out / "SHA256SUMS").write_text(f"{digest(image)}  {image.name}\n")
-    print(f"Created {image}\nSHA256 {digest(image)}")
+    # One folder holds every final image; SHA256SUMS covers all of them.
+    image_dir.mkdir(parents=True, exist_ok=True)
+    final = image_dir / f"kshimc-{board}-{args.variant}.img"
+    shutil.copy2(image, final)
+    build_id = re.search(r'#define KSHIM_BUILD_ID "([^"]*)"',
+                         (firmware / "generated/include/kshim_build_id.h").read_text()).group(1)
+    sums = sorted(f"{digest(p)}  {p.name}" for p in image_dir.glob("kshimc-*.img"))
+    (image_dir / "SHA256SUMS").write_text("\n".join(sums) + "\n")
+    print(f"Created {final}\nSHA256 {digest(final)}\nBuild ID {build_id}")
 
 
 if __name__ == "__main__":

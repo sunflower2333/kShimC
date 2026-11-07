@@ -3,6 +3,7 @@
 #include <asm/arm64_exception.h>
 #include <arm64_sysreg.h>
 #include <gicv3.h>
+#include <kshim_build_id_compat.h>
 #include <stdbool.h>
 
 /* VBAR_EL1 as the previous bootloader left it, and whether ours replaced it. */
@@ -56,6 +57,7 @@ void arm64_synchronous_exception_handler(
     uint64_t exception_type)
 {
     static const char *const names[] = {"Synchronous exception", "IRQ", "FIQ", "SError"};
+    printf("kShimC %s: fatal exception\n", KSHIM_BUILD_ID);
     // Print registers
     printf_e("%s occurred at EL%lu\n", exception_type < 4 ? names[exception_type] : "Exception",
              (unsigned long)arm64_current_el());

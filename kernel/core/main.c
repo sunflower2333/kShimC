@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include <arm64_exception.h>
+#include <kshim_build_id_compat.h>
 #include <kshim.h>
 #include <pl011_uart.h>
 #include <kshim_console.h>
@@ -296,6 +297,8 @@ int kshim_main(
         device_tree_address = 0;
     }
     (void)kshim_console_init(runtime_fdt);
+    /* First line on every profile: which image is running. */
+    printf("kShimC %s\n", KSHIM_BUILD_ID);
     if (runtime_fdt && kshim_resources_init(runtime_fdt, fdt_totalsize(runtime_fdt))) {
         printf("Invalid runtime device resources\n");
         for (;;) (void)delay(100000);
