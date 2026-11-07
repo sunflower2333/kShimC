@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <qcom_dt.h>
+#include <Library/cr_geni.h>
 #include <kshim/touch_driver.h>
 #include <qcom_keys_fdt.h>
 #include <kshim_console.h>
@@ -19,6 +20,34 @@ static void *fixture(const char *name, size_t *bytes)
     assert(dt_validate(data, 8));
     assert(!fdt_open_into(data, data, size + 16384));
     return data;
+}
+static uint32_t zero_read32(void *context, uintptr_t address)
+{ (void)context; (void)address; return 0; }
+/* SDE dummy layer mixers (offset 0x0f0f, SM8450/SM8650) trail the real ones
+ * and are dropped; anywhere else, or too many real ones, the DT is refused.
+ * With all registers zero the splash reader is reached and finds no active
+ * route, so CR_BUS_UNSUPPORTED means the DT itself was accepted. */
+static void test_sde_mixers(void *f)
+{
+    const struct CrIo io = {.read32 = zero_read32};
+    kshim_framebuffer_config_t fb; kshim_mmu_region_t mmio;
+    int sde = fdt_node_offset_by_compatible(f, -1, "qcom,sde-kms");
+    assert(sde >= 0);
+    assert(kshim_dt_splash(f, &io, &fb, &mmio) == CR_BUS_UNSUPPORTED);
+    static const uint32_t trailing[] = {0x45000, 0x46000, 0x47000, 0x48000, 0x49000, 0x4a000, 0xf0f, 0xf0f};
+    static const uint32_t middle[] = {0x45000, 0x46000, 0xf0f, 0x47000, 0x48000, 0x49000, 0x4a000};
+    static const uint32_t seven[] = {0x45000, 0x46000, 0x47000, 0x48000, 0x49000, 0x4a000, 0x4b000};
+    static const uint32_t dummies[] = {0xf0f, 0xf0f};
+    const struct { const uint32_t *v; size_t n; int status; } cases[] = {
+        {trailing, 8, CR_BUS_UNSUPPORTED}, {middle, 7, -1}, {seven, 7, -1}, {dummies, 2, -1},
+    };
+    fdt32_t cells[8];
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c) {
+        for (size_t i = 0; i < cases[c].n; ++i) cells[i] = cpu_to_fdt32(cases[c].v[i]);
+        sde = fdt_node_offset_by_compatible(f, -1, "qcom,sde-kms");
+        assert(!fdt_setprop(f, sde, "qcom,sde-mixer-off", cells, cases[c].n * 4));
+        assert(kshim_dt_splash(f, &io, &fb, &mmio) == cases[c].status);
+    }
 }
 static void test_real(const char *name, bool touch)
 {
@@ -61,6 +90,7 @@ static void test_real(const char *name, bool touch)
     size_t with_placeholder;
     assert(!dt_reservations(f, ranges, nomap, 128, &with_placeholder));
     assert(with_placeholder == nr);
+    test_sde_mixers(f);
     free(r); free(f);
 }
 static void test_common(void)

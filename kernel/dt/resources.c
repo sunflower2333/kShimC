@@ -5,6 +5,7 @@
 #include <qcom_keys_fdt.h>
 #include <qcom_key_platform.h>
 #include <kshim_console.h>
+#include <stdio.h>
 #include <string.h>
 #include <error_no.h>
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
@@ -133,6 +134,12 @@ int kshim_resources_init(const void *f, size_t available)
 #if CONFIG_KSHIM_FRAMEBUFFER
     kshim_mmu_region_t display;
     resources.splash_status = kshim_dt_splash(f, CrIoDefault(), &resources.framebuffer, &display);
+#if !CONFIG_KSHIM_QEMU_PLATFORM
+    /* -1: DT (reservation, SDE node or its lists); -22/-95: the scanout
+     * registers (CrSplashRead) are invalid or not a supported layout. */
+    if (resources.splash_status)
+        printf("Display: no continuous-splash scanout (%d)\n", resources.splash_status);
+#endif
     if (!resources.splash_status && kshim_resource_map(&resources, display.base, display.size,
             display.type, display.permissions)) return -1;
     if (!resources.splash_status) ui_scratch_from_splash(f, &resources);

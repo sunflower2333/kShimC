@@ -10,6 +10,24 @@ static int offsets(const void *f, int n, const char *name, uint32_t *out, unsign
     for (int i = 0; i < len / 4; ++i) out[i] = fdt32_to_cpu(p[i]);
     return len / 4;
 }
+/* SDE marks virtual and DCWB layer mixers, which have no registers, with
+ * this offset (DUMMY_SDE_BLOCK_BASE in Linux's sde_hw_catalog.c). SM8450
+ * lists 6 real mixers then 2 dummies, SM8650 6 then 4. */
+#define SDE_DUMMY_BLOCK_BASE 0x0f0fU
+/* The real layer mixers, in LM order. Dummies must trail them: dropping one
+ * from the middle would renumber the LMs the CTL registers refer to. */
+static int mixers(const void *f, int sde, uint32_t *out, unsigned capacity)
+{
+    uint32_t all[16];
+    int count = offsets(f, sde, "qcom,sde-mixer-off", all, 16);
+    while (count > 0 && all[count - 1] == SDE_DUMMY_BLOCK_BASE) --count;
+    if (count < 1 || (unsigned)count > capacity) return -1;
+    for (int i = 0; i < count; ++i) {
+        if (all[i] == SDE_DUMMY_BLOCK_BASE) return -1;
+        out[i] = all[i];
+    }
+    return count;
+}
 /* The single available cont_splash_region reservation, or -1. */
 int kshim_dt_splash_reservation(const void *f, struct dt_range *memory, bool *no_map)
 {
@@ -48,7 +66,7 @@ int kshim_dt_splash(const void *f, const struct CrIo *io,
         .reserved_base = memory.base, .reserved_size = memory.size};
     int pipes = offsets(f, sde, "qcom,sde-sspp-off", resources.pipe, 8);
     int ctls = offsets(f, sde, "qcom,sde-ctl-off", resources.ctl, 8);
-    int count = offsets(f, sde, "qcom,sde-mixer-off", resources.mixer, 6);
+    int count = mixers(f, sde, resources.mixer, 6);
     if (pipes < 1 || ctls < 1 || count < 1) return -1;
     resources.pipe_count = pipes; resources.ctl_count = ctls; resources.mixer_count = count;
     unsigned vig = 0, dma = 0;

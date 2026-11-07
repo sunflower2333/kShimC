@@ -140,6 +140,8 @@ int kshim_user_select(uint64_t fdt, const char *const *names, size_t count,
     if (!names || !selected || !count || initial >= count) return -1;
 #if CONFIG_KSHIM_FRAMEBUFFER && CONFIG_KSHIM_LVGL
     int status = start_menu((const void *)(uintptr_t)fdt);
+    if (status)
+        printf("UI: %s; serial menu\n", status == -1 ? "no framebuffer" : "LVGL init failed");
     if (!status && kshim_lvgl_set_entries(&Lvgl, names, count, initial) == 0) {
         uint32_t power_caps = kshim_platform_power_init((const void *)(uintptr_t)fdt);
         if (kshim_lvgl_set_power_capabilities(&Lvgl, power_caps))
