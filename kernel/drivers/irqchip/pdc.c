@@ -78,7 +78,7 @@ static int pdc_ranges(const void *f, int node, PdcDeviceContext *ctx)
         return 0;
     }
     for (unsigned i = 0; i < sizeof(Builtin) / sizeof(Builtin[0]); ++i) {
-        if (fdt_node_check_compatible(f, node, Builtin[i].compatible)) continue;
+        if (dt_node_check_compatible(f, node, Builtin[i].compatible)) continue;
         ctx->PdcRangeCount = Builtin[i].count;
         memcpy(ctx->PdcRegion, Builtin[i].ranges, Builtin[i].count * sizeof(PdcRange));
         return 0;

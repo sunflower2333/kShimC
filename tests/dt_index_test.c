@@ -49,6 +49,33 @@ static void compare_compatible(const void *fdt)
     }
     /* A start offset that is not a node start falls back to libfdt. */
     assert(dt_node_by_compatible(fdt, 1, names[0]) == fdt_node_offset_by_compatible(fdt, 1, names[0]));
+    /* Tree order, and per-node compatible checks (0 / 1 / -NOTFOUND), on
+     * every node against libfdt: the node's own first string, the root's,
+     * and an absent one. */
+    const char *root = fdt_getprop(fdt, 0, "compatible", NULL);
+    int expected = fdt_next_node(fdt, -1, NULL), got = dt_next_node(fdt, -1);
+    for (; expected >= 0; expected = fdt_next_node(fdt, expected, NULL), got = dt_next_node(fdt, got)) {
+        assert(got == expected);
+        const char *own = fdt_getprop(fdt, expected, "compatible", NULL);
+        const char *probe[] = {own ? own : "kshim,absent", root ? root : "kshim,absent", "kshim,absent"};
+        for (unsigned k = 0; k < 3; ++k)
+            assert(dt_node_check_compatible(fdt, expected, probe[k]) ==
+                   fdt_node_check_compatible(fdt, expected, probe[k]));
+    }
+    assert(got == expected && expected == -FDT_ERR_NOTFOUND);
+    /* Any-of iteration: the reference is a walk checking each name. */
+    for (unsigned i = 0; i + 3 <= count; i += 3) {
+        const char *set[3] = {names[i], names[i + 1], names[i + 2]};
+        int n = -1, ref = -1;
+        do {
+            n = dt_node_by_compatibles(fdt, n, set, 3);
+            do ref = fdt_next_node(fdt, ref, NULL);
+            while (ref >= 0 && fdt_node_check_compatible(fdt, ref, set[0]) &&
+                   fdt_node_check_compatible(fdt, ref, set[1]) && fdt_node_check_compatible(fdt, ref, set[2]));
+            if (ref < 0) ref = -FDT_ERR_NOTFOUND;
+            assert(n == ref);
+        } while (ref >= 0);
+    }
 }
 
 /* dt_phandle()'s full walk before the index: strict, unique, available. */
@@ -182,6 +209,18 @@ static void check(const char *path)
     *tag = saved;
     assert(dt_validate(blob, room) == 0 && dt_index_nodes(blob) == (int)nodes);
     printf("  phandle uniqueness and in-place corruption checked\n");
+    /* A present but empty compatible is "not compatible" (1), an absent one
+     * -FDT_ERR_NOTFOUND: the index keeps the two apart. */
+    int bare = -1;
+    for (int node = fdt_next_node(blob, -1, NULL); node >= 0; node = fdt_next_node(blob, node, NULL))
+        if (node && !fdt_getprop(blob, node, "compatible", NULL)) { bare = node; break; }
+    assert(bare > 0);
+    assert(dt_node_check_compatible(blob, bare, "kshim,absent") == -FDT_ERR_NOTFOUND);
+    assert(fdt_setprop(blob, bare, "compatible", "", 0) == 0);
+    assert(dt_validate(blob, room) == 0 && dt_index_nodes(blob) == (int)nodes);
+    assert(dt_node_check_compatible(blob, bare, "kshim,absent") == 1 &&
+           fdt_node_check_compatible(blob, bare, "kshim,absent") == 1);
+    assert(compare_all(blob) == nodes);
     free(blob);
 }
 

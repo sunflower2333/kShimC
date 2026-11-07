@@ -92,7 +92,7 @@ static const struct kshim_soc_clock_controller *controller_of(const void *f, int
     for (size_t i = 0;; ++i) {
         const struct kshim_soc_clock_controller *c = kshim_soc_clock_controller_at(i);
         if (!c) return NULL;
-        if (!fdt_node_check_compatible(f, node, c->compatible)) return c;
+        if (!dt_node_check_compatible(f, node, c->compatible)) return c;
     }
 }
 
@@ -102,7 +102,7 @@ int kshim_clk_init(const void *fdt)
     if (C.fdt == fdt) return 0;
     for (unsigned i = 0; i < CLK_POOL; ++i) if (C.pool[i].used) return ERROR_BUSY;
     C.count = 0;
-    for (int n = fdt_next_node(fdt, -1, NULL); n >= 0; n = fdt_next_node(fdt, n, NULL)) {
+    for (int n = dt_next_node(fdt, -1); n >= 0; n = dt_next_node(fdt, n)) {
         const struct kshim_soc_clock_controller *c = controller_of(fdt, n);
         struct dt_range reg;
         if (!c || !dt_available(fdt, n) || dt_reg(fdt, n, 0, &reg) || reg.base > UINTPTR_MAX) continue;
@@ -120,7 +120,7 @@ int kshim_clk_init(const void *fdt)
 int kshim_clk_map_resources(struct kshim_resources *r)
 {
     if (!r || !r->fdt) return ERROR_INVALID_PARAMETER;
-    for (int n = fdt_next_node(r->fdt, -1, NULL); n >= 0; n = fdt_next_node(r->fdt, n, NULL)) {
+    for (int n = dt_next_node(r->fdt, -1); n >= 0; n = dt_next_node(r->fdt, n)) {
         struct dt_range reg;
         if (!controller_of(r->fdt, n) || !dt_available(r->fdt, n)) continue;
         if (dt_reg(r->fdt, n, 0, &reg) || kshim_resource_map(r, reg.base, reg.size, KSHIM_MMU_DEVICE,

@@ -4,17 +4,17 @@
 #include <string.h>
 unsigned kshim_dt_soc(const void *f, int node)
 {
-    if (!fdt_node_check_compatible(f, node, "qcom,gcc-sm8150-v2") ||
-        !fdt_node_check_compatible(f, node, "qcom,sm8150-pinctrl") ||
-        !fdt_node_check_compatible(f, node, "qcom,gcc-sm8150")) return 8150;
-    if (!fdt_node_check_compatible(f, node, "qcom,kona-pinctrl") ||
-        !fdt_node_check_compatible(f, node, "qcom,sm8250-tlmm") ||
-        !fdt_node_check_compatible(f, node, "qcom,gcc-kona") ||
-        !fdt_node_check_compatible(f, node, "qcom,gcc-sm8250")) return 8250;
+    if (!dt_node_check_compatible(f, node, "qcom,gcc-sm8150-v2") ||
+        !dt_node_check_compatible(f, node, "qcom,sm8150-pinctrl") ||
+        !dt_node_check_compatible(f, node, "qcom,gcc-sm8150")) return 8150;
+    if (!dt_node_check_compatible(f, node, "qcom,kona-pinctrl") ||
+        !dt_node_check_compatible(f, node, "qcom,sm8250-tlmm") ||
+        !dt_node_check_compatible(f, node, "qcom,gcc-kona") ||
+        !dt_node_check_compatible(f, node, "qcom,gcc-sm8250")) return 8250;
     /* Mainline SM8650 (sm8650.dtsi): linear TLMM, 210 normal pads. */
-    if (!fdt_node_check_compatible(f, node, "qcom,sm8650-tlmm") ||
-        !fdt_node_check_compatible(f, node, "qcom,sm8650-gcc") ||
-        !fdt_node_check_compatible(f, node, "qcom,sm8650-tcsr")) return 8650;
+    if (!dt_node_check_compatible(f, node, "qcom,sm8650-tlmm") ||
+        !dt_node_check_compatible(f, node, "qcom,sm8650-gcc") ||
+        !dt_node_check_compatible(f, node, "qcom,sm8650-tcsr")) return 8650;
     return 0;
 }
 /* SM8650 TLMM: control at base + pin * 0x1000 for the normal pads 0..209

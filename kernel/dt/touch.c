@@ -14,7 +14,7 @@ static bool selected_panel(const void *f, int node)
     const fdt32_t *panels = fdt_getprop(f, node, "panel", &length);
     if (!panels) return length == -FDT_ERR_NOTFOUND;
     if (length <= 0 || length % 4) return false;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+    for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
         bool active;
         if (dt_bool(f, n, "qcom,dsi-display-active", &active)) return false;
         if (!active || !dt_available(f, n)) continue;

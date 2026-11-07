@@ -42,8 +42,8 @@ int kshim_spi_controller_get(const void *fdt, int node, struct kshim_spi_control
     if (!kshim_io_on_boot_cpu()) return ERROR_BUSY;
     if (!dt_available(fdt, node)) return ERROR_NOT_FOUND;
 #if CONFIG_KSHIM_SPI_GENI
-    if (!fdt_node_check_compatible(fdt, node, "qcom,geni-spi") ||
-        !fdt_node_check_compatible(fdt, node, "qcom,spi-geni"))
+    if (!dt_node_check_compatible(fdt, node, "qcom,geni-spi") ||
+        !dt_node_check_compatible(fdt, node, "qcom,spi-geni"))
         return kshim_geni_spi_probe(fdt, node, controller);
 #endif
     return ERROR_NOT_FOUND;

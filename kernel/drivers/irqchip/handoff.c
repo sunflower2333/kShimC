@@ -26,7 +26,7 @@ void kshim_irqchip_map_resources(struct kshim_resources *r)
 {
     /* Optional: without a mapping the PDC routes stay unprogrammed and the
      * affected cascades (SPMI on SM8150) fall back to polling. */
-    for (int n = fdt_next_node(r->fdt, -1, NULL); n >= 0; n = fdt_next_node(r->fdt, n, NULL)) {
+    for (int n = dt_next_node(r->fdt, -1); n >= 0; n = dt_next_node(r->fdt, n)) {
         struct dt_range reg;
         if (kshim_dt_irq_kind(r->fdt, n) != KSHIM_DT_IRQ_PDC || !dt_available(r->fdt, n) ||
             dt_reg(r->fdt, n, 0, &reg)) continue;

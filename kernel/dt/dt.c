@@ -16,6 +16,7 @@
  */
 #define DT_INDEX_MAX_NODES 8192
 #define DT_INDEX_MAX_DEPTH 64
+#define DT_TAGALIGN(x) (((x) + 3U) & ~3U)
 struct dt_phandle { uint32_t phandle; int node; };
 static struct {
     const void *fdt;
@@ -54,40 +55,96 @@ static uint64_t blob_hash(const void *fdt, size_t size)
     return hash ^ size;
 }
 
+/* Per-node property state while one node's properties are read. */
+struct dt_props { const fdt32_t *a, *b; int alen, blen; };
+
+static bool add_phandle(int *phandles, uint32_t phandle, int node)
+{
+    if (!phandle || phandle == UINT32_MAX) return true;
+    if (*phandles >= DT_INDEX_MAX_NODES) return false;
+    int at = (*phandles)++;
+    /* Insertion keeps the table sorted (stable: tree order among equals);
+     * phandles mostly ascend. */
+    while (at > 0 && Index.by_phandle[at - 1].phandle > phandle) {
+        Index.by_phandle[at] = Index.by_phandle[at - 1];
+        --at;
+    }
+    Index.by_phandle[at] = (struct dt_phandle){phandle, node};
+    return true;
+}
+
+/* A node's properties are complete: record its phandle the way
+ * fdt_get_phandle() reads it, and anything dt_phandle() must refuse. */
+static bool finish_node(int position, const struct dt_props *p, int *phandles, bool *malformed)
+{
+    if ((p->a && p->alen != 4) || (p->b && p->blen != 4) ||
+        (p->a && p->b && fdt32_ld(p->a) != fdt32_ld(p->b)))
+        *malformed = true;
+    uint32_t phandle = p->a && p->alen == 4 ? fdt32_ld(p->a) :
+                       p->b && p->blen == 4 ? fdt32_ld(p->b) : 0;
+    return add_phandle(phandles, phandle, Index.offsets[position]);
+}
+
+/*
+ * One raw pass over the structure block, which fdt_check_full() has just
+ * accepted. libfdt's per-node fdt_getprop() calls each rescanned the node's
+ * properties: five of them per node made indexing the SM8450 tree ~60 ms on
+ * the device. A property belongs to the innermost open node and precedes its
+ * subnodes, so a node is complete at its first child or its end.
+ */
 static void index_build(const void *fdt, uint64_t hash)
 {
-    int stack[DT_INDEX_MAX_DEPTH], depth = -1, count = 0, phandles = 0; /* root at depth 0 */
+    const char *base = (const char *)fdt + fdt_off_dt_struct(fdt);
+    const char *strings = (const char *)fdt + fdt_off_dt_strings(fdt);
+    uint32_t limit = fdt_version(fdt) >= 17 ? fdt_size_dt_struct(fdt) :
+                     fdt_totalsize(fdt) - fdt_off_dt_struct(fdt);
+    int stack[DT_INDEX_MAX_DEPTH], depth = -1, count = 0, phandles = 0, open = -1;
     bool malformed = false;
+    struct dt_props props = {0};
     Index.fdt = NULL;
-    for (int node = fdt_next_node(fdt, -1, &depth); node >= 0;
-         node = fdt_next_node(fdt, node, &depth)) {
-        if (depth < 0)
-            break; /* past the root's end: fdt_next_node() reports depth -1 */
-        if (depth >= DT_INDEX_MAX_DEPTH || count >= DT_INDEX_MAX_NODES)
-            return; /* too large: lookups fall back to libfdt */
-        stack[depth] = node;
-        Index.offsets[count] = node;
-        Index.parents[count] = depth ? stack[depth - 1] : -FDT_ERR_NOTFOUND;
-        int length;
-        const char *compatible = fdt_getprop(fdt, node, "compatible", &length);
-        Index.compat_offset[count] = compatible ? (int)(compatible - (const char *)fdt) : 0;
-        Index.compat_length[count++] = compatible && length > 0 ? length : 0;
-        int alen, blen;
-        const fdt32_t *a = fdt_getprop(fdt, node, "phandle", &alen);
-        const fdt32_t *b = fdt_getprop(fdt, node, "linux,phandle", &blen);
-        if ((a && alen != 4) || (b && blen != 4) || (a && b && fdt32_to_cpu(*a) != fdt32_to_cpu(*b)))
-            malformed = true;
-        uint32_t phandle = fdt_get_phandle(fdt, node);
-        if (phandle && phandle != UINT32_MAX) {
-            int at = phandles++;
-            /* Insertion keeps the table sorted; phandles mostly ascend. */
-            while (at > 0 && Index.by_phandle[at - 1].phandle > phandle) {
-                Index.by_phandle[at] = Index.by_phandle[at - 1];
-                --at;
+    if (limit < 4) return;
+    for (uint32_t offset = 0; offset <= limit - 4;) {
+        uint32_t tag = fdt32_ld((const fdt32_t *)(base + offset));
+        if (tag == FDT_BEGIN_NODE) {
+            if (open >= 0 && !finish_node(open, &props, &phandles, &malformed)) return;
+            if (++depth >= DT_INDEX_MAX_DEPTH || count >= DT_INDEX_MAX_NODES)
+                return; /* too large: lookups fall back to libfdt */
+            Index.offsets[count] = (int)offset;
+            Index.parents[count] = depth ? Index.offsets[stack[depth - 1]] : -FDT_ERR_NOTFOUND;
+            Index.compat_offset[count] = Index.compat_length[count] = 0;
+            stack[depth] = open = count++;
+            props = (struct dt_props){0};
+            offset += 4 + DT_TAGALIGN((uint32_t)strnlen(base + offset + 4, limit - offset - 4) + 1);
+        } else if (tag == FDT_PROP) {
+            if (depth < 0 || offset > limit - 12) return;
+            uint32_t length = fdt32_ld((const fdt32_t *)(base + offset + 4));
+            const char *name = strings + fdt32_ld((const fdt32_t *)(base + offset + 8));
+            const char *value = base + offset + 12;
+            int at = stack[depth];
+            /* First occurrence wins, as with fdt_getprop(). */
+            if (open == at && !strcmp(name, "compatible")) {
+                if (!Index.compat_offset[at]) {
+                    Index.compat_offset[at] = (int)(value - (const char *)fdt);
+                    Index.compat_length[at] = (int)length;
+                }
+            } else if (open == at && !strcmp(name, "phandle")) {
+                if (!props.a) props = (struct dt_props){(const fdt32_t *)value, props.b, (int)length, props.blen};
+            } else if (open == at && !strcmp(name, "linux,phandle")) {
+                if (!props.b) props = (struct dt_props){props.a, (const fdt32_t *)value, props.alen, (int)length};
             }
-            Index.by_phandle[at] = (struct dt_phandle){phandle, node};
+            offset += 12 + DT_TAGALIGN(length);
+        } else if (tag == FDT_END_NODE) {
+            if (open >= 0 && !finish_node(open, &props, &phandles, &malformed)) return;
+            open = -1;
+            offset += 4;
+            if (--depth < 0) break; /* the root closed */
+        } else if (tag == FDT_NOP) {
+            offset += 4;
+        } else {
+            break; /* FDT_END */
         }
     }
+    if (depth >= 0 || !count) return;
     Index.count = count;
     Index.phandles = phandles;
     Index.phandle_malformed = malformed;
@@ -103,17 +160,83 @@ int dt_index_nodes(const void *fdt)
     return index_valid(fdt) ? Index.count : -1;
 }
 
+/* Position of the node last looked up: tree-order walks ask for it or the
+ * next one, so most lookups skip the binary search. Only a hint: always
+ * checked against the offsets. */
+static int Hint;
+
 /* Position of node in the index, or -1. */
 static int index_position(int node)
 {
+    int hint = Hint;
+    if (hint >= 0 && hint < Index.count && Index.offsets[hint] == node) return hint;
+    if (hint >= 0 && hint + 1 < Index.count && Index.offsets[hint + 1] == node) {
+        Hint = hint + 1;
+        return hint + 1;
+    }
     int lo = 0, hi = Index.count - 1;
     while (lo <= hi) {
         int mid = lo + (hi - lo) / 2;
-        if (Index.offsets[mid] == node) return mid;
+        if (Index.offsets[mid] == node) { Hint = mid; return mid; }
         if (Index.offsets[mid] < node) lo = mid + 1;
         else hi = mid - 1;
     }
     return -1;
+}
+
+int dt_next_node(const void *fdt, int node)
+{
+    if (index_valid(fdt)) {
+        int at = node < 0 ? -1 : index_position(node);
+        if (node < 0 || at >= 0) {
+            if (at + 1 >= Index.count) return -FDT_ERR_NOTFOUND;
+            Hint = at + 1;
+            return Index.offsets[at + 1];
+        }
+    }
+    return fdt_next_node(fdt, node, NULL);
+}
+
+/* Exactly fdt_node_check_compatible()'s test on a present property, even
+ * an empty one ("compatible;" on /cpus matches "" in libfdt too). */
+static bool index_compatible(const void *fdt, int at, const char *compatible)
+{
+    return Index.compat_offset[at] &&
+        fdt_stringlist_contains((const char *)fdt + Index.compat_offset[at],
+                                Index.compat_length[at], compatible);
+}
+
+int dt_node_check_compatible(const void *fdt, int node, const char *compatible)
+{
+    if (compatible && node >= 0 && index_valid(fdt)) {
+        int at = index_position(node);
+        if (at >= 0) {
+            if (!Index.compat_offset[at]) return -FDT_ERR_NOTFOUND;
+            return !index_compatible(fdt, at, compatible);
+        }
+    }
+    return fdt_node_check_compatible(fdt, node, compatible);
+}
+
+int dt_node_by_compatibles(const void *fdt, int start, const char *const *names, unsigned count)
+{
+    if (!names || !count) return -FDT_ERR_NOTFOUND;
+    if (index_valid(fdt)) {
+        int at = start < 0 ? -1 : index_position(start);
+        if (start < 0 || at >= 0) {
+            for (int i = at + 1; i < Index.count; ++i)
+                for (unsigned k = 0; k < count; ++k)
+                    if (index_compatible(fdt, i, names[k])) {
+                        Hint = i;
+                        return Index.offsets[i];
+                    }
+            return -FDT_ERR_NOTFOUND;
+        }
+    }
+    for (int n = fdt_next_node(fdt, start, NULL); n >= 0; n = fdt_next_node(fdt, n, NULL))
+        for (unsigned k = 0; k < count; ++k)
+            if (!fdt_node_check_compatible(fdt, n, names[k])) return n;
+    return -FDT_ERR_NOTFOUND;
 }
 
 int dt_parent_offset(const void *fdt, int node)
@@ -128,13 +251,13 @@ int dt_parent_offset(const void *fdt, int node)
 int dt_node_by_compatible(const void *fdt, int start, const char *compatible)
 {
     if (compatible && index_valid(fdt)) {
-        int at = start < 0 ? 0 : index_position(start);
-        if (at >= 0) {
-            for (int i = start < 0 ? 0 : at + 1; i < Index.count; ++i)
-                if (Index.compat_length[i] &&
-                    fdt_stringlist_contains((const char *)fdt + Index.compat_offset[i],
-                                            Index.compat_length[i], compatible))
+        int at = start < 0 ? -1 : index_position(start);
+        if (start < 0 || at >= 0) {
+            for (int i = at + 1; i < Index.count; ++i)
+                if (index_compatible(fdt, i, compatible)) {
+                    Hint = i;
                     return Index.offsets[i];
+                }
             return -FDT_ERR_NOTFOUND;
         }
     }

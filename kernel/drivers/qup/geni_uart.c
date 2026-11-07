@@ -83,7 +83,7 @@ int kshim_uart_open_dt(struct kshim_uart *uart, const void *fdt, int node, uint3
     struct dt_range reg;
     if (dt_reg(fdt, node, 0, &reg) || reg.base > UINTPTR_MAX || reg.size > SIZE_MAX)
         return ERROR_INVALID_PARAMETER;
-    if (!fdt_node_check_compatible(fdt, node, "arm,pl011"))
+    if (!dt_node_check_compatible(fdt, node, "arm,pl011"))
         return kshim_uart_open_mmio(uart, KSHIM_UART_PL011, (uintptr_t)reg.base, (size_t)reg.size);
 #if CONFIG_KSHIM_QUP
     if (kshim_dt_qup_protocol(fdt, node) != KSHIM_QUP_PROTOCOL_UART) return ERROR_NOT_SUPPORTED;

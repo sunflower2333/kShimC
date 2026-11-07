@@ -7,8 +7,8 @@
 
 static bool qcom_wrapper(const void *f, int node)
 {
-    return !fdt_node_check_compatible(f, node, "qcom,dwc3") ||
-           !fdt_node_check_compatible(f, node, "qcom,dwc-usb3-msm");
+    return !dt_node_check_compatible(f, node, "qcom,dwc3") ||
+           !dt_node_check_compatible(f, node, "qcom,dwc-usb3-msm");
 }
 
 /* androidboot.usbcontroller=a600000.dwc3 -> 0xa600000, else 0. */
@@ -75,9 +75,9 @@ static void interrupt(const void *f, int node, struct kshim_usb_acm_resource *r)
     r->pdc = cells == 3 && !strncmp(dt_string(f, parent, "compatible") ?
                                     dt_string(f, parent, "compatible") : "", "qcom,pdc", 8);
     r->gic = cells >= 3 && r->irq_spec[0] <= 1 &&
-             (r->pdc || !fdt_node_check_compatible(f, parent, "arm,gic-v3") ||
-              !fdt_node_check_compatible(f, parent, "arm,gic-400") ||
-              !fdt_node_check_compatible(f, parent, "arm,cortex-a15-gic"));
+             (r->pdc || !dt_node_check_compatible(f, parent, "arm,gic-v3") ||
+              !dt_node_check_compatible(f, parent, "arm,gic-400") ||
+              !dt_node_check_compatible(f, parent, "arm,cortex-a15-gic"));
     if (r->gic) {
         r->intid = (r->irq_spec[0] ? 16U : 32U) + r->irq_spec[1];
         r->trigger = r->irq_spec[2] & 0xF;

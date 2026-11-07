@@ -94,12 +94,12 @@ static bool compatible_prefix(const void *f, int node, const char *prefix, const
 enum kshim_dt_irq_kind kshim_dt_irq_kind(const void *f, int n)
 {
     if (!f || n < 0 || !fdt_getprop(f, n, "interrupt-controller", NULL)) return KSHIM_DT_IRQ_OTHER;
-    if (!fdt_node_check_compatible(f, n, "arm,gic-v3") ||
-        !fdt_node_check_compatible(f, n, "arm,gic-400") ||
-        !fdt_node_check_compatible(f, n, "arm,cortex-a15-gic")) return KSHIM_DT_IRQ_GIC;
-    if (!fdt_node_check_compatible(f, n, "qcom,pdc") || compatible_prefix(f, n, "qcom,pdc-", NULL) ||
+    if (!dt_node_check_compatible(f, n, "arm,gic-v3") ||
+        !dt_node_check_compatible(f, n, "arm,gic-400") ||
+        !dt_node_check_compatible(f, n, "arm,cortex-a15-gic")) return KSHIM_DT_IRQ_GIC;
+    if (!dt_node_check_compatible(f, n, "qcom,pdc") || compatible_prefix(f, n, "qcom,pdc-", NULL) ||
         compatible_prefix(f, n, "qcom,", "-pdc")) return KSHIM_DT_IRQ_PDC;
-    if (!fdt_node_check_compatible(f, n, "qcom,spmi-pmic-arb")) return KSHIM_DT_IRQ_SPMI;
+    if (!dt_node_check_compatible(f, n, "qcom,spmi-pmic-arb")) return KSHIM_DT_IRQ_SPMI;
     if (fdt_getprop(f, n, "gpio-controller", NULL) &&
         (compatible_prefix(f, n, "qcom,", "-pinctrl") || compatible_prefix(f, n, "qcom,", "-tlmm")))
         return KSHIM_DT_IRQ_TLMM;
@@ -109,8 +109,8 @@ enum kshim_dt_irq_kind kshim_dt_irq_kind(const void *f, int n)
 int kshim_dt_spmi_controller(const void *f, unsigned controller)
 {
     unsigned index = 0;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
-        if (fdt_node_check_compatible(f, n, "qcom,spmi-pmic-arb") || !dt_available(f, n)) continue;
+    for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
+        if (dt_node_check_compatible(f, n, "qcom,spmi-pmic-arb") || !dt_available(f, n)) continue;
         if (index++ == controller) return n;
     }
     return -1;

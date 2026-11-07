@@ -151,7 +151,7 @@ int kshim_pci_host_parse_dt(const void *f, int node, struct kshim_pci_host *host
 
 static bool is_gic(const void *f, int node)
 {
-    return node >= 0 && !fdt_node_check_compatible(f, node, "arm,gic-v3");
+    return node >= 0 && !dt_node_check_compatible(f, node, "arm,gic-v3");
 }
 
 int kshim_pci_dt_intx(const void *f, int host_node, uint32_t unit_hi, uint8_t pin,

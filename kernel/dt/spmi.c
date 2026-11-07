@@ -2,7 +2,7 @@
 #include <qcom_dt.h>
 #include <string.h>
 static int controller_node(const void *f, int n)
-{ return fdt_node_check_compatible(f, n, "qcom,spmi-pmic-arb") == 0 && dt_available(f, n); }
+{ return dt_node_check_compatible(f, n, "qcom,spmi-pmic-arb") == 0 && dt_available(f, n); }
 int kshim_dt_spmi(const void *f, struct kshim_resources *r)
 {
     static const char *names[SPMI_MEMORY_REGION_TYPE_MAX] = {

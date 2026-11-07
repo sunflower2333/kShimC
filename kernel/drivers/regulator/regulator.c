@@ -106,8 +106,8 @@ static struct {
 
 static bool is_rsc(const void *f, int n)
 {
-    return !fdt_node_check_compatible(f, n, "qcom,rpmh-rsc") ||
-           !fdt_node_check_compatible(f, n, "qcom,tcs-drv");
+    return !dt_node_check_compatible(f, n, "qcom,rpmh-rsc") ||
+           !dt_node_check_compatible(f, n, "qcom,tcs-drv");
 }
 
 /* The apps DRV and its ACTIVE TCS window (dt-bindings soc/qcom,rpmh-rsc.h:
@@ -117,7 +117,7 @@ static int rsc_parse(const void *f, int n, struct CrQupResources *r)
     uint32_t drv;
     struct dt_range region, tcs;
     if (!dt_available(f, n) || dt_u32(f, n, "qcom,drv-id", &drv) || drv > 4) return -1;
-    if (!fdt_node_check_compatible(f, n, "qcom,tcs-drv")) {
+    if (!dt_node_check_compatible(f, n, "qcom,tcs-drv")) {
         if (dt_reg(f, n, 0, &region) || dt_reg(f, n, 1, &tcs) || tcs.base <= region.base ||
             tcs.base - region.base > UINT32_MAX) return -1;
         r->tcs_offset = (uint32_t)(tcs.base - region.base);
@@ -149,7 +149,7 @@ static int rsc_parse(const void *f, int n, struct CrQupResources *r)
 static int find_rsc(const void *f)
 {
     int found = -1;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+    for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
         const char *label = dt_string(f, n, "label");
         if (!label || strcmp(label, "apps_rsc") || !dt_available(f, n) || !is_rsc(f, n)) continue;
         if (found >= 0) return -1;
@@ -214,7 +214,7 @@ static bool rpmh_group(const char *compatible)
 
 static bool any_rpmh(const void *f)
 {
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+    for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
         const char *c = dt_string(f, n, "compatible");
         if (c && (rpmh_group(c) || !strcmp(c, "qcom,rpmh-vrm-regulator") ||
                   !strcmp(c, "qcom,rpmh-xob-regulator"))) return true;
@@ -337,7 +337,7 @@ static const char *node_name(const void *f, int node)
 
 static bool fixed(const void *f, int n)
 {
-    return !fdt_node_check_compatible(f, n, "regulator-fixed");
+    return !dt_node_check_compatible(f, n, "regulator-fixed");
 }
 
 /* PMIC5 hardware mode for a DT regulator-initial-mode (RET 0, LPM 1,
@@ -359,7 +359,7 @@ static bool pmic5(const void *f, int parent)
         "qcom,pmc8380-rpmh-regulators", "qcom,pm8150-rpmh-regulators", "qcom,pm8150l-rpmh-regulators",
         "qcom,pm8350-rpmh-regulators", "qcom,pm8350c-rpmh-regulators", "qcom,pm8450-rpmh-regulators"};
     for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
-        if (!fdt_node_check_compatible(f, parent, ids[i])) return true;
+        if (!dt_node_check_compatible(f, parent, ids[i])) return true;
     return false;
 }
 
@@ -431,8 +431,8 @@ static void android_load_modes(const void *f, int m, struct kshim_regulator *r)
 static int android_rpmh(const void *f, int n, struct kshim_regulator *r)
 {
     for (int m = n, hop = 0; m >= 0 && hop < 2; m = dt_parent_offset(f, m), ++hop) {
-        bool vrm = !fdt_node_check_compatible(f, m, "qcom,rpmh-vrm-regulator");
-        bool xob = !fdt_node_check_compatible(f, m, "qcom,rpmh-xob-regulator");
+        bool vrm = !dt_node_check_compatible(f, m, "qcom,rpmh-vrm-regulator");
+        bool xob = !dt_node_check_compatible(f, m, "qcom,rpmh-xob-regulator");
         const char *resource = dt_string(f, m, "qcom,resource-name");
         if (!(vrm || xob) || !resource) continue;
         if (strlen(resource) >= sizeof(r->resource) || strlen(resource) > 8) return ERROR_NOT_SUPPORTED;

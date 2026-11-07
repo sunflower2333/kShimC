@@ -136,7 +136,7 @@ bool kshim_gpio_pin_reserved(const void *f, int provider, uint32_t pin)
 
 static bool is_pmic_gpio(const void *f, int provider)
 {
-    return !fdt_node_check_compatible(f, provider, "qcom,spmi-gpio") &&
+    return !dt_node_check_compatible(f, provider, "qcom,spmi-gpio") &&
            fdt_getprop(f, provider, "gpio-controller", NULL);
 }
 
@@ -156,7 +156,7 @@ int kshim_gpio_map_resources(struct kshim_resources *r)
     if (!r || !r->fdt) return ERROR_INVALID_PARAMETER;
     const void *f = r->fdt;
     unsigned mapped = 0;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+    for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
         if (!dt_available(f, n) || !kshim_gpio_tlmm_soc(f, n)) continue;
         struct dt_range reg;
         if (mapped == TLMM_PROVIDERS || dt_reg(f, n, 0, &reg) ||

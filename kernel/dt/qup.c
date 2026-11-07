@@ -41,7 +41,7 @@ static int se_kind(const void *f, int node)
 {
     if (!f || node < 0) return -1;
     for (unsigned i = 0; i < SE_COMPATIBLES; ++i)
-        if (!fdt_node_check_compatible(f, node, SeCompatibles[i].compatible)) return (int)i;
+        if (!dt_node_check_compatible(f, node, SeCompatibles[i].compatible)) return (int)i;
     return -1;
 }
 
@@ -74,7 +74,7 @@ uint32_t kshim_dt_qup_i2c_bus_hz(const void *f, int node)
 static int wrapper_node(const void *f, int node)
 {
     int parent = dt_parent_offset(f, node);
-    if (parent >= 0 && !fdt_node_check_compatible(f, parent, "qcom,geni-se-qup")) return parent;
+    if (parent >= 0 && !dt_node_check_compatible(f, parent, "qcom,geni-se-qup")) return parent;
     if (fdt_getprop(f, node, "qcom,wrapper-core", NULL)) return dt_reference(f, node, "qcom,wrapper-core", 0);
     return -1;
 }
@@ -160,7 +160,7 @@ int kshim_dt_qup_discover(const void *f, struct kshim_qup_wrapper *wrappers,
      * engines of an Android DT never take a slot; pass 2 adds the disabled
      * nodes that name a known window. */
     for (unsigned pass = 0; pass < 2; ++pass) {
-        for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+        for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
             if (se_kind(f, n) < 0) continue;
             bool available = dt_available(f, n);
             if ((pass != 0) == available) continue;

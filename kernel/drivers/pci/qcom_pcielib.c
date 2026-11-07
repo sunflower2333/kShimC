@@ -136,11 +136,11 @@ int kshim_pci_qcom_lib_select(struct qcom_pcie *qp)
 {
     const struct target_choice *choice = NULL;
     for (unsigned i = 0; i < sizeof(Targets) / sizeof(Targets[0]) && !choice; ++i)
-        if (!fdt_node_check_compatible(qp->fdt, qp->node, Targets[i].compatible))
+        if (!dt_node_check_compatible(qp->fdt, qp->node, Targets[i].compatible))
             choice = &Targets[i];
-    if (!choice && !fdt_node_check_compatible(qp->fdt, qp->node, "qcom,pci-msm") &&
-        (!fdt_node_check_compatible(qp->fdt, 0, "qcom,kona") ||
-         !fdt_node_check_compatible(qp->fdt, 0, "qcom,sm8250")))
+    if (!choice && !dt_node_check_compatible(qp->fdt, qp->node, "qcom,pci-msm") &&
+        (!dt_node_check_compatible(qp->fdt, 0, "qcom,kona") ||
+         !dt_node_check_compatible(qp->fdt, 0, "qcom,sm8250")))
         choice = &Targets[3];
     if (!choice) return ERROR_NOT_SUPPORTED;
     const PcieTargetContext *t = choice->get();

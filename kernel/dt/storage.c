@@ -49,7 +49,7 @@ unsigned kshim_dt_storage_soc(const void *f)
         {"qcom,sm8450", 8450}, {"qcom,waipio", 8450},
     };
     for (unsigned i = 0; i < sizeof(socs) / sizeof(socs[0]); ++i)
-        if (!fdt_node_check_compatible(f, 0, socs[i].compatible)) return socs[i].soc;
+        if (!dt_node_check_compatible(f, 0, socs[i].compatible)) return socs[i].soc;
     return 0;
 }
 
@@ -91,7 +91,7 @@ static int find_ufs(const void *f, struct kshim_storage_dt *out)
         /* Android: vdd-hba-supply is the "qcom,gdsc" node with its register. */
         int hba = dt_reference(f, n, "vdd-hba-supply", 0);
         struct dt_range gdsc;
-        if (hba >= 0 && !fdt_node_check_compatible(f, hba, "qcom,gdsc") &&
+        if (hba >= 0 && !dt_node_check_compatible(f, hba, "qcom,gdsc") &&
             !dt_reg(f, hba, 0, &gdsc) && gdsc.size >= 4)
             u->gdsc = gdsc.base;
 #if KSHIM_STORAGE_SOC_GDSC
@@ -147,12 +147,12 @@ static int rsc(const void *f, int n, struct CrQupResources *r)
     uint32_t drv;
     struct dt_range region, tcs;
     if (!dt_available(f, n) || dt_u32(f, n, "qcom,drv-id", &drv) || drv > 4) return -1;
-    if (!fdt_node_check_compatible(f, n, "qcom,tcs-drv")) {
+    if (!dt_node_check_compatible(f, n, "qcom,tcs-drv")) {
         if (dt_reg(f, n, 0, &region) || dt_reg(f, n, 1, &tcs) ||
             tcs.base <= region.base || tcs.base - region.base > UINT32_MAX) return -1;
         r->tcs_offset = (uint32_t)(tcs.base - region.base);
         r->rsc_size = r->tcs_offset + tcs.size;
-    } else if (!fdt_node_check_compatible(f, n, "qcom,rpmh-rsc")) {
+    } else if (!dt_node_check_compatible(f, n, "qcom,rpmh-rsc")) {
         char name[16];
         snprintf(name, sizeof(name), "drv-%u", (unsigned)drv);
         if (dt_reg_named(f, n, name, &region) || dt_u32(f, n, "qcom,tcs-offset", &r->tcs_offset)) return -1;
@@ -178,12 +178,12 @@ static int rsc(const void *f, int n, struct CrQupResources *r)
 static int find_rpmh(const void *f, struct kshim_storage_dt *out)
 {
     int controller = -1, db = -1;
-    for (int p = fdt_next_node(f, -1, NULL); p >= 0; p = fdt_next_node(f, p, NULL)) {
+    for (int p = dt_next_node(f, -1); p >= 0; p = dt_next_node(f, p)) {
         const char *label = dt_string(f, p, "label");
         /* Android also labels msm-bus client nodes "apps_rsc"; only RSCs count. */
         if (label && !strcmp(label, "apps_rsc") && dt_available(f, p) &&
-            (!fdt_node_check_compatible(f, p, "qcom,tcs-drv") ||
-             !fdt_node_check_compatible(f, p, "qcom,rpmh-rsc"))) {
+            (!dt_node_check_compatible(f, p, "qcom,tcs-drv") ||
+             !dt_node_check_compatible(f, p, "qcom,rpmh-rsc"))) {
             if (controller >= 0) return -1;
             controller = p;
         }

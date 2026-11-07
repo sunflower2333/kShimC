@@ -4,9 +4,9 @@
 #include <string.h>
 static int kind(const void *f, int node)
 {
-    if (!fdt_node_check_compatible(f, node, "qcom,msm-geni-console") ||
-        !fdt_node_check_compatible(f, node, "qcom,geni-debug-uart")) return dt_available(f, node) ? 1 : -1;
-    if (!fdt_node_check_compatible(f, node, "arm,pl011")) return dt_available(f, node) ? 0 : -1;
+    if (!dt_node_check_compatible(f, node, "qcom,msm-geni-console") ||
+        !dt_node_check_compatible(f, node, "qcom,geni-debug-uart")) return dt_available(f, node) ? 1 : -1;
+    if (!dt_node_check_compatible(f, node, "arm,pl011")) return dt_available(f, node) ? 0 : -1;
     return -1;
 }
 static int node_resource(const void *f, int node, struct kshim_console_resource *r)
@@ -48,7 +48,7 @@ int kshim_console_probe(const void *f, struct kshim_console_resource *r)
                 uint64_t base;
                 if (hex(p + length, &base)) return -1;
                 int found = -1;
-                for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+                for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
                     struct kshim_console_resource candidate;
                     if (kind(f, n) != (i < 2) || node_resource(f, n, &candidate) || candidate.base != base) continue;
                     if (found >= 0) return -1;
@@ -73,7 +73,7 @@ int kshim_console_probe(const void *f, struct kshim_console_resource *r)
         return node_resource(f, fdt_path_offset(f, path), r);
     }
     int found = -1;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+    for (int n = dt_next_node(f, -1); n >= 0; n = dt_next_node(f, n)) {
         struct kshim_console_resource candidate;
         if (node_resource(f, n, &candidate)) continue;
         if (found >= 0) return -1;

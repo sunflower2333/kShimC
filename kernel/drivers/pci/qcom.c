@@ -49,13 +49,13 @@ static struct qcom_pcie *qcom(struct kshim_pci_host *h) { return (struct qcom_pc
 static bool compatible(const void *f, int node)
 {
     for (unsigned i = 0; Compatibles[i]; ++i)
-        if (!fdt_node_check_compatible(f, node, Compatibles[i])) return true;
+        if (!dt_node_check_compatible(f, node, Compatibles[i])) return true;
     return false;
 }
 
 static int next_host(const void *f, int node)
 {
-    for (node = fdt_next_node(f, node, NULL); node >= 0; node = fdt_next_node(f, node, NULL))
+    for (node = dt_next_node(f, node); node >= 0; node = dt_next_node(f, node))
         if (compatible(f, node) && dt_available(f, node)) return node;
     return -1;
 }

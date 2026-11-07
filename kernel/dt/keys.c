@@ -87,7 +87,7 @@ static uint32_t QcomFdtLinearTlmmGpioCount(const void *Blob, int Provider)
   size_t Index;
 
   for (Index = 0; Index < sizeof(Layouts) / sizeof(Layouts[0]); Index++) {
-    if (fdt_node_check_compatible(Blob, Provider,
+    if (dt_node_check_compatible(Blob, Provider,
                                   Layouts[Index].Compatible) == 0)
       return Layouts[Index].GpioCount;
   }

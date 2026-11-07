@@ -14,6 +14,13 @@ int dt_parent_offset(const void *fdt, int node);
 int dt_node_by_phandle(const void *fdt, uint32_t phandle);
 /* fdt_node_offset_by_compatible() over the same index. */
 int dt_node_by_compatible(const void *fdt, int start, const char *compatible);
+/* The next node after start (-1: from the root), in tree order, whose
+ * compatible list holds any of names[0..count). */
+int dt_node_by_compatibles(const void *fdt, int start, const char *const *names, unsigned count);
+/* fdt_next_node(fdt, node, NULL) and fdt_node_check_compatible() (0 match,
+ * 1 no match, -FDT_ERR_NOTFOUND without "compatible") over the index. */
+int dt_next_node(const void *fdt, int node);
+int dt_node_check_compatible(const void *fdt, int node, const char *compatible);
 /* Nodes in the live index for fdt, or -1 when lookups use libfdt. */
 int dt_index_nodes(const void *fdt);
 bool dt_available(const void *fdt, int node);

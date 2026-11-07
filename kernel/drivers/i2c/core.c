@@ -51,8 +51,8 @@ int kshim_i2c_adapter_get(const void *fdt, int node, struct kshim_i2c_adapter **
     if (!kshim_io_on_boot_cpu()) return ERROR_BUSY;
     if (!dt_available(fdt, node)) return ERROR_NOT_FOUND;
 #if CONFIG_KSHIM_I2C_GENI
-    if (!fdt_node_check_compatible(fdt, node, "qcom,geni-i2c") ||
-        !fdt_node_check_compatible(fdt, node, "qcom,i2c-geni"))
+    if (!dt_node_check_compatible(fdt, node, "qcom,geni-i2c") ||
+        !dt_node_check_compatible(fdt, node, "qcom,i2c-geni"))
         return kshim_geni_i2c_probe(fdt, node, adapter);
 #endif
     return ERROR_NOT_FOUND;
