@@ -1,4 +1,10 @@
 CONFIG_QCOM_KEYS=y
+# Console mirrored to a USB CDC-ACM device (0525:a4a7) on the DWC3 at
+# 0xa600000, with the QSCRATCH VBUS override. Validated on the HDK8450
+# (2026-11-07, 42155b2): enumerates, the port opens, menu input works,
+# handoff to UEFI resets the link. Needs USB left powered by the previous
+# bootloader (as after fastboot).
+CONFIG_KSHIM_CONSOLE_USB_ACM=y
 CONFIG_QCOM_SPMI=y
 CONFIG_QCOM_KEY_DEBOUNCE_SAMPLES=2
 # CONFIG_KSHIM_QEMU_PLATFORM is not set
