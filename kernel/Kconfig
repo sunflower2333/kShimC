@@ -75,6 +75,18 @@ menu "Display"
         bool "Enable validated continuous splash framebuffer UI"
         default y
 
+    config KSHIM_SPLASH_SCANOUT
+        depends on KSHIM_FRAMEBUFFER && !KSHIM_QEMU_PLATFORM
+        bool "Read the previous bootloader's splash scanout from MDSS"
+        default y
+        help
+            Discover the live framebuffer from the SDE registers the previous
+            bootloader programmed. Only for boards whose bootloader leaves the
+            display lit: with MDSS power-collapsed (MMCX off) the first MDP
+            register read hangs the bus, and no register says so safely.
+            Without it the framebuffer menu is unavailable and the serial
+            menu runs.
+
     config KSHIM_FB_RENDER_ADDRESS
         depends on KSHIM_QEMU_PLATFORM
         hex "Framebuffer render address"

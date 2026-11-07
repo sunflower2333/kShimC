@@ -3,6 +3,10 @@ CONFIG_QCOM_SPMI=y
 CONFIG_QCOM_KEY_DEBOUNCE_SAMPLES=2
 # CONFIG_KSHIM_QEMU_PLATFORM is not set
 CONFIG_KSHIM_FRAMEBUFFER=y
+# HDK8450's display is DSI -> LT9611 HDMI bridge, brought up natively by
+# mu_aloha's DisplayCrDxe; ABL leaves no scanout and MDSS may be
+# power-collapsed, so reading the MDP registers hangs the bus.
+# CONFIG_KSHIM_SPLASH_SCANOUT is not set
 CONFIG_KSHIM_LVGL=y
 CONFIG_KSHIM_LVGL_BUFFER_BYTES=262144
 CONFIG_KSHIM_UEFI_TEST_MENU=y

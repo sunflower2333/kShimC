@@ -132,13 +132,15 @@ int kshim_resources_init(const void *f, size_t available)
     /* Touch controllers (CONFIG_KSHIM_TOUCH_FRAMEWORK) use the GPIO, QUP and
      * regulator windows that kshim_io_map_resources() adds below. */
 #if CONFIG_KSHIM_FRAMEBUFFER
-    kshim_mmu_region_t display;
+    kshim_mmu_region_t display = {0};
+#if CONFIG_KSHIM_SPLASH_SCANOUT
     resources.splash_status = kshim_dt_splash(f, CrIoDefault(), &resources.framebuffer, &display);
-#if !CONFIG_KSHIM_QEMU_PLATFORM
     /* -1: DT (reservation, SDE node or its lists); -22/-95: the scanout
      * registers (CrSplashRead) are invalid or not a supported layout. */
     if (resources.splash_status)
         printf("Display: no continuous-splash scanout (%d)\n", resources.splash_status);
+#elif !CONFIG_KSHIM_QEMU_PLATFORM
+    printf("Display: splash scanout not read on this board (MDSS may be off)\n");
 #endif
     if (!resources.splash_status && kshim_resource_map(&resources, display.base, display.size,
             display.type, display.permissions)) return -1;
