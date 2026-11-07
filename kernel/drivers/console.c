@@ -14,6 +14,7 @@
 #include <kshim_mmu.h>
 #include <qcom_dt.h>
 #include <usb_acm.h>
+#include <stdio.h>
 #include <string.h>
 #endif
 static struct kshim_console_resource console;
@@ -97,11 +98,20 @@ static void console_unlock(void)
     __atomic_store_n(&lock.serving, lock.serving + 1, __ATOMIC_RELEASE);
 }
 
+/* One line either way, on every sink: the hardware check for the gadget. */
 static void acm_init(const void *fdt)
 {
     struct kshim_usb_acm_resource resource;
-    if (!fdt || kshim_dt_usb_acm(fdt, &resource)) return;
-    (void)kshim_usb_acm_start(&resource, kshim_usb_acm_io());
+    if (!fdt || kshim_dt_usb_acm(fdt, &resource)) {
+        printf("USB ACM: no usable DWC3 controller in the DT\n");
+        return;
+    }
+    int status = kshim_usb_acm_start(&resource, kshim_usb_acm_io());
+    if (status)
+        printf("USB ACM: DWC3 %#llx not started (%d)\n", (unsigned long long)resource.base, status);
+    else
+        printf("USB ACM: DWC3 %#llx started, 0525:a4a7 \"kShimC USB Serial\"\n",
+               (unsigned long long)resource.base);
 }
 
 int kshim_console_map_resources(struct kshim_resources *r)

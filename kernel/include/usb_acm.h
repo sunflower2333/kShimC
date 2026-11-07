@@ -40,7 +40,8 @@ struct kshim_usb_acm_resource {
  */
 int kshim_dt_usb_acm(const void *fdt, struct kshim_usb_acm_resource *resource);
 
-/* Reset and start the controller as a CDC-ACM device. 0 on success. */
+/* Reset and start the controller as a CDC-ACM device. 0 on success; -1 bad
+ * resource or already active, -2 CrUsbAcmInit, -3 CrUsbAcmStart failed. */
 int kshim_usb_acm_start(const struct kshim_usb_acm_resource *resource, const struct CrIo *io);
 bool kshim_usb_acm_active(void);
 const struct kshim_usb_acm_resource *kshim_usb_acm_resource(void);

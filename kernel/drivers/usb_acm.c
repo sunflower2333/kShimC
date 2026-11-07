@@ -88,8 +88,8 @@ int kshim_usb_acm_start(const struct kshim_usb_acm_resource *r, const struct CrI
         return -1;
     resource = *r;
     io = *with;
-    if (CrUsbAcmInit(&acm, &hooks, &context) != CR_SUCCESS) return -1;
-    if (CrUsbAcmStart(&acm, &config) != CR_SUCCESS) return -1;
+    if (CrUsbAcmInit(&acm, &hooks, &context) != CR_SUCCESS) return -2;
+    if (CrUsbAcmStart(&acm, &config) != CR_SUCCESS) return -3;
     active = true;
     return 0;
 }
