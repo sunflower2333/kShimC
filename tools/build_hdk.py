@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+import sys
 import tempfile
 import zlib
 
@@ -223,6 +224,44 @@ def read_uefi_build(directory, board, fd, require_debug_uart):
     }
 
 
+BOOT_HEADER_COMPARE = 1632
+
+
+def aloha_aboot_args(aloha, package, device):
+    """Return mu_aloha's default_aboot_args for package (build_cfg/*.json plus
+    Device/<dev>/bootpack.json), with PostBuild.Bootimg defaults, or None."""
+    configs = [json.loads(f.read_text()) for f in sorted((aloha / "build_cfg").glob("*.json"))]
+    configs = [c for c in configs if c.get("package") == package]
+    if not configs:
+        return None
+    if len(configs) != 1:
+        raise ValueError(f"Expected one mu_aloha build config for {package}; found {len(configs)}")
+    args = {"header_version": 0, "kernel_compressed": False, "emptyramdisk": False,
+            "cmdline": "", "pagesize": 4096, "base": "0x0", "os_version": "17.0.0",
+            "os_patch_level": "2026-06-18", "second_offset": "0x0"}
+    args.update(configs[0].get("default_aboot_args", {}))
+    override = device / "bootpack.json"
+    if override.exists():
+        args.update(json.loads(override.read_text()).get("default_aboot_args", {}))
+    args["base"] = int(str(args["base"]), 16)
+    args["second_offset"] = int(str(args["second_offset"]), 16)
+    return args
+
+
+def compare_boot_headers(source, packed, version):
+    """Every header field except kernel size (and the v0-v2 SHA-1 id over the
+    payload) must equal mu_aloha's own image for the same board."""
+    if version >= 3:
+        skip = {(8, 12)}                                # kernel_size
+    else:
+        skip = {(8, 12), (576, 608)}                    # kernel_size, id
+    for start in range(0, BOOT_HEADER_COMPARE, 4):
+        if any(a <= start < b for a, b in skip):
+            continue
+        if source[start:start + 4] != packed[start:start + 4]:
+            raise ValueError(f"Boot header differs from the mu_aloha image at offset {start:#x}")
+
+
 def main(default_board="hdk8450"):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--board", choices=BOARDS, default=default_board)
@@ -234,6 +273,9 @@ def main(default_board="hdk8450"):
                         help="Require matching build evidence for DEBUG with GENI UART output")
     parser.add_argument("--out", type=Path, help="Output directory (default: build/<board>)")
     parser.add_argument("--jobs", type=int, default=12)
+    parser.add_argument("--set", action="append", default=[], metavar="CONFIG_X=VALUE",
+                        help="Override or add a Kconfig line, e.g. CONFIG_ENABLE_BANNER=y or "
+                             "'# CONFIG_KSHIM_IRQ is not set' (repeatable; for test variants)")
     parser.add_argument("--dtb-bundle", type=Path,
                         help="Andromeda bundle from build_andromeda_dt, with sibling manifest and build artifacts")
     args = parser.parse_args()
@@ -295,6 +337,13 @@ def main(default_board="hdk8450"):
     values = {"KSHIM_UEFI_LOAD_ADDRESS": hex(uefi_base), "KSHIM_UEFI_MAX_SIZE": hex(uefi_size)}
     for key, value in values.items():
         config = re.sub(r"^CONFIG_" + key + r"=.*$", f"CONFIG_{key}={value}", config, flags=re.M)
+    for line in args.set:
+        match = re.fullmatch(r"(CONFIG_\w+)=.*|# (CONFIG_\w+) is not set", line.strip())
+        if not match:
+            parser.error(f"--set expects CONFIG_X=VALUE or '# CONFIG_X is not set': {line!r}")
+        key = match.group(1) or match.group(2)
+        config = re.sub(r"^(?:" + key + r"=.*|# " + key + r" is not set)\n?", "", config, flags=re.M)
+        config = config.rstrip("\n") + "\n" + line.strip() + "\n"
     firmware = out / "firmware"
     firmware.mkdir(exist_ok=True)
     (firmware / ".config").write_text(config)
@@ -332,23 +381,73 @@ def main(default_board="hdk8450"):
     offset = symbols["kshim_uefi_payload_start"] - base
     if binary.read_bytes()[offset:offset + uefi_size] != fd:
         raise ValueError("Embedded UEFI payload mismatch")
+    # kShimC.bin is padded with zeros to the end of the 40 MiB slot
+    # (.image_end). ABL inflates the gzip kernel into a bounded buffer and
+    # finds the appended DTB where the gzip stream ends, so a 40 MiB inflated
+    # kernel breaks the v0 DTB lookup ("Appended Soc Device Tree blob not
+    # found"). Ship only up to __runtime_end_address__ (end of .stack): every
+    # byte kShimC reads is kept, including the zeroed heap and stack, and only
+    # unused slot padding is dropped. The header still advertises `used`.
+    runtime_end = symbols["__runtime_end_address__"] - base
+    full = binary.read_bytes()
+    if any(full[runtime_end:]):
+        raise ValueError("Non-zero data past __runtime_end_address__")
+    shim = out / "kShimC-abl.bin"
+    shim.write_bytes(full[:runtime_end])
     run(["aarch64-linux-gnu-gcc", "-nostdlib", "-static", "-Wl,-Ttext=0",
          "-Wl,--build-id=none", f"-DSHIM_LOAD_ADDRESS={hex(base)}",
-         f"-DSHIM_FILE_SIZE={binary.stat().st_size}", f"-DSHIM_MEMORY_SIZE={used}",
+         f"-DSHIM_FILE_SIZE={shim.stat().st_size}", f"-DSHIM_MEMORY_SIZE={used}",
          f"-DSHIM_SCRATCH_ADDRESS={hex(base + reserved - 4096)}",
          root / "tools/boot_entry.S", "-o", out / "boot-entry.elf"], "entry-build")
     run(["aarch64-linux-gnu-objcopy", "-O", "binary", out / "boot-entry.elf",
          out / "boot-entry.bin"], "entry-objcopy")
-    kernel = (out / "boot-entry.bin").read_bytes() + binary.read_bytes()
+    kernel = (out / "boot-entry.bin").read_bytes() + shim.read_bytes()
     (out / "kernel.bin").write_bytes(kernel)
-    compressed = gzip.compress(kernel, compresslevel=9, mtime=0)
-    (out / "kernel.gz").write_bytes(compressed)
     image = out / f"kshimc-{board}-boot.img"
-    image.write_bytes(pack_boot(template, page, version, compressed + dtb_data, ramdisk))
+    aboot = aloha_aboot_args(aloha, package, device)
+    if aboot is None:
+        # No mu_aloha build config for this package: keep the source header.
+        compressed = gzip.compress(kernel, compresslevel=9, mtime=0)
+        (out / "kernel.gz").write_bytes(compressed)
+        image.write_bytes(pack_boot(template, page, version, compressed + dtb_data, ramdisk))
+        packing = {"method": "source-header-template"}
+    else:
+        # Pack exactly as mu_aloha_platforms PythonLibs/PostBuild.py does,
+        # with kShimC's payload in place of BootShim.bin + <SoC>_EFI.fd.
+        if aboot["header_version"] != version:
+            raise ValueError(f"mu_aloha header_version {aboot['header_version']} != {version}")
+        compressed = gzip.compress(kernel, compresslevel=9, mtime=0) \
+            if aboot["kernel_compressed"] else kernel
+        (out / "kernel.gz").write_bytes(compressed)
+        payload_file = out / "bootpayload.bin"
+        payload_file.write_bytes(compressed + (dtb_data if aboot["header_version"] < 2 else b""))
+        command = [sys.executable, aloha / "PythonLibs" / "mkbootimg.py",
+                   "--header_version", str(aboot["header_version"]), "--kernel", payload_file,
+                   "-o", image, "--pagesize", str(aboot["pagesize"]),
+                   "--cmdline", aboot["cmdline"], "--base", hex(aboot["base"]),
+                   "--os_version", aboot["os_version"],
+                   "--os_patch_level", aboot["os_patch_level"]]
+        if aboot["emptyramdisk"]:
+            command += ["--ramdisk", "./PythonLibs/emptyramdisk"]
+        if aboot["second_offset"]:
+            command += ["--second_offset", hex(aboot["second_offset"])]
+        if aboot["header_version"] == 2:
+            command += ["--dtb", dtb_path]
+        print("mkbootimg", flush=True)
+        with (out / "mkbootimg.log").open("w") as log:
+            subprocess.run([str(arg) for arg in command], cwd=aloha, env=env,
+                           stdout=log, stderr=subprocess.STDOUT, check=True)
+        packing = {"method": "mu_aloha PythonLibs/PostBuild.py + mkbootimg.py",
+                   "aboot_args": aboot, "mkbootimg_args": [str(a) for a in command[2:]]}
+    if image.read_bytes()[:8] != b"ANDROID!":
+        raise ValueError("mkbootimg produced no Android boot image")
     _, _, packed_kernel, packed_ramdisk = read_boot(image.read_bytes(), version)
-    if (packed_kernel != compressed + dtb_data or packed_ramdisk != ramdisk or
-            gzip.decompress(packed_kernel[:len(compressed)]) != kernel):
+    expected_kernel = compressed + (dtb_data if version < 2 else b"")
+    if (packed_kernel != expected_kernel or packed_ramdisk != ramdisk or
+            (gzip.decompress(packed_kernel[:len(compressed)]) if compressed is not kernel
+             else packed_kernel[:len(kernel)]) != kernel):
         raise ValueError("Boot image round-trip failed")
+    compare_boot_headers(data, image.read_bytes(), version)
     manifest = {
         "board": device_name(board), "menu": ["UEFI A", "UEFI B"],
         "ui": "flat", "libc": "picolibc", "runtime_mode": "standalone",
@@ -371,7 +470,8 @@ def main(default_board="hdk8450"):
                          "source": str(dtb_path) if dtb_data else None,
                          "provenance": dtb_provenance},
         "artifacts": {p.name: {"bytes": p.stat().st_size, "sha256": digest(p)}
-                      for p in (image, elf, binary, fd_path)},
+                      for p in (image, elf, binary, shim, fd_path)},
+        "packing": packing,
         "validation": "Image and ELF checks passed; not hardware tested",
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
