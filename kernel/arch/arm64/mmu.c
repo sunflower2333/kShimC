@@ -583,8 +583,9 @@ int kshim_mmu_early_enable(const void *fdt)
 
     if (mMmu.configured || kshim_mmu_is_enabled() || image_end <= image_base)
         return -1;
+    /* allocate_table() zeroes each table it hands out; clearing all of
+     * mTables here would be 256 KiB of uncached stores. */
     memset(&mMmu, 0, sizeof(mMmu));
-    memset(mTables, 0, sizeof(mTables));
     mMmu.root = allocate_table();
     if (mMmu.root == NULL)
         return -2;
@@ -765,8 +766,14 @@ uint64_t kshim_mmu_root_table(void)
 
 int kshim_mmu_prepare_handoff(void)
 {
-    if (!mMmu.configured)
+    if (!mMmu.configured) {
+        /* startup.S turned the instruction cache on at entry. */
+#if defined(__aarch64__)
+        __asm__ volatile("dsb sy\nic iallu\ndsb sy\nisb" ::: "memory");
+#endif
+        disable_at_el(current_el());
         return 0;
+    }
     for (size_t index = 0; index < mMmu.region_count; index++) {
         if (mMmu.regions[index].type == KSHIM_MMU_NORMAL_WB &&
             (mMmu.regions[index].permissions & KSHIM_MMU_WRITE))
