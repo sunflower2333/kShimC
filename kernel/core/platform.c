@@ -4,6 +4,7 @@
  * handoff teardown, and the standalone entry into userspace. Boot-entry
  * selection itself lives in user/bootmenu.
  */
+#include <arm64_exception.h>
 #include <kshim.h>
 #include <kshim/boot.h>
 #include <kshim/user.h>
@@ -77,6 +78,7 @@ int kshim_platform_prepare_handoff(void)
     /* Interrupt state goes back to the previous bootloader's before the MMU
      * (and with it the GIC mapping and cache coherency) is torn down. */
     if (kshim_irq_teardown()) return -3;
+    arm64_exception_restore();
     return kshim_mmu_prepare_handoff();
 }
 

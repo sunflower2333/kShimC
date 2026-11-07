@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+#include <arm64_exception.h>
 #include <kshim.h>
 #include <pl011_uart.h>
 #include <kshim_console.h>
@@ -286,6 +287,9 @@ int kshim_main(
     uint64_t manifest_address,
     uint64_t manifest_size)
 {
+    /* Own the exception vectors before touching any device, so a fault is
+     * reported by kShimC, not by the previous bootloader's dead handlers. */
+    arm64_exception_early_init();
     const void *runtime_fdt = (const void *)(uintptr_t)device_tree_address;
     if (!runtime_fdt || dt_validate(runtime_fdt, fdt_totalsize(runtime_fdt))) {
         runtime_fdt = NULL;

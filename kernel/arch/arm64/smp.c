@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+#include <arm64_exception.h>
 #include <smp.h>
 
 #include <config.h>
@@ -670,7 +671,10 @@ int kshim_smp_prepare_handoff(uint64_t timeout_us)
 
     if (status != KSHIM_SMP_OK)
         return status;
-    return kshim_irq_teardown() == 0 && kshim_mmu_prepare_handoff() == 0 ?
+    if (kshim_irq_teardown() != 0)
+        return KSHIM_SMP_CPU_ERROR;
+    arm64_exception_restore();
+    return kshim_mmu_prepare_handoff() == 0 ?
         KSHIM_SMP_OK : KSHIM_SMP_CPU_ERROR;
 }
 

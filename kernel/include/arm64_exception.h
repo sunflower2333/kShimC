@@ -2,6 +2,9 @@
 #pragma once
 #include <stdint.h>
 extern void arm64_install_exception_vector(void);
+void arm64_exception_early_init(void);
+void arm64_exception_restore(void);
+uint64_t arm64_exception_inherited_vbar(void);
 extern void arm64_enable_interrupts(void);
 extern void arm64_disable_interrupts(void);
 

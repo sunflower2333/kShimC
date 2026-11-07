@@ -3,6 +3,52 @@
 #include <asm/arm64_exception.h>
 #include <arm64_sysreg.h>
 #include <gicv3.h>
+#include <stdbool.h>
+
+/* VBAR_EL1 as the previous bootloader left it, and whether ours replaced it. */
+static uint64_t InheritedVbar;
+static bool OwnVbar;
+
+static uint64_t current_el(void)
+{
+    uint64_t el;
+    __asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
+    return (el >> 2) & 3;
+}
+
+/* First thing in kshim_main: until now VBAR still points at the previous
+ * bootloader's handlers. After ExitBootServices those are dead UEFI code, so
+ * a kShimC fault was reported as a "Thread UEFI DXE" panic with UEFI's state.
+ * At EL2 the interrupt core installs the EL2 table. */
+void arm64_exception_early_init(void)
+{
+    if (current_el() != 1 || OwnVbar)
+        return;
+    __asm__ volatile("mrs %0, vbar_el1" : "=r"(InheritedVbar));
+    arm64_install_exception_vector();
+    OwnVbar = true;
+}
+
+/* VBAR_EL1 as the previous bootloader left it: the value a payload receives.
+ * Equals the live register once arm64_exception_restore() has run. */
+uint64_t arm64_exception_inherited_vbar(void)
+{
+    uint64_t live;
+    if (OwnVbar)
+        return InheritedVbar;
+    __asm__ volatile("mrs %0, vbar_el1" : "=r"(live));
+    return live;
+}
+
+/* Payload handoff, after kshim_irq_teardown() (which restores the VBAR it
+ * saw, by then ours): give the payload the bootloader's VBAR back. */
+void arm64_exception_restore(void)
+{
+    if (!OwnVbar)
+        return;
+    __asm__ volatile("msr vbar_el1, %0\n isb" : : "r"(InheritedVbar) : "memory");
+    OwnVbar = false;
+}
 
 // Synchronous exception handler
 void arm64_synchronous_exception_handler(

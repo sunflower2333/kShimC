@@ -5,6 +5,7 @@
  * CPU's interface, timer and vector state independently, before kShimC
  * touches anything and again after the handoff teardown.
  */
+#include <arm64_exception.h>
 #include <irq_selftest.h>
 #include <config.h>
 
@@ -49,13 +50,18 @@ typedef struct {
 static snapshot_t mPre, mPost;
 static struct kshim_gic_desc mGicDesc;
 static int mSeeded;
+static int mPreSnapshot;
 static volatile uint64_t mRxIrqs;
 
 static uint64_t sysreg_hcr(void) { uint64_t v; __asm__ volatile("mrs %0, hcr_el2" : "=r"(v)); return v; }
 static uint64_t sysreg_vbar(void)
 {
     uint64_t v;
+    /* At EL1 kshim_main installs its vectors before this self-test runs, so
+     * the "before kShimC touched anything" snapshot takes the VBAR it found
+     * at entry. The post-handoff snapshot reads the live register. */
     if (arm64_current_el() == 2) __asm__ volatile("mrs %0, vbar_el2" : "=r"(v));
+    else if (mPreSnapshot) v = arm64_exception_inherited_vbar();
     else __asm__ volatile("mrs %0, vbar_el1" : "=r"(v));
     return v;
 }
@@ -244,7 +250,9 @@ void kshim_irq_selftest_inherit(const void *fdt)
         arm64_write_cntvcval(arm64_read_cntvct() + hour);
         arm64_write_cntvctl(CNT_CTL_ENABLE | CNT_CTL_IMASK);
     }
+    mPreSnapshot = 1;
     snapshot(&mPre);
+    mPreSnapshot = 0;
     mSeeded = 1;
     printf("IRQ_SELFTEST inherit: el=%u words=%u hash=%08x gicd_ctlr=%#x waker=%#x\n",
            (unsigned)el, mPre.count, hash(&mPre), (unsigned)REG32_OUT(dist + ARM_GICD_CTLR),
