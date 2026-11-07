@@ -14,6 +14,7 @@
 #include <kshim_mmu.h>
 #include <qcom_dt.h>
 #include <usb_acm.h>
+#include <Library/UsbAcmCrLib.h>
 #include <stdio.h>
 #include <string.h>
 #endif
@@ -107,11 +108,29 @@ static void acm_init(const void *fdt)
         return;
     }
     int status = kshim_usb_acm_start(&resource, kshim_usb_acm_io());
+    uint32_t inherited, now;
     if (status)
         printf("USB ACM: DWC3 %#llx not started (%d)\n", (unsigned long long)resource.base, status);
+    else if (kshim_usb_acm_qscratch_hs(&inherited, &now))
+        printf("USB ACM: DWC3 %#llx started, 0525:a4a7 \"kShimC USB Serial\"; "
+               "VBUS override: QSCRATCH %#llx HS_PHY_CTRL %#x -> %#x\n",
+               (unsigned long long)resource.base, (unsigned long long)resource.qscratch,
+               inherited, now);
     else
-        printf("USB ACM: DWC3 %#llx started, 0525:a4a7 \"kShimC USB Serial\"\n",
+        printf("USB ACM: DWC3 %#llx started, 0525:a4a7 \"kShimC USB Serial\"; "
+               "no QSCRATCH in the DT, VBUS left to the hardware\n",
                (unsigned long long)resource.base);
+}
+
+/* Link milestones, printed outside the console lock (so on both sinks). */
+__attribute__((weak)) void kshim_usb_acm_report(const char *milestone)
+{
+    printf("USB ACM: %s\n", milestone);
+}
+
+static void report_milestones(void)
+{
+    for (const char *m; (m = kshim_usb_acm_milestone());) kshim_usb_acm_report(m);
 }
 
 int kshim_console_map_resources(struct kshim_resources *r)
@@ -121,7 +140,10 @@ int kshim_console_map_resources(struct kshim_resources *r)
     kshim_mmu_region_t saved[KSHIM_RESOURCE_MAX];
     size_t count = r->mapping_count;
     memcpy(saved, r->mappings, count * sizeof(*saved));
-    if (!kshim_resource_map(r, acm->base, acm->size, KSHIM_MMU_DEVICE, KSHIM_MMU_READ | KSHIM_MMU_WRITE))
+    /* The core, and QSCRATCH for the VBUS override and its restore. */
+    if (!kshim_resource_map(r, acm->base, acm->size, KSHIM_MMU_DEVICE, KSHIM_MMU_READ | KSHIM_MMU_WRITE) &&
+        (!acm->qscratch || !kshim_resource_map(r, acm->qscratch, CR_USB_ACM_QSCRATCH_BYTES,
+                                               KSHIM_MMU_DEVICE, KSHIM_MMU_READ | KSHIM_MMU_WRITE)))
         return 0;
     memcpy(r->mappings, saved, count * sizeof(*saved));
     r->mapping_count = count;
@@ -142,6 +164,7 @@ void kshim_console_service(void)
         console_unlock();
     }
     kshim_irq_restore(flags);
+    report_milestones();
 }
 #endif
 
@@ -223,6 +246,7 @@ int kshim_console_try_read(char *character)
     else kshim_usb_acm_poll();
     console_unlock();
     kshim_irq_restore(flags);
+    report_milestones();
     return got;
 #else
     return uart_try_read(character);

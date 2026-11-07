@@ -19,6 +19,9 @@ struct kshim_resources;
 struct kshim_usb_acm_resource {
     int node;                  /* snps,dwc3 node */
     uint64_t base, size;       /* DWC3 core window (the xHCI base) */
+    /* Qualcomm QSCRATCH (CR_USB_ACM_QSCRATCH_BYTES), where software asserts
+     * VBUS and session valid; 0 when the wrapper does not say where. */
+    uint64_t qscratch;
     /*
      * The core's interrupt, parsed but not registered: the backend polls
      * until the port has a GIC-backed CrRegisterInterrupt. irq_spec holds
@@ -40,10 +43,18 @@ struct kshim_usb_acm_resource {
  */
 int kshim_dt_usb_acm(const void *fdt, struct kshim_usb_acm_resource *resource);
 
-/* Reset and start the controller as a CDC-ACM device. 0 on success; -1 bad
- * resource or already active, -2 CrUsbAcmInit, -3 CrUsbAcmStart failed. */
+/* Reset and start the controller as a CDC-ACM device, with the Qualcomm
+ * VBUS override when the resource has a QSCRATCH window. 0 on success; -1
+ * bad resource or already active, -2 CrUsbAcmInit, -3 CrUsbAcmStart failed. */
 int kshim_usb_acm_start(const struct kshim_usb_acm_resource *resource, const struct CrIo *io);
 bool kshim_usb_acm_active(void);
+/* QSCRATCH HS_PHY_CTRL as inherited and as left by start; false without a
+ * QSCRATCH window. */
+bool kshim_usb_acm_qscratch_hs(uint32_t *inherited, uint32_t *now);
+/* The next link milestone since the last call ("host configured the device",
+ * "host opened the port", "host closed the port", "host reset or detached"),
+ * else NULL. Tracked under the console lock; take it outside. */
+const char *kshim_usb_acm_milestone(void);
 const struct kshim_usb_acm_resource *kshim_usb_acm_resource(void);
 /* Queue bytes (kept until a host reads) and service the controller. */
 void kshim_usb_acm_write(const char *buffer, uint32_t length);

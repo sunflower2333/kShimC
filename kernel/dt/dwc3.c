@@ -84,6 +84,21 @@ static void interrupt(const void *f, int node, struct kshim_usb_acm_resource *r)
     }
 }
 
+/* QSCRATCH: the mainline "qcom,dwc3" wrapper's own reg; inside the Android
+ * "qcom,dwc-usb3-msm" core_base window at the downstream driver's
+ * QSCRATCH_REG_OFFSET (0xa6f8800 for core_base 0xa600000). */
+#define DOWNSTREAM_QSCRATCH_OFFSET UINT64_C(0xf8800)
+static uint64_t qscratch(const void *f, int wrapper)
+{
+    struct dt_range reg;
+    if (!dt_node_check_compatible(f, wrapper, "qcom,dwc3"))
+        return !dt_reg(f, wrapper, 0, &reg) && reg.size >= CR_USB_ACM_QSCRATCH_BYTES ? reg.base : 0;
+    if (dt_reg_named(f, wrapper, "core_base", &reg) && dt_reg(f, wrapper, 0, &reg)) return 0;
+    return reg.size >= DOWNSTREAM_QSCRATCH_OFFSET + CR_USB_ACM_QSCRATCH_BYTES &&
+           reg.base <= UINTPTR_MAX - DOWNSTREAM_QSCRATCH_OFFSET - CR_USB_ACM_QSCRATCH_BYTES ?
+           reg.base + DOWNSTREAM_QSCRATCH_OFFSET : 0;
+}
+
 int kshim_dt_usb_acm(const void *f, struct kshim_usb_acm_resource *out)
 {
     if (!f || !out) return -1;
@@ -111,6 +126,7 @@ int kshim_dt_usb_acm(const void *f, struct kshim_usb_acm_resource *out)
     out->node = chosen;
     out->base = chosen_reg.base;
     out->size = chosen_reg.size;
+    out->qscratch = qscratch(f, dt_parent_offset(f, chosen));
     interrupt(f, chosen, out);
     return 0;
 }

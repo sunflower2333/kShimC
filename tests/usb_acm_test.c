@@ -15,9 +15,11 @@
 #include <qcom_dt.h>
 #include <usb_acm.h>
 #include <Library/cr_geni.h>
+#include <Library/UsbAcmCrLib.h>
 #include "UsbAcmDwc3Model.h"
 
 #define DWC3 0x0a600000UL
+#define QSCRATCH 0x0a6f8800UL /* the fixture's mainline wrapper reg */
 
 /*------------------------------------------------------------- the UART */
 static char uart_out[65536], uart_in[16];
@@ -53,8 +55,10 @@ static int nest;
 static uint32_t read32(void *context, uintptr_t address)
 {
     (void)context;
-    assert(address >= DWC3 && address < DWC3 + 0xcd00);
     ++model_mmio;
+    if (address >= QSCRATCH && address < QSCRATCH + CR_USB_ACM_QSCRATCH_BYTES)
+        return AcmModelRead32(ACM_MODEL_WINDOW_QSCRATCH, (uint32_t)(address - QSCRATCH));
+    assert(address >= DWC3 && address < DWC3 + 0xcd00);
     if (nest) { /* an exception printing from inside the console */
         nest = 0;
         kshim_console_write("nested\n", 7);
@@ -64,9 +68,21 @@ static uint32_t read32(void *context, uintptr_t address)
 static void write32(void *context, uintptr_t address, uint32_t value)
 {
     (void)context;
-    assert(address >= DWC3 && address < DWC3 + 0xcd00);
     ++model_mmio;
+    if (address >= QSCRATCH && address < QSCRATCH + CR_USB_ACM_QSCRATCH_BYTES) {
+        AcmModelWrite32(ACM_MODEL_WINDOW_QSCRATCH, (uint32_t)(address - QSCRATCH), value);
+        return;
+    }
+    assert(address >= DWC3 && address < DWC3 + 0xcd00);
     AcmModelWrite32(ACM_MODEL_WINDOW_DWC3, (uint32_t)(address - DWC3), value);
+}
+
+/* Link milestones the console reports (kernel/drivers/console.c). */
+static char reports[1024];
+void kshim_usb_acm_report(const char *milestone)
+{
+    size_t used = strlen(reports);
+    snprintf(reports + used, sizeof(reports) - used, "%s\n", milestone);
 }
 static uint64_t now_us(void *context)
 {
@@ -84,13 +100,13 @@ static const struct CrIo model_io = {NULL, read32, write32, now_us, delay_us};
 const struct CrIo *kshim_usb_acm_io(void) { return &model_io; }
 
 /*------------------------------------------------------- MMU resources */
-static int map_fail;
+static int map_fail; /* fail the Nth call (1-based), 0 never */
 static unsigned map_calls;
 int kshim_resource_map(struct kshim_resources *r, uint64_t base, uint64_t size,
                        kshim_mmu_memory_type_t type, uint32_t permissions)
 {
     ++map_calls;
-    if (map_fail) return -1;
+    if (map_fail && map_calls == (unsigned)map_fail) return -1;
     assert(r->mapping_count < KSHIM_RESOURCE_MAX);
     r->mappings[r->mapping_count++] = (kshim_mmu_region_t){base, size, type, permissions};
     return 0;
@@ -126,6 +142,7 @@ static void fresh_model(void)
     uart_length = uart_in_length = uart_in_position = 0;
     map_fail = 0;
     map_calls = 0;
+    reports[0] = 0;
 }
 
 static size_t host_read(char *buffer, size_t capacity)
@@ -148,6 +165,7 @@ static void discovery(void)
     void *f = fixture(GENERATED_FIXTURES, "usb-acm.dtb");
     assert(!kshim_dt_usb_acm(f, &r));
     assert(r.base == 0xa600000 && r.size == 0xcd00 && r.node == fdt_path_offset(f, "/soc/usb@a6f8800/usb@a600000"));
+    assert(r.qscratch == 0xa6f8800); /* the mainline wrapper's own reg */
     assert(r.has_irq && r.gic && !r.pdc && r.irq_cells == 3 && r.intid == 32 + 133 && r.trigger == 4);
     assert(r.irq_parent == fdt_path_offset(f, "/soc/interrupt-controller@17a00000"));
 
@@ -163,7 +181,7 @@ static void discovery(void)
     assert(!fdt_setprop_string(f, second, "dr_mode", "otg"));
     assert(!kshim_dt_usb_acm(f, &r) && r.base == 0xa600000);
     assert(!fdt_setprop_string(f, chosen, "bootargs", "console=ttyAMA0 androidboot.usbcontroller=a800000.dwc3 quiet"));
-    assert(!kshim_dt_usb_acm(f, &r) && r.base == 0xa800000 && r.intid == 32 + 138);
+    assert(!kshim_dt_usb_acm(f, &r) && r.base == 0xa800000 && r.intid == 32 + 138 && r.qscratch == 0xa8f8800);
     assert(!fdt_setprop_string(f, chosen, "bootargs", "androidboot.usbcontroller=a700000.dwc3"));
     assert(!kshim_dt_usb_acm(f, &r) && r.base == 0xa600000);
     /* Disabled cores and short windows are skipped; then nothing is left. */
@@ -184,8 +202,21 @@ static void discovery(void)
         assert(r.base == 0xa600000 && r.size == 0xcd00);
         assert(!strcmp(fdt_get_name(f, r.node, NULL), "dwc3@a600000"));
         assert(r.has_irq && r.gic && r.pdc && r.intid == 32 + 0x85 && r.irq_cells == 3);
+        /* core_base 0xa600000+1 MiB: QSCRATCH at the downstream offset. */
+        assert(r.qscratch == 0xa6f8800);
+        int wrapper = fdt_path_offset(f, "/soc/ssusb@a600000");
+        assert(wrapper >= 0);
+        fdt32_t short_core[2] = {cpu_to_fdt32(0xa600000), cpu_to_fdt32(0xf8800)};
+        assert(!fdt_setprop(f, wrapper, "reg", short_core, sizeof(short_core)));
+        assert(!kshim_dt_usb_acm(f, &r) && r.base == 0xa600000 && r.qscratch == 0);
         free(f);
     }
+    /* A mainline wrapper reg too short for the override registers. */
+    f = fixture(GENERATED_FIXTURES, "usb-acm.dtb");
+    fdt32_t tiny[4] = {cpu_to_fdt32(0), cpu_to_fdt32(0x0a6f8800), cpu_to_fdt32(0), cpu_to_fdt32(0x20)};
+    assert(!fdt_setprop(f, fdt_path_offset(f, "/soc/usb@a6f8800"), "reg", tiny, sizeof(tiny)));
+    assert(!kshim_dt_usb_acm(f, &r) && r.base == 0xa600000 && r.qscratch == 0);
+    free(f);
 
     /* A DT with no DWC3 at all (the QEMU virt machine). */
     f = fixture(GENERATED_FIXTURES, "usb-acm.dtb");
@@ -201,9 +232,17 @@ static void mirror(void)
 {
     fresh_model();
     void *f = fixture(GENERATED_FIXTURES, "usb-acm.dtb");
+    /* What the previous bootloader left in QSCRATCH, restored at handoff. */
+    AcmModelWrite32(ACM_MODEL_WINDOW_QSCRATCH, 0x10, 0x00000005);
+    AcmModelWrite32(ACM_MODEL_WINDOW_QSCRATCH, 0x30, 0x00000002);
     assert(!kshim_console_init(f));
     const AcmModelState *s = AcmModelObserve();
     assert(kshim_usb_acm_active() && s->SoftResets == 1 && s->Running && !s->Halted);
+    /* The VBUS override: UTMI_OTG_VBUS_VALID | SW_SESSVLD_SEL, LANE0_PWR_PRESENT. */
+    assert(AcmModelRead32(ACM_MODEL_WINDOW_QSCRATCH, 0x10) == (0x5U | 1U << 20 | 1U << 28));
+    assert(AcmModelRead32(ACM_MODEL_WINDOW_QSCRATCH, 0x30) == (0x2U | 1U << 24));
+    uint32_t inherited = 0, now = 0;
+    assert(kshim_usb_acm_qscratch_hs(&inherited, &now) && inherited == 0x5 && now == (0x5U | 1U << 20 | 1U << 28));
     assert(kshim_console_base() == 0x9000000);
     /* Before any host: kept for later. */
     kshim_console_write("kShimC banner\n", 14);
@@ -211,12 +250,18 @@ static void mirror(void)
 
     struct kshim_resources *r = calloc(1, sizeof(*r));
     assert(r && !kshim_console_map_resources(r));
-    assert(r->mapping_count == 1 && r->mappings[0].base == DWC3 && r->mappings[0].size == 0xcd00 &&
+    assert(r->mapping_count == 2 && r->mappings[0].base == DWC3 && r->mappings[0].size == 0xcd00 &&
            r->mappings[0].type == KSHIM_MMU_DEVICE &&
            r->mappings[0].permissions == (KSHIM_MMU_READ | KSHIM_MMU_WRITE));
+    assert(r->mappings[1].base == QSCRATCH && r->mappings[1].size == CR_USB_ACM_QSCRATCH_BYTES &&
+           r->mappings[1].type == KSHIM_MMU_DEVICE);
 
+    assert(!reports[0]);
     assert(AcmModelConnect() == ACM_MODEL_OK && AcmModelEnumerate(6) == ACM_MODEL_OK);
+    assert(!strcmp(reports, "host configured the device\n"));
     assert(AcmModelOpenPort() == ACM_MODEL_OK);
+    kshim_console_service();
+    assert(!strcmp(reports, "host configured the device\nhost opened the port\n"));
     expect_host("kShimC banner\n");
     assert(s->StringLength[2] == 2 + 2 * 17 && s->Strings[2][2] == 'k');
     /* printf writes one character at a time. */
@@ -249,10 +294,25 @@ static void mirror(void)
     assert(!nest && uart_length == before + 13 && !memcmp(uart_out + before, "outer\nnested\n", 13));
     expect_host("outer\n");
 
-    /* Handoff: flush, stop, nothing more reaches the controller. */
+    /* Port closed, then the host resets the bus: both reported. */
+    reports[0] = 0;
+    assert(AcmModelClosePort() == ACM_MODEL_OK);
+    kshim_console_service();
+    assert(!strcmp(reports, "host closed the port\n"));
+    assert(AcmModelBusReset() == ACM_MODEL_OK);
+    kshim_console_service();
+    assert(!strcmp(reports, "host closed the port\nhost reset or detached\n"));
+    assert(AcmModelEnumerate(7) == ACM_MODEL_OK && AcmModelOpenPort() == ACM_MODEL_OK);
+    kshim_console_service();
+
+    /* Handoff: flush, stop, nothing more reaches the controller, and
+     * QSCRATCH is the bootloader's again. */
     kshim_console_write("Booting...\n", 11);
     assert(!kshim_console_quiesce());
     assert(!kshim_usb_acm_active() && !s->Running && s->Halted && s->DevTen == 0 && s->EventAddress == 0);
+    assert(AcmModelRead32(ACM_MODEL_WINDOW_QSCRATCH, 0x10) == 0x5 &&
+           AcmModelRead32(ACM_MODEL_WINDOW_QSCRATCH, 0x30) == 0x2);
+    assert(!kshim_usb_acm_qscratch_hs(NULL, NULL));
     unsigned mmio = model_mmio;
     kshim_console_write("late", 4);
     kshim_console_service();
@@ -325,6 +385,18 @@ static void map_failure(void)
     kshim_console_write("uart only\n", 10);
     kshim_console_service();
     assert(model_mmio == mmio && uart_length == 10);
+    assert(!kshim_console_quiesce());
+    free(r);
+    free(f);
+
+    /* The core maps but QSCRATCH does not: both rolled back, stopped. */
+    fresh_model();
+    f = fixture(GENERATED_FIXTURES, "usb-acm.dtb");
+    assert(!kshim_console_init(f) && kshim_usb_acm_active());
+    r = calloc(1, sizeof(*r));
+    map_fail = 2;
+    assert(kshim_console_map_resources(r) && r->mapping_count == 0 && map_calls == 2);
+    assert(!kshim_usb_acm_active() && !AcmModelObserve()->Running);
     assert(!kshim_console_quiesce());
     free(r);
     free(f);
