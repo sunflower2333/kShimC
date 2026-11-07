@@ -62,12 +62,15 @@ typedef int CR_STATUS;
 #define LOG_COLOR_WARN ""
 #define LOG_COLOR_ERROR ""
 void CrOsLog(const char *format, ...);
+/* One message per call: CrDK's log_info() & co. mostly omit the newline
+ * (its UEFI backend ends the line), so it is added unless already there. */
+void CrOsLogLine(const char *format, ...);
 _Noreturn void CrOsPanic(const char *condition);
 #define log_raw CrOsLog
-#define log_info CrOsLog
-#define log_warn CrOsLog
-#define log_err CrOsLog
-#define log_debug CrOsLog
+#define log_info CrOsLogLine
+#define log_warn CrOsLogLine
+#define log_err CrOsLogLine
+#define log_debug CrOsLogLine
 #define cr_memset memset
 #define cr_memcpy memcpy
 #define cr_memcmp memcmp

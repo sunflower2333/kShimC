@@ -5,6 +5,7 @@
 #include "../../kernel/include/error_no.h"
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #if !defined(__aarch64__)
 #include <time.h>
 #endif
@@ -50,6 +51,15 @@ void CrOsLog(const char *format, ...)
   va_start(args, format);
   vprintf(format, args);
   va_end(args);
+}
+void CrOsLogLine(const char *format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  vprintf(format, args);
+  va_end(args);
+  size_t length = strlen(format);
+  if (!length || format[length - 1] != '\n') printf("\n");
 }
 _Noreturn void CrOsPanic(const char *condition)
 {
