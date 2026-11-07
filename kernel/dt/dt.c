@@ -318,6 +318,11 @@ int dt_reservations(const void *f, struct dt_range *ranges, bool *no_map,
         int ac = cells(f, parent, "#address-cells", 2), sc = cells(f, parent, "#size-cells", 1);
         if (ac < 1 || sc < 1 || len <= 0 || len % (4 * (ac + sc))) return -1;
         for (int i = 0; i < len / (4 * (ac + sc)); ++i) {
+            uint64_t base, size;
+            if (dt_raw_reg(f, node, i, &base, &size)) return -1;
+            /* Zero-size placeholders reserve nothing (Linux skips them too);
+             * SM8450 Android DTs carry demura_region_N with reg = <0 0 0 0>. */
+            if (!size) continue;
             if (*count == capacity || dt_reg(f, node, i, &ranges[*count])) return -1;
             no_map[(*count)++] = flag;
         }

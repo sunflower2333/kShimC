@@ -11,6 +11,7 @@
 #include <kshim/storage_probe.h>
 #endif
 #include <kshim/io.h>
+#include <boot_trace.h>
 #if CONFIG_QCOM_IRQCHIP
 #include <qcom_irq.h>
 /* The TLMM cascade writes INTR_CFG/INTR_STATUS on the key pin's page. */
@@ -115,6 +116,7 @@ int kshim_resources_init(const void *f, size_t available)
         }
     }
     kshim_qcom_spmi_bind(contexts, count);
+    kshim_boot_trace("  spmi");
 #endif
 #if CONFIG_QCOM_KEYS
     QcomKeyDescriptor keys[QCOM_KEYS_MAX]; size_t key_count;
@@ -124,6 +126,7 @@ int kshim_resources_init(const void *f, size_t available)
                 kshim_resource_map(&resources, keys[i].Base + keys[i].RegisterOffset,
                     4, KSHIM_MMU_DEVICE, KEY_GPIO_PERMISSIONS)) return -1;
     }
+    kshim_boot_trace("  keys");
 #endif
     /* Touch controllers (CONFIG_KSHIM_TOUCH_FRAMEWORK) use the GPIO, QUP and
      * regulator windows that kshim_io_map_resources() adds below. */
@@ -142,20 +145,25 @@ int kshim_resources_init(const void *f, size_t available)
             resources.ui_scratch.base, resources.ui_scratch.size,
             ui_scratch_type(f, resources.ui_scratch), KSHIM_MMU_READ | KSHIM_MMU_WRITE))
         resources.ui_scratch = (struct dt_range){0};
+    kshim_boot_trace("  splash");
 #endif
 #if CONFIG_QCOM_IRQCHIP
     kshim_irqchip_map_resources(&resources); /* optional PDC routes */
+    kshim_boot_trace("  irqchip");
 #endif
     if (kshim_power_map_resources(&resources)) return -1;
+    kshim_boot_trace("  power");
 #if CONFIG_KSHIM_CONSOLE_USB_ACM
     (void)kshim_console_map_resources(&resources); /* optional; stops the USB console on failure */
 #endif
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     (void)kshim_storage_map_resources(&resources); /* optional; restores on failure */
+    kshim_boot_trace("  storage");
 #endif
     /* I/O stack windows (docs/io-stack.md); each subsystem is optional and
      * rolled back on its own failure. No-op when not configured. */
     (void)kshim_io_map_resources(&resources);
+    kshim_boot_trace("  io");
 #if CONFIG_KSHIM_IRQ
     /* Last, so a full table costs interrupts, never a mandatory region. */
     kshim_mmu_region_t saved[KSHIM_RESOURCE_MAX];

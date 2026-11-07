@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 
 #define MMU_PAGE_SHIFT 12U
 #define MMU_PAGE_SIZE UINT64_C(0x1000)
@@ -623,6 +624,16 @@ fail:
 /* Add the full runtime map to the live early tables. Regions are new and
  * disjoint (add_region rejects conflicting overlaps); Device regions inside
  * the early window are already mapped. */
+static int extend_region(const kshim_mmu_region_t *region, const char *what)
+{
+    int status = add_region(region);
+    if (status)
+        printf("MMU: cannot add %s %#llx+%#llx (type %d): %d\n", what,
+               (unsigned long long)region->base, (unsigned long long)region->size,
+               (int)region->type, status);
+    return status;
+}
+
 static int extend_live(const kshim_mmu_config_t *config)
 {
     int status = 0;
@@ -633,25 +644,37 @@ static int extend_live(const kshim_mmu_config_t *config)
         return -1;
     if (config->fdt) {
         struct dt_range reservations[128]; bool no_map[128]; size_t count;
-        if (dt_validate(config->fdt, fdt_totalsize(config->fdt)) ||
-            dt_reservations(config->fdt, reservations, no_map, 128, &count)) return -1;
+        if (dt_validate(config->fdt, fdt_totalsize(config->fdt))) {
+            printf("MMU: runtime DT failed validation\n");
+            return -1;
+        }
+        if (dt_reservations(config->fdt, reservations, no_map, 128, &count)) {
+            printf("MMU: cannot parse /reserved-memory\n");
+            return -1;
+        }
         for (size_t i = 0; i < count; ++i) {
             for (size_t j = 0; j < config->extra_region_count; ++j) {
                 const kshim_mmu_region_t *extra = &config->extra_regions[j];
                 if (no_map[i] && extra->type == KSHIM_MMU_NORMAL_WB &&
-                    ranges_overlap(reservations[i].base, reservations[i].size, extra->base, extra->size)) return -1;
+                    ranges_overlap(reservations[i].base, reservations[i].size, extra->base, extra->size)) {
+                    printf("MMU: region %#llx+%#llx overlaps no-map %#llx+%#llx\n",
+                           (unsigned long long)extra->base, (unsigned long long)extra->size,
+                           (unsigned long long)reservations[i].base,
+                           (unsigned long long)reservations[i].size);
+                    return -1;
+                }
             }
         }
     }
     region = (kshim_mmu_region_t){config->framebuffer_base, config->framebuffer_size,
                                   KSHIM_MMU_NORMAL_NC, KSHIM_MMU_READ | KSHIM_MMU_WRITE};
-    if (!status && !in_early_window(&region)) status = add_region(&region);
+    if (!status && !in_early_window(&region)) status = extend_region(&region, "framebuffer");
     region = (kshim_mmu_region_t){config->uefi_base, config->uefi_size, KSHIM_MMU_NORMAL_WB,
                                   KSHIM_MMU_READ | KSHIM_MMU_WRITE | KSHIM_MMU_EXECUTE};
-    if (!status) status = add_region(&region);
+    if (!status) status = extend_region(&region, "UEFI payload");
     for (size_t index = 0; !status && index < config->extra_region_count; index++)
         if (!in_early_window(&config->extra_regions[index]))
-            status = add_region(&config->extra_regions[index]);
+            status = extend_region(&config->extra_regions[index], "resource");
     if (!status && config->map_qemu_test_windows) {
         const kshim_mmu_region_t qemu_regions[] = {
             {UINT64_C(0x44000000), UINT64_C(0x00c00000), KSHIM_MMU_NORMAL_NC,

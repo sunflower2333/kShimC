@@ -7,6 +7,7 @@
 #include <pl011_uart.h>
 #include <kshim_console.h>
 #include <timer.h>
+#include <boot_trace.h>
 #include <gicv3.h>
 #include <arm64/boot.h>
 #include <manifest.h>
@@ -268,6 +269,14 @@ extern void _arm64_mmu_setup(void);
 /* Last operation before leaving the runtime, after all boot diagnostics.
  * Order (docs/interrupts.md): input/touch and LVGL/workers, drivers restore
  * their controllers, interrupts are restored, then the MMU goes off. */
+#if CONFIG_KSHIM_BOOT_TRACE
+static uint64_t BootT0;
+void kshim_boot_trace(const char *stage)
+{
+    printf("kShimC: %-14s +%llu ms\n", stage, (unsigned long long)(get_current_time() - BootT0));
+}
+#endif
+
 static void prepare_boot(void)
 {
     int status = kshim_platform_quiesce();
@@ -294,12 +303,10 @@ int kshim_main(
      * reported by kShimC, not by the previous bootloader's dead handlers. */
     arm64_exception_early_init();
 #if CONFIG_KSHIM_BOOT_TRACE
-    uint64_t boot_t0 = get_current_time(), boot_mmu = 0, boot_dt = 0;
-#define BOOT_STAGE(name) printf("kShimC: %-14s +%llu ms\n", name, \
-                                (unsigned long long)(get_current_time() - boot_t0))
-#else
-#define BOOT_STAGE(name) do { } while (0)
+    BootT0 = get_current_time();
+    uint64_t boot_mmu = 0, boot_dt = 0;
 #endif
+#define BOOT_STAGE(name) kshim_boot_trace(name)
     const void *runtime_fdt = (const void *)(uintptr_t)device_tree_address;
 #if KSHIM_STANDALONE
     /* ABL enters with the MMU and caches off; uncached, device-tree
@@ -313,14 +320,14 @@ int kshim_main(
     int early_mmu = -1;
 #endif
 #if CONFIG_KSHIM_BOOT_TRACE
-    boot_mmu = get_current_time() - boot_t0;
+    boot_mmu = get_current_time() - BootT0;
 #endif
     if (!runtime_fdt || dt_validate(runtime_fdt, fdt_totalsize(runtime_fdt))) {
         runtime_fdt = NULL;
         device_tree_address = 0;
     }
 #if CONFIG_KSHIM_BOOT_TRACE
-    boot_dt = get_current_time() - boot_t0;
+    boot_dt = get_current_time() - BootT0;
 #endif
     (void)kshim_console_init(runtime_fdt);
     /* First line on every profile: which image is running. */

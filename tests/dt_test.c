@@ -49,6 +49,18 @@ static void test_real(const char *name, bool touch)
     }
     struct dt_range ranges[128]; bool nomap[128]; size_t nr;
     assert(!dt_reservations(f, ranges, nomap, 128, &nr)); assert(nr > 10);
+    /* SM8450 Android DTs carry zero-size placeholders (demura_region_N with
+     * reg = <0 0 0 0>): they reserve nothing and must not fail the parse. */
+    int pool = fdt_path_offset(f, "/reserved-memory");
+    assert(pool >= 0);
+    int demura = fdt_add_subnode(f, pool, "demura_region_0");
+    assert(demura >= 0);
+    const fdt32_t empty[4] = {0};
+    assert(!fdt_setprop(f, demura, "reg", empty, sizeof(empty)));
+    assert(!fdt_setprop_empty(f, demura, "no-map"));
+    size_t with_placeholder;
+    assert(!dt_reservations(f, ranges, nomap, 128, &with_placeholder));
+    assert(with_placeholder == nr);
     free(r); free(f);
 }
 static void test_common(void)
