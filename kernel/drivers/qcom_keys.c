@@ -2,6 +2,7 @@
 #if !defined(KSHIM_HOST_TEST)
 #include <config.h>
 #endif
+#include <mmio.h>
 #include <qcom_key_platform.h>
 #include <qcom_keys.h>
 #include <stdint.h>
@@ -91,7 +92,7 @@ static UINT32 KshimSpmiRead(void *Context, UINTN Address)
   struct spmi_port *port = Context;
   if (!KshimSpmiAddressValid(port, Address))
     return 0;
-  uint32_t Value = *(volatile uint32_t *)Address;
+  uint32_t Value = kshim_mmio_read32((uintptr_t)Address);
   KshimSpmiBarrier();
   return Value;
 }
@@ -122,7 +123,7 @@ static void KshimSpmiWrite(void *Context, UINTN Address, UINT32 Value)
     return;
   }
   KshimSpmiBarrier();
-  *(volatile uint32_t *)Address = Value;
+  kshim_mmio_write32((uintptr_t)Address, Value);
   KshimSpmiBarrier();
 }
 

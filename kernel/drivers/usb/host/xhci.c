@@ -16,6 +16,7 @@
  * same path polls.
  */
 #include "xhci.h"
+#include <mmio.h>
 
 #include <kshim/dma.h>
 #include <kshim/smp.h>
@@ -48,13 +49,13 @@ static inline void xhci_barrier(void)
 static uint32_t mmio_read32(void *context, uintptr_t address)
 {
     (void)context;
-    return *(volatile uint32_t *)address;
+    return kshim_mmio_read32((uintptr_t)address);
 }
 
 static void mmio_write32(void *context, uintptr_t address, uint32_t value)
 {
     (void)context;
-    *(volatile uint32_t *)address = value;
+    kshim_mmio_write32((uintptr_t)address, value);
 }
 
 void xhci_io_mmio(struct xhci_io *io)

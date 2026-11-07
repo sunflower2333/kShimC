@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "pl011_uart.h"
+#include <mmio.h>
 #include <bitops.h>
 #include <memops.h>
 #include <gicv3.h>
@@ -87,7 +88,7 @@ void pl011_write(
     while (i < len)
     {
         // Write the character to the UART data register
-        *(volatile uint32_t *)(mmio_base) = str[i];
+        kshim_mmio_write32((uintptr_t)(mmio_base), (uint32_t)str[i]);
         i++;
     }
 }

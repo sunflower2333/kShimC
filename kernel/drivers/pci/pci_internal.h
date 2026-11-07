@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <mmio.h>
 
 struct kshim_resources;
 
@@ -51,18 +52,18 @@ static inline uint32_t pci_mmio_read(uintptr_t a, unsigned width)
 {
     uint32_t v;
     pci_barrier();
-    if (width == 1) v = *(volatile uint8_t *)a;
-    else if (width == 2) v = *(volatile uint16_t *)a;
-    else v = *(volatile uint32_t *)a;
+    if (width == 1) v = kshim_mmio_read8(a);
+    else if (width == 2) v = kshim_mmio_read16(a);
+    else v = kshim_mmio_read32(a);
     pci_barrier();
     return v;
 }
 static inline void pci_mmio_write(uintptr_t a, unsigned width, uint32_t v)
 {
     pci_barrier();
-    if (width == 1) *(volatile uint8_t *)a = (uint8_t)v;
-    else if (width == 2) *(volatile uint16_t *)a = (uint16_t)v;
-    else *(volatile uint32_t *)a = v;
+    if (width == 1) kshim_mmio_write8(a, (uint8_t)v);
+    else if (width == 2) kshim_mmio_write16(a, (uint16_t)v);
+    else kshim_mmio_write32(a, v);
     pci_barrier();
 }
 #endif

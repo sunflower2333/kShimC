@@ -236,3 +236,7 @@ add_subdirectory(storage)
 include("${CMAKE_CURRENT_LIST_DIR}/storage_drivers.cmake")
 # I/O stack: QUP/I2C/SPI, GPIO/regulators, PCI, USB, HID, touch.
 include("${CMAKE_CURRENT_LIST_DIR}/io.cmake")
+
+# Device registers go through the single-instruction accessors in mmio.h.
+find_package(Python3 COMPONENTS Interpreter)
+add_test(NAME mmio_lint COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/mmio_lint.py" "${KSHIM_ROOT}")

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include <oskal/cr_interrupt.h>
+#include "../../kernel/include/mmio.h"
 #include <crdk_os.h>
 #include "../../kernel/include/error_no.h"
 #include <stdarg.h>
@@ -17,9 +18,9 @@ void CrOsBarrier(void)
 #endif
 }
 uint32_t CrMmioRead32(uintptr_t address)
-{ CrOsBarrier(); uint32_t v = *(volatile uint32_t *)address; CrOsBarrier(); return v; }
+{ CrOsBarrier(); uint32_t v = kshim_mmio_read32((uintptr_t)address); CrOsBarrier(); return v; }
 uint32_t CrMmioWrite32(uintptr_t address, uint32_t value)
-{ CrOsBarrier(); *(volatile uint32_t *)address = value; CrOsBarrier(); return value; }
+{ CrOsBarrier(); kshim_mmio_write32((uintptr_t)address, value); CrOsBarrier(); return value; }
 uint64_t CrOsTime(void)
 {
 #if defined(__aarch64__)

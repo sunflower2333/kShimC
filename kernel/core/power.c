@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include <config.h>
+#include <mmio.h>
 #include <power.h>
 #include <qcom_dt.h>
 #include <qcom_key_platform.h>
@@ -30,7 +31,7 @@ static int write32(void *unused,uintptr_t address,uint32_t value)
     (void)unused;
     if(!address||(address&3))return -1;
     __asm__ volatile("dsb sy" ::: "memory");
-    *(volatile uint32_t *)address=value;
+    kshim_mmio_write32((uintptr_t)address, value);
     __asm__ volatile("dsb sy" ::: "memory");return 0;
 }
 static void wait_us(void *unused,uint32_t us){(void)unused;(void)delay(us);}

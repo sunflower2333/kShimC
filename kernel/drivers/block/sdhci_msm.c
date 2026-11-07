@@ -13,6 +13,7 @@
  * (CrDK GpioSdLib needs a full TLMM target context; pads stay as inherited).
  */
 #include <kshim/qcom_storage.h>
+#include <mmio.h>
 #include <kshim/sdmmc.h>
 #include <config.h>
 
@@ -42,9 +43,9 @@ static CR_STATUS io_read(void *c, UINT32 off, UINT8 width, UINT32 *value)
 {
     struct msm *m = c;
     volatile void *p = (volatile void *)(m->base + off);
-    if (width == 1) *value = *(volatile uint8_t *)p;
-    else if (width == 2) *value = *(volatile uint16_t *)p;
-    else if (width == 4) *value = *(volatile uint32_t *)p;
+    if (width == 1) *value = kshim_mmio_read8((uintptr_t)p);
+    else if (width == 2) *value = kshim_mmio_read16((uintptr_t)p);
+    else if (width == 4) *value = kshim_mmio_read32((uintptr_t)p);
     else return CR_INVALID_PARAMETER;
     return CR_SUCCESS;
 }
@@ -53,9 +54,9 @@ static CR_STATUS io_write(void *c, UINT32 off, UINT8 width, UINT32 value)
 {
     struct msm *m = c;
     volatile void *p = (volatile void *)(m->base + off);
-    if (width == 1) *(volatile uint8_t *)p = (uint8_t)value;
-    else if (width == 2) *(volatile uint16_t *)p = (uint16_t)value;
-    else if (width == 4) *(volatile uint32_t *)p = value;
+    if (width == 1) kshim_mmio_write8((uintptr_t)p, (uint8_t)value);
+    else if (width == 2) kshim_mmio_write16((uintptr_t)p, (uint16_t)value);
+    else if (width == 4) kshim_mmio_write32((uintptr_t)p, value);
     else return CR_INVALID_PARAMETER;
     return CR_SUCCESS;
 }

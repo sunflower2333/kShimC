@@ -8,6 +8,7 @@
  * platform through QcomKeyRead32.
  */
 #include <qcom_keys.h>
+#include <mmio.h>
 
 #include <stdint.h>
 #if !defined(KSHIM_HOST_TEST)
@@ -33,7 +34,7 @@ static inline void QcomKeysUnlock(unsigned long Flags) { (void)Flags; }
 uint32_t QcomKeyReadMmio32(void *Context, uint64_t Address)
 {
   (void)Context;
-  return *(volatile uint32_t *)(uintptr_t)Address;
+  return kshim_mmio_read32((uintptr_t)Address);
 }
 
 QcomKeyAction QcomKeyActionFromCode(uint32_t Code)
