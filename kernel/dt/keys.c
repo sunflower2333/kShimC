@@ -99,7 +99,7 @@ static uint32_t QcomFdtLinearTlmmGpioCount(const void *Blob, int Provider)
 /* PMIC offsets use the SPMI binding; they are never CPU addresses. */
 static int QcomFdtReadReg(const void *f, int node, uint64_t *address, int *owner)
 {
-    for (int n = node; n > 0; n = fdt_parent_offset(f, n)) {
+    for (int n = node; n > 0; n = dt_parent_offset(f, n)) {
         if (!fdt_getprop(f, n, "reg", NULL)) continue;
         uint16_t offset;
         if (kshim_dt_spmi_reg(f, n, &offset)) return -1;

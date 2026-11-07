@@ -38,8 +38,8 @@ int kshim_dt_spmi_identity(const void *f, int node, uint8_t *controller,
                            uint8_t *bus, uint8_t *sid)
 {
     int pmic = node, arb = -1;
-    for (; pmic > 0; pmic = fdt_parent_offset(f, pmic)) {
-        int parent = fdt_parent_offset(f, pmic);
+    for (; pmic > 0; pmic = dt_parent_offset(f, pmic)) {
+        int parent = dt_parent_offset(f, pmic);
         if (parent >= 0 && controller_node(f, parent)) { arb = parent; break; }
     }
     if (arb < 0 || !dt_available(f, node)) return -1;
@@ -71,7 +71,7 @@ int kshim_dt_spmi_reg(const void *f, int node, uint16_t *offset)
 {
     uint8_t controller, bus, sid;
     if (!offset || kshim_dt_spmi_identity(f, node, &controller, &bus, &sid)) return -1;
-    int parent = fdt_parent_offset(f, node), len;
+    int parent = dt_parent_offset(f, node), len;
     uint32_t ac, sc;
     const fdt32_t *p = fdt_getprop(f, node, "reg", &len);
     if (!p || dt_u32(f, parent, "#address-cells", &ac) ||

@@ -53,9 +53,9 @@ int kshim_pci_dt_translate(const void *f, int node, uint64_t address, uint64_t s
     if (!f || !cpu || node < 0) return ERROR_INVALID_PARAMETER;
     int depth = 0;
     /* `bus` is the node whose address space `address` belongs to. */
-    for (int bus = fdt_parent_offset(f, node); bus > 0; bus = fdt_parent_offset(f, bus)) {
+    for (int bus = dt_parent_offset(f, node); bus > 0; bus = dt_parent_offset(f, bus)) {
         if (++depth > MAX_TRANSLATE_DEPTH) return ERROR_INVALID_PARAMETER;
-        int parent = fdt_parent_offset(f, bus), len;
+        int parent = dt_parent_offset(f, bus), len;
         if (parent < 0) return ERROR_INVALID_PARAMETER;
         int ac = cells(f, bus, "#address-cells", 2), sc = cells(f, bus, "#size-cells", 1);
         int pc = cells(f, parent, "#address-cells", 2);
@@ -86,7 +86,7 @@ int kshim_pci_dt_windows(const void *f, int node, struct kshim_pci_host *host)
 {
     int len;
     const fdt32_t *p = fdt_getprop(f, node, "ranges", &len);
-    int parent = fdt_parent_offset(f, node);
+    int parent = dt_parent_offset(f, node);
     int ac = cells(f, node, "#address-cells", 3), sc = cells(f, node, "#size-cells", 2);
     int pc = parent >= 0 ? cells(f, parent, "#address-cells", 2) : -1;
     host->window_count = 0;
@@ -180,7 +180,7 @@ int kshim_pci_dt_intx(const void *f, int host_node, uint32_t unit_hi, uint8_t pi
         bool match = true;
         for (unsigned i = 0; i < 4; ++i)
             if ((fdt32_to_cpu(map[off + i]) & mask[i]) != key[i]) match = false;
-        int parent = fdt_node_offset_by_phandle(f, fdt32_to_cpu(map[off + 4]));
+        int parent = dt_node_by_phandle(f, fdt32_to_cpu(map[off + 4]));
         if (parent < 0) return ERROR_INVALID_PARAMETER;
         int pac = cells(f, parent, "#address-cells", 0);
         uint32_t pic;

@@ -140,6 +140,14 @@ menu "Generic"
             full I/O stack use 8 MiB. A -DKSHIM_RUNTIME_SLOT_SIZE= CMake
             override (tools/build_hdk.py) still wins.
 
+    config KSHIM_BOOT_TRACE
+        bool "Print boot stage timings"
+        default n
+        help
+            Print the milliseconds since kshim_main entry after each early
+            boot stage (MMU, device tree, console, resources, interrupts).
+            For bring-up and test images.
+
     config KSHIM_UEFI_TEST_MENU
         bool "Two entries that both launch the embedded UEFI FD"
         default n

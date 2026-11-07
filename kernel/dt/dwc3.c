@@ -38,7 +38,7 @@ static uint64_t controller_hint(const void *f)
 
 static int interrupt_parent(const void *f, int node)
 {
-    for (int n = node; n >= 0; n = fdt_parent_offset(f, n)) {
+    for (int n = node; n >= 0; n = dt_parent_offset(f, n)) {
         uint32_t handle;
         if (fdt_getprop(f, n, "interrupt-parent", NULL))
             return dt_u32(f, n, "interrupt-parent", &handle) ? -1 : dt_phandle(f, handle);
@@ -94,7 +94,7 @@ int kshim_dt_usb_acm(const void *f, struct kshim_usb_acm_resource *out)
     struct dt_range chosen_reg = {0, 0};
     for (int n = fdt_node_offset_by_compatible(f, -1, "snps,dwc3"); n >= 0;
          n = fdt_node_offset_by_compatible(f, n, "snps,dwc3")) {
-        int parent = fdt_parent_offset(f, n);
+        int parent = dt_parent_offset(f, n);
         if (parent < 0 || !qcom_wrapper(f, parent) || !dt_available(f, n)) continue;
         const char *mode = dt_string(f, n, "dr_mode");
         if (!mode) mode = dt_string(f, parent, "dr_mode");

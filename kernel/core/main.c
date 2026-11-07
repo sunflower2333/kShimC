@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include <arm64_exception.h>
+#include <libfdt.h>
+#include <kshim_mmu.h>
 #include <kshim_build_id_compat.h>
 #include <kshim.h>
 #include <pl011_uart.h>
@@ -291,23 +293,64 @@ int kshim_main(
     /* Own the exception vectors before touching any device, so a fault is
      * reported by kShimC, not by the previous bootloader's dead handlers. */
     arm64_exception_early_init();
+#if CONFIG_KSHIM_BOOT_TRACE
+    uint64_t boot_t0 = get_current_time(), boot_mmu = 0, boot_dt = 0;
+#define BOOT_STAGE(name) printf("kShimC: %-14s +%llu ms\n", name, \
+                                (unsigned long long)(get_current_time() - boot_t0))
+#else
+#define BOOT_STAGE(name) do { } while (0)
+#endif
     const void *runtime_fdt = (const void *)(uintptr_t)device_tree_address;
+#if KSHIM_STANDALONE
+    /* ABL enters with the MMU and caches off; uncached, device-tree
+     * validation and resource discovery took minutes on SM8450. Turn them on
+     * before any of it with a minimal map (image, FDT, peripheral window).
+     * Manifest runtimes keep the later MMU: their manifest and payloads live
+     * outside that map. */
+    int early_mmu = kshim_mmu_early_enable(
+        runtime_fdt && fdt_check_header(runtime_fdt) == 0 ? runtime_fdt : NULL);
+#else
+    int early_mmu = -1;
+#endif
+#if CONFIG_KSHIM_BOOT_TRACE
+    boot_mmu = get_current_time() - boot_t0;
+#endif
     if (!runtime_fdt || dt_validate(runtime_fdt, fdt_totalsize(runtime_fdt))) {
         runtime_fdt = NULL;
         device_tree_address = 0;
     }
+#if CONFIG_KSHIM_BOOT_TRACE
+    boot_dt = get_current_time() - boot_t0;
+#endif
     (void)kshim_console_init(runtime_fdt);
     /* First line on every profile: which image is running. */
     printf("kShimC %s\n", KSHIM_BUILD_ID);
+#if CONFIG_KSHIM_BOOT_TRACE
+    printf("kShimC: %-14s +%llu ms (early MMU %s)\n", "mmu", (unsigned long long)boot_mmu,
+           early_mmu ? "off" : "on");
+    printf("kShimC: %-14s +%llu ms\n", "dt-validated", (unsigned long long)boot_dt);
+    BOOT_STAGE("console");
+#endif
+#if KSHIM_STANDALONE
+    if (early_mmu)
+        printf("MMU: early map unavailable (%d); running uncached until the menu\n", early_mmu);
+#endif
     if (runtime_fdt && kshim_resources_init(runtime_fdt, fdt_totalsize(runtime_fdt))) {
         printf("Invalid runtime device resources\n");
         for (;;) (void)delay(100000);
     }
+    /* Complete the live map (framebuffer, UEFI payload, devices above the
+     * early window) now that every resource is known. */
+    BOOT_STAGE("resources");
+    if (early_mmu == 0 && kshim_mmu_configure_default(runtime_fdt) != 0)
+        printf("MMU: full map could not be added\n");
+    BOOT_STAGE("mmu-full");
 #if CONFIG_KSHIM_IRQ_SELFTEST
     kshim_irq_selftest_inherit(runtime_fdt);
 #endif
     /* Interrupt-driven from here on; without a usable GIC the runtime polls. */
     if (runtime_fdt) (void)kshim_irq_init(runtime_fdt);
+    BOOT_STAGE("irq");
 #if defined(CONFIG_BLK_UFS) || defined(CONFIG_BLK_SDHCI)
     if (runtime_fdt) (void)kshim_storage_probe(runtime_fdt);
 #endif
@@ -322,6 +365,7 @@ int kshim_main(
      * supplies the Renesas xHCI firmware. No-op when not configured. */
     (void)kshim_io_init(runtime_fdt);
 #if KSHIM_STANDALONE
+    BOOT_STAGE("menu");
     return kshim_platform_main(device_tree_address, kernel_arg1, kernel_arg2, kernel_arg3);
 #endif
     if (linux_base != 0) {

@@ -26,7 +26,7 @@
 
 static int provider_of(const void *f, int state)
 {
-    for (int n = fdt_parent_offset(f, state); n >= 0; n = fdt_parent_offset(f, n))
+    for (int n = dt_parent_offset(f, state); n >= 0; n = dt_parent_offset(f, n))
         if (fdt_getprop(f, n, "gpio-controller", NULL)) return n;
     return -1;
 }

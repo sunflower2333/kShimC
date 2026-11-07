@@ -8,6 +8,12 @@ struct dt_range { uint64_t base, size; };
 struct dt_spec { int node; unsigned count; uint32_t args[8]; };
 /* All other APIs require a blob accepted by dt_validate first. */
 int dt_validate(const void *fdt, size_t available);
+/* fdt_parent_offset()/fdt_node_offset_by_phandle() through the one-pass
+ * index of the last validated blob (libfdt fallback otherwise). */
+int dt_parent_offset(const void *fdt, int node);
+int dt_node_by_phandle(const void *fdt, uint32_t phandle);
+/* Nodes in the live index for fdt, or -1 when lookups use libfdt. */
+int dt_index_nodes(const void *fdt);
 bool dt_available(const void *fdt, int node);
 int dt_u32(const void *fdt, int node, const char *property, uint32_t *value);
 int dt_bool(const void *fdt, int node, const char *property, bool *value);

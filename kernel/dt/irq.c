@@ -30,10 +30,10 @@ static int irq_parent(const void *f, int node)
         int next;
         if (p) {
             if (len != 4) return -1;
-            next = fdt_node_offset_by_phandle(f, fdt32_to_cpu(*p));
+            next = dt_node_by_phandle(f, fdt32_to_cpu(*p));
         } else {
             if (len != -FDT_ERR_NOTFOUND) return -1;
-            next = fdt_parent_offset(f, node);
+            next = dt_parent_offset(f, node);
         }
         if (next < 0) return -1;
         if (fdt_getprop(f, next, "#interrupt-cells", NULL)) return next;
@@ -60,7 +60,7 @@ static int irq_spec(const void *f, int node, int index, int *parent,
         if (len <= 0 || len % 4) return ERROR_INVALID_PARAMETER;
         for (int item = 0;; ++item) {
             if (off >= total) return ERROR_NOT_FOUND;
-            *parent = fdt_node_offset_by_phandle(f, fdt32_to_cpu(p[off++]));
+            *parent = dt_node_by_phandle(f, fdt32_to_cpu(p[off++]));
             if (*parent < 0 || interrupt_cells(f, *parent, cells) || *cells > total - off)
                 return ERROR_INVALID_PARAMETER;
             if (item == index) { *spec = p + off; return 0; }
@@ -154,7 +154,7 @@ static int ppi_through_parent(const void *f, int parent, const fdt32_t *spec, ui
         int len;
         const fdt32_t *p = fdt_getprop(f, parent, "interrupt-parent", &len);
         if (!p || len != 4) return ERROR_NOT_SUPPORTED;
-        int next = fdt_node_offset_by_phandle(f, fdt32_to_cpu(*p));
+        int next = dt_node_by_phandle(f, fdt32_to_cpu(*p));
         if (next < 0 || next == parent) return ERROR_NOT_SUPPORTED;
         parent = next;
     }

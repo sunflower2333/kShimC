@@ -340,7 +340,7 @@ static void reconcile_irq(struct kshim_touch_dev *dev)
 
 static int bind_bus(struct kshim_touch_dev *dev)
 {
-    int parent = fdt_parent_offset(dev->fdt, dev->node);
+    int parent = dt_parent_offset(dev->fdt, dev->node);
     int status = ERROR_NOT_FOUND;
     if (parent < 0) return ERROR_NOT_FOUND;
 #if CONFIG_KSHIM_I2C

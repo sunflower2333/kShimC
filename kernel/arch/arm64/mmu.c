@@ -82,6 +82,9 @@ typedef struct {
     size_t region_count;
     uint64_t entry_el;
     uint8_t configured;
+    /* kshim_mmu_early_enable() tables are live: only add regions. */
+    uint8_t early;
+    uint64_t early_window_end;
 } mmu_context_t;
 
 static translation_table_t mTables[MMU_TABLE_COUNT]
@@ -90,6 +93,7 @@ static mmu_context_t mMmu;
 
 extern unsigned char __image_start_address__[];
 extern unsigned char __image_end_address__[];
+extern unsigned char __runtime_end_address__[];
 
 static uint64_t align_down(uint64_t value, uint64_t alignment)
 {
@@ -407,9 +411,18 @@ static void disable_at_el(uint64_t exception_level)
 #endif
 }
 
+static int extend_live(const kshim_mmu_config_t *config);
+
 int kshim_mmu_configure(const kshim_mmu_config_t *config)
 {
     kshim_mmu_region_t region;
+    if (mMmu.early)
+        return extend_live(config);
+#if defined(__aarch64__)
+    /* Never rebuild tables the MMU is walking. */
+    if (kshim_mmu_is_enabled())
+        return -1;
+#endif
     uint64_t image_base = (uint64_t)(uintptr_t)__image_start_address__;
     uint64_t image_end = (uint64_t)(uintptr_t)__image_end_address__;
 
@@ -522,6 +535,147 @@ int kshim_mmu_configure(const kshim_mmu_config_t *config)
     __asm__ volatile("dsb sy" ::: "memory");
 #endif
     return 0;
+}
+
+/* Invalidate data cache lines (no clean): memory written with the MMU off is
+ * the truth, so no line a previous bootloader left may shadow it. */
+static void invalidate_range(uint64_t base, uint64_t size)
+{
+#if defined(__aarch64__)
+    uint64_t ctr, line, end;
+    __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+    line = UINT64_C(4) << ((ctr >> 16) & 0xfU);
+    end = base + size;
+    for (uint64_t address = align_down(base, line); address < end; address += line)
+        __asm__ volatile("dc ivac, %0" : : "r"(address) : "memory");
+    __asm__ volatile("dsb sy" ::: "memory");
+#else
+    (void)base;
+    (void)size;
+#endif
+}
+
+static int in_early_window(const kshim_mmu_region_t *region)
+{
+    return region->type == KSHIM_MMU_DEVICE && mMmu.early_window_end &&
+        range_within(region->base, region->size, 0, mMmu.early_window_end);
+}
+
+/*
+ * Turn the MMU and caches on at kshim_main entry. ABL enters with them off,
+ * and on real cores every uncached fetch and data access goes to DRAM: device
+ * tree validation and resource discovery on the SM8450 Android DT took
+ * minutes. The early map holds only kShimC's image (normal, write-back), the
+ * runtime FDT (normal, read-only) and one Device window from 0 up to the 1 GiB
+ * boundary below the image, which covers the SoC peripherals (UART, DWC3,
+ * GIC, ...). No other RAM is mapped: speculative cacheable accesses to
+ * protected carve-outs can fault on Qualcomm parts. kshim_mmu_configure()
+ * later adds the rest of the map to the live tables.
+ */
+int kshim_mmu_early_enable(const void *fdt)
+{
+    uint64_t image_base = (uint64_t)(uintptr_t)__image_start_address__;
+    uint64_t image_end = (uint64_t)(uintptr_t)__image_end_address__;
+    uint64_t runtime_end = (uint64_t)(uintptr_t)__runtime_end_address__;
+    uint64_t window_end = align_down(image_base, UINT64_C(1) << 30);
+    kshim_mmu_region_t region;
+
+    if (mMmu.configured || kshim_mmu_is_enabled() || image_end <= image_base)
+        return -1;
+    memset(&mMmu, 0, sizeof(mMmu));
+    memset(mTables, 0, sizeof(mTables));
+    mMmu.root = allocate_table();
+    if (mMmu.root == NULL)
+        return -2;
+    region = (kshim_mmu_region_t){image_base, image_end - image_base, KSHIM_MMU_NORMAL_WB,
+                                  KSHIM_MMU_READ | KSHIM_MMU_WRITE | KSHIM_MMU_EXECUTE};
+    if (add_region(&region) != 0)
+        goto fail;
+    if (fdt != NULL && fdt_check_header(fdt) == 0) {
+        uint64_t fdt_base = (uint64_t)(uintptr_t)fdt;
+        uint64_t fdt_size = (uint32_t)fdt_totalsize(fdt);
+        if (!range_within(fdt_base, fdt_size, image_base, image_end - image_base)) {
+            region = (kshim_mmu_region_t){fdt_base, fdt_size, KSHIM_MMU_NORMAL_WB, KSHIM_MMU_READ};
+            if (add_region(&region) != 0)
+                goto fail;
+            invalidate_range(fdt_base, fdt_size);
+        }
+    }
+    if (window_end != 0U) {
+        region = (kshim_mmu_region_t){0, window_end, KSHIM_MMU_DEVICE,
+                                      KSHIM_MMU_READ | KSHIM_MMU_WRITE};
+        if (add_region(&region) != 0)
+            goto fail;
+    }
+    invalidate_range(image_base, runtime_end - image_base);
+    mMmu.early_window_end = window_end;
+    mMmu.entry_el = current_el();
+    mMmu.configured = 1U;
+    mMmu.early = 1U;
+    if (enable_at_el(mMmu.entry_el) != 0)
+        goto fail;
+    return 0;
+fail:
+    memset(&mMmu, 0, sizeof(mMmu));
+    return -2;
+}
+
+/* Add the full runtime map to the live early tables. Regions are new and
+ * disjoint (add_region rejects conflicting overlaps); Device regions inside
+ * the early window are already mapped. */
+static int extend_live(const kshim_mmu_config_t *config)
+{
+    int status = 0;
+    kshim_mmu_region_t region;
+
+    if (config == NULL || config->extra_region_count > KSHIM_MMU_MAX_EXTRA_REGIONS ||
+        (config->extra_region_count != 0U && config->extra_regions == NULL))
+        return -1;
+    if (config->fdt) {
+        struct dt_range reservations[128]; bool no_map[128]; size_t count;
+        if (dt_validate(config->fdt, fdt_totalsize(config->fdt)) ||
+            dt_reservations(config->fdt, reservations, no_map, 128, &count)) return -1;
+        for (size_t i = 0; i < count; ++i) {
+            for (size_t j = 0; j < config->extra_region_count; ++j) {
+                const kshim_mmu_region_t *extra = &config->extra_regions[j];
+                if (no_map[i] && extra->type == KSHIM_MMU_NORMAL_WB &&
+                    ranges_overlap(reservations[i].base, reservations[i].size, extra->base, extra->size)) return -1;
+            }
+        }
+    }
+    region = (kshim_mmu_region_t){config->framebuffer_base, config->framebuffer_size,
+                                  KSHIM_MMU_NORMAL_NC, KSHIM_MMU_READ | KSHIM_MMU_WRITE};
+    if (!status && !in_early_window(&region)) status = add_region(&region);
+    region = (kshim_mmu_region_t){config->uefi_base, config->uefi_size, KSHIM_MMU_NORMAL_WB,
+                                  KSHIM_MMU_READ | KSHIM_MMU_WRITE | KSHIM_MMU_EXECUTE};
+    if (!status) status = add_region(&region);
+    for (size_t index = 0; !status && index < config->extra_region_count; index++)
+        if (!in_early_window(&config->extra_regions[index]))
+            status = add_region(&config->extra_regions[index]);
+    if (!status && config->map_qemu_test_windows) {
+        const kshim_mmu_region_t qemu_regions[] = {
+            {UINT64_C(0x44000000), UINT64_C(0x00c00000), KSHIM_MMU_NORMAL_NC,
+             KSHIM_MMU_READ | KSHIM_MMU_WRITE},
+            {UINT64_C(0x46000000), MMU_PAGE_SIZE, KSHIM_MMU_NORMAL_WB,
+             KSHIM_MMU_READ | KSHIM_MMU_WRITE},
+        };
+        for (size_t index = 0; !status && index < sizeof(qemu_regions) / sizeof(qemu_regions[0]); index++) {
+            if (index == 0U && ranges_overlap(config->framebuffer_base, config->framebuffer_size,
+                                              qemu_regions[index].base, qemu_regions[index].size))
+                continue;
+            status = add_region(&qemu_regions[index]);
+        }
+    }
+#if defined(__aarch64__)
+    __asm__ volatile("dsb ishst" ::: "memory");
+    if (mMmu.entry_el == CURRENT_EL2)
+        __asm__ volatile("tlbi alle2\ndsb ish\nisb" ::: "memory");
+    else
+        __asm__ volatile("tlbi vmalle1\ndsb ish\nisb" ::: "memory");
+#endif
+    if (!status)
+        mMmu.early = 0U;
+    return status;
 }
 
 int kshim_mmu_configure_default(const void *fdt)

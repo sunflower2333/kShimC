@@ -2,13 +2,110 @@
 #include <dt.h>
 #include <string.h>
 
+/*
+ * One-pass index of the last validated blob. libfdt finds a node's parent and
+ * a phandle's node by walking the whole structure block, and kShimC does such
+ * lookups inside loops over nodes (interrupt parents, pinctrl, supplies). On
+ * the 4291-node SM8450 Android tree that was O(n^2) work before the boot menu.
+ * The index holds every node offset in tree order with its parent, plus the
+ * phandles sorted; lookups are binary searches. It is rebuilt whenever a
+ * different blob is validated and ignored if the blob's header changed.
+ */
+#define DT_INDEX_MAX_NODES 8192
+#define DT_INDEX_MAX_DEPTH 64
+struct dt_phandle { uint32_t phandle; int node; };
+static struct {
+    const void *fdt;
+    uint32_t totalsize, size_struct, size_strings;
+    int count, phandles;
+    int offsets[DT_INDEX_MAX_NODES];
+    int parents[DT_INDEX_MAX_NODES];
+    struct dt_phandle by_phandle[DT_INDEX_MAX_NODES];
+} Index;
+
+static bool index_valid(const void *fdt)
+{
+    return fdt && Index.fdt == fdt && Index.totalsize == fdt_totalsize(fdt) &&
+        Index.size_struct == fdt_size_dt_struct(fdt) &&
+        Index.size_strings == fdt_size_dt_strings(fdt);
+}
+
+static void index_build(const void *fdt)
+{
+    int stack[DT_INDEX_MAX_DEPTH], depth = -1, count = 0, phandles = 0; /* root at depth 0 */
+    Index.fdt = NULL;
+    for (int node = fdt_next_node(fdt, -1, &depth); node >= 0;
+         node = fdt_next_node(fdt, node, &depth)) {
+        if (depth < 0)
+            break; /* past the root's end: fdt_next_node() reports depth -1 */
+        if (depth >= DT_INDEX_MAX_DEPTH || count >= DT_INDEX_MAX_NODES)
+            return; /* too large: lookups fall back to libfdt */
+        stack[depth] = node;
+        Index.offsets[count] = node;
+        Index.parents[count++] = depth ? stack[depth - 1] : -FDT_ERR_NOTFOUND;
+        uint32_t phandle = fdt_get_phandle(fdt, node);
+        if (phandle && phandle != UINT32_MAX) {
+            int at = phandles++;
+            /* Insertion keeps the table sorted; phandles mostly ascend. */
+            while (at > 0 && Index.by_phandle[at - 1].phandle > phandle) {
+                Index.by_phandle[at] = Index.by_phandle[at - 1];
+                --at;
+            }
+            Index.by_phandle[at] = (struct dt_phandle){phandle, node};
+        }
+    }
+    Index.count = count;
+    Index.phandles = phandles;
+    Index.totalsize = fdt_totalsize(fdt);
+    Index.size_struct = fdt_size_dt_struct(fdt);
+    Index.size_strings = fdt_size_dt_strings(fdt);
+    Index.fdt = fdt;
+}
+
+int dt_index_nodes(const void *fdt)
+{
+    return index_valid(fdt) ? Index.count : -1;
+}
+
+int dt_parent_offset(const void *fdt, int node)
+{
+    if (node >= 0 && index_valid(fdt)) {
+        int lo = 0, hi = Index.count - 1;
+        while (lo <= hi) {
+            int mid = lo + (hi - lo) / 2;
+            if (Index.offsets[mid] == node) return Index.parents[mid];
+            if (Index.offsets[mid] < node) lo = mid + 1;
+            else hi = mid - 1;
+        }
+    }
+    return fdt_parent_offset(fdt, node);
+}
+
+int dt_node_by_phandle(const void *fdt, uint32_t phandle)
+{
+    if (index_valid(fdt)) {
+        if (!phandle || phandle == UINT32_MAX) return -FDT_ERR_BADPHANDLE;
+        int lo = 0, hi = Index.phandles - 1;
+        while (lo <= hi) {
+            int mid = lo + (hi - lo) / 2;
+            if (Index.by_phandle[mid].phandle == phandle) return Index.by_phandle[mid].node;
+            if (Index.by_phandle[mid].phandle < phandle) lo = mid + 1;
+            else hi = mid - 1;
+        }
+        return -FDT_ERR_NOTFOUND;
+    }
+    return fdt_node_offset_by_phandle(fdt, phandle);
+}
+
 int dt_validate(const void *fdt, size_t available)
 {
     if (!fdt || ((uintptr_t)fdt & 7) || available < sizeof(struct fdt_header))
         return -FDT_ERR_TRUNCATED;
     if (fdt_check_header(fdt)) return -FDT_ERR_BADMAGIC;
     if (fdt_totalsize(fdt) > available) return -FDT_ERR_TRUNCATED;
-    return fdt_check_full(fdt, available);
+    int status = fdt_check_full(fdt, available);
+    if (!status && !index_valid(fdt)) index_build(fdt);
+    return status;
 }
 const char *dt_string(const void *f, int node, const char *property)
 {
@@ -44,7 +141,7 @@ bool dt_available(const void *f, int node)
             if (!s || (strcmp(s, "okay") && strcmp(s, "ok"))) return false;
         } else if (len != -FDT_ERR_NOTFOUND) return false;
         if (!node) return true;
-        node = fdt_parent_offset(f, node);
+        node = dt_parent_offset(f, node);
     }
     return false;
 }
@@ -135,7 +232,7 @@ bool dt_contains(struct dt_range r, uint64_t a, uint64_t s)
 int dt_raw_reg(const void *f, int node, unsigned index, uint64_t *a, uint64_t *s)
 {
     if (!a || !s || !dt_available(f, node)) return -1;
-    int parent = fdt_parent_offset(f, node), len;
+    int parent = dt_parent_offset(f, node), len;
     if (parent < 0) return -1;
     int ac = cells(f, parent, "#address-cells", 2), sc = cells(f, parent, "#size-cells", 1);
     if (ac < 1 || sc < 0) return -1;
@@ -149,8 +246,8 @@ int dt_raw_reg(const void *f, int node, unsigned index, uint64_t *a, uint64_t *s
 int dt_reg(const void *f, int node, unsigned index, struct dt_range *r)
 {
     if (!r || dt_raw_reg(f, node, index, &r->base, &r->size) || !r->size) return -1;
-    for (int bus = fdt_parent_offset(f, node); bus > 0; bus = fdt_parent_offset(f, bus)) {
-        int parent = fdt_parent_offset(f, bus), len;
+    for (int bus = dt_parent_offset(f, node); bus > 0; bus = dt_parent_offset(f, bus)) {
+        int parent = dt_parent_offset(f, bus), len;
         int ac = cells(f, bus, "#address-cells", 2), sc = cells(f, bus, "#size-cells", 1);
         int pc = cells(f, parent, "#address-cells", 2);
         if (ac < 1 || sc < 1 || pc < 1) return -1;
@@ -178,7 +275,7 @@ int dt_reg_named(const void *f, int node, const char *name, struct dt_range *r)
 {
     int index = dt_string_index(f, node, "reg-names", name);
     int names = fdt_stringlist_count(f, node, "reg-names"), len;
-    int parent = fdt_parent_offset(f, node);
+    int parent = dt_parent_offset(f, node);
     int ac = cells(f, parent, "#address-cells", 2), sc = cells(f, parent, "#size-cells", 1);
     const void *reg = fdt_getprop(f, node, "reg", &len);
     if (index < 0 || names < 1 || !reg || ac < 1 || sc < 0 ||

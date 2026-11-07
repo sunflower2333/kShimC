@@ -38,6 +38,9 @@ typedef struct {
 
 int kshim_mmu_configure(const kshim_mmu_config_t *config);
 int kshim_mmu_configure_default(const void *fdt);
+/* MMU and caches on at entry with a minimal map; kshim_mmu_configure() then
+ * extends the live tables. */
+int kshim_mmu_early_enable(const void *fdt);
 int kshim_mmu_enable_current_cpu(void);
 int kshim_mmu_enable_secondary(uint64_t entry_el);
 int kshim_mmu_is_enabled(void);

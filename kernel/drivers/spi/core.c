@@ -60,7 +60,7 @@ int kshim_spi_device_from_node(const void *fdt, int node, struct kshim_spi_devic
         dt_bool(fdt, node, "spi-cs-high", &cs_high) || dt_bool(fdt, node, "spi-lsb-first", &lsb))
         return ERROR_INVALID_PARAMETER;
     struct kshim_spi_controller *controller;
-    int status = kshim_spi_controller_get(fdt, fdt_parent_offset(fdt, node), &controller);
+    int status = kshim_spi_controller_get(fdt, dt_parent_offset(fdt, node), &controller);
     if (status) return status;
     if (controller->num_chipselect && reg >= controller->num_chipselect) return ERROR_INVALID_PARAMETER;
     *device = (struct kshim_spi_device){

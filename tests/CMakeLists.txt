@@ -162,6 +162,10 @@ target_link_libraries(irq_dt_test PRIVATE kshim_dt)
 add_dependencies(irq_dt_test dt_fixtures)
 target_compile_definitions(irq_dt_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\""
     "GENERATED_FIXTURES=\"${CMAKE_CURRENT_BINARY_DIR}/fixtures\"")
+# Device-tree index: parent/phandle lookups equal libfdt on real DTBs.
+kshim_test(dt_index_test dt_index_test.c)
+target_link_libraries(dt_index_test PRIVATE kshim_dt)
+target_compile_definitions(dt_index_test PRIVATE "FIXTURES=\"${CMAKE_CURRENT_SOURCE_DIR}/fixtures\"")
 kshim_test(mmu_test mmu_test.c "${KSHIM_ROOT}/kernel/arch/arm64/mmu.c")
 target_include_directories(mmu_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(mmu_test PRIVATE kshim_dt)

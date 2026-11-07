@@ -73,7 +73,7 @@ uint32_t kshim_dt_qup_i2c_bus_hz(const void *f, int node)
  * wrapper compatible). -1 when neither exists. */
 static int wrapper_node(const void *f, int node)
 {
-    int parent = fdt_parent_offset(f, node);
+    int parent = dt_parent_offset(f, node);
     if (parent >= 0 && !fdt_node_check_compatible(f, parent, "qcom,geni-se-qup")) return parent;
     if (fdt_getprop(f, node, "qcom,wrapper-core", NULL)) return dt_reference(f, node, "qcom,wrapper-core", 0);
     return -1;
@@ -124,7 +124,7 @@ static int raw_base(const void *f, int node, int *parent, uint64_t *base)
 {
     uint32_t ac = 2, sc = 1;
     int len;
-    *parent = fdt_parent_offset(f, node);
+    *parent = dt_parent_offset(f, node);
     if (*parent < 0) return -1;
     if (fdt_getprop(f, *parent, "#address-cells", NULL) && dt_u32(f, *parent, "#address-cells", &ac)) return -1;
     if (fdt_getprop(f, *parent, "#size-cells", NULL) && dt_u32(f, *parent, "#size-cells", &sc)) return -1;

@@ -76,7 +76,7 @@ int kshim_i2c_client_from_node(const void *fdt, int node, struct kshim_i2c_clien
         return ERROR_INVALID_PARAMETER;
     }
     struct kshim_i2c_adapter *adapter;
-    int status = kshim_i2c_adapter_get(fdt, fdt_parent_offset(fdt, node), &adapter);
+    int status = kshim_i2c_adapter_get(fdt, dt_parent_offset(fdt, node), &adapter);
     if (status) return status;
     *client = (struct kshim_i2c_client){adapter, node, (uint16_t)reg, flags};
     return 0;

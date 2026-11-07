@@ -30,7 +30,7 @@ int kshim_dt_irq_parent(const void *f, int node)
             parent = dt_phandle(f, fdt32_to_cpu(*handle));
         } else {
             if (len != -FDT_ERR_NOTFOUND) return -1;
-            parent = fdt_parent_offset(f, node);
+            parent = dt_parent_offset(f, node);
         }
         if (parent < 0) return -1;
         if (fdt_getprop(f, parent, "#interrupt-cells", NULL)) return parent;

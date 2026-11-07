@@ -27,7 +27,7 @@ static bool selected_panel(const void *f, int node)
 bool kshim_touch_dt_selected(const void *f, int node, const char *compatible)
 {
     if (!f || node < 0) return false;
-    int bus = fdt_parent_offset(f, node);
+    int bus = dt_parent_offset(f, node);
     /* Android QRD/HDK DTs name the one populated controller on the bus; an
      * empty selection (stock kona-hdk.dtsi) selects none. */
     if (bus >= 0 && fdt_getprop(f, bus, "qcom,i2c-touch-active", NULL)) {

@@ -16,3 +16,5 @@ CONFIG_ASSERT_HALT=y
 
 CONFIG_KSHIM_SMP=y
 CONFIG_KSHIM_SMP_WORKERS=7
+# DT index + I/O stack: 8 MiB runtime slot (advertised in the Image header).
+CONFIG_KSHIM_RUNTIME_SLOT_SIZE=0x800000

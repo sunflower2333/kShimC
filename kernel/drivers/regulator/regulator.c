@@ -367,7 +367,7 @@ static bool pmic5(const void *f, int parent)
  * ldoN/smpsN/bobN -> "ldo"/"smp"/"bob" + id + N. */
 static int mainline_rpmh(const void *f, int n, struct kshim_regulator *r)
 {
-    int parent = fdt_parent_offset(f, n);
+    int parent = dt_parent_offset(f, n);
     const char *compatible = parent >= 0 ? dt_string(f, parent, "compatible") : NULL;
     const char *id = parent >= 0 ? dt_string(f, parent, "qcom,pmic-id") : NULL;
     const char *name = fdt_get_name(f, n, NULL);
@@ -430,7 +430,7 @@ static void android_load_modes(const void *f, int m, struct kshim_regulator *r)
  * qcom,resource-name. */
 static int android_rpmh(const void *f, int n, struct kshim_regulator *r)
 {
-    for (int m = n, hop = 0; m >= 0 && hop < 2; m = fdt_parent_offset(f, m), ++hop) {
+    for (int m = n, hop = 0; m >= 0 && hop < 2; m = dt_parent_offset(f, m), ++hop) {
         bool vrm = !fdt_node_check_compatible(f, m, "qcom,rpmh-vrm-regulator");
         bool xob = !fdt_node_check_compatible(f, m, "qcom,rpmh-xob-regulator");
         const char *resource = dt_string(f, m, "qcom,resource-name");
