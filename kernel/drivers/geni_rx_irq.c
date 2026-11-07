@@ -73,8 +73,8 @@ static int uart_node(const void *f, uintptr_t base)
         "qcom,msm-geni-console", "qcom,geni-debug-uart", "qcom,geni-uart", "qcom,msm-geni-serial-hs",
     };
     for (unsigned i = 0; i < sizeof(compatibles) / sizeof(compatibles[0]); ++i)
-        for (int n = fdt_node_offset_by_compatible(f, -1, compatibles[i]); n >= 0;
-             n = fdt_node_offset_by_compatible(f, n, compatibles[i])) {
+        for (int n = dt_node_by_compatible(f, -1, compatibles[i]); n >= 0;
+             n = dt_node_by_compatible(f, n, compatibles[i])) {
             struct dt_range reg;
             if (dt_available(f, n) && !dt_reg(f, n, 0, &reg) && reg.base == base) return n;
         }

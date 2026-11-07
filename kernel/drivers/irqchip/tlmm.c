@@ -105,8 +105,8 @@ int kshim_tlmm_irq_init(const void *f)
     int node = -1;
     unsigned soc = 0;
     for (unsigned i = 0; i < KSHIM_TLMM_SOCS; ++i) {
-        for (int n = fdt_node_offset_by_compatible(f, -1, KshimTlmmSocs[i].compatible); n >= 0;
-             n = fdt_node_offset_by_compatible(f, n, KshimTlmmSocs[i].compatible)) {
+        for (int n = dt_node_by_compatible(f, -1, KshimTlmmSocs[i].compatible); n >= 0;
+             n = dt_node_by_compatible(f, n, KshimTlmmSocs[i].compatible)) {
             if (!dt_available(f, n) || kshim_dt_irq_kind(f, n) != KSHIM_DT_IRQ_TLMM) continue;
             if (node >= 0 && node != n) return ERROR_INVALID_PARAMETER;
             node = n; soc = i;

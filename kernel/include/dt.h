@@ -12,6 +12,8 @@ int dt_validate(const void *fdt, size_t available);
  * index of the last validated blob (libfdt fallback otherwise). */
 int dt_parent_offset(const void *fdt, int node);
 int dt_node_by_phandle(const void *fdt, uint32_t phandle);
+/* fdt_node_offset_by_compatible() over the same index. */
+int dt_node_by_compatible(const void *fdt, int start, const char *compatible);
 /* Nodes in the live index for fdt, or -1 when lookups use libfdt. */
 int dt_index_nodes(const void *fdt);
 bool dt_available(const void *fdt, int node);

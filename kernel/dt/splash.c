@@ -54,8 +54,8 @@ int kshim_dt_splash(const void *f, const struct CrIo *io,
     struct dt_range memory = {0};
     if (kshim_dt_splash_reservation(f, &memory, NULL)) return -1;
     int node, sde = -1;
-    for (node = fdt_node_offset_by_compatible(f, -1, "qcom,sde-kms"); node >= 0;
-         node = fdt_node_offset_by_compatible(f, node, "qcom,sde-kms")) {
+    for (node = dt_node_by_compatible(f, -1, "qcom,sde-kms"); node >= 0;
+         node = dt_node_by_compatible(f, node, "qcom,sde-kms")) {
         if (!dt_available(f, node)) continue;
         if (sde >= 0) return -1;
         sde = node;

@@ -23,6 +23,53 @@ static void *load(const char *path, size_t *size)
     return blob;
 }
 
+/* dt_node_by_compatible() must walk the same chain as libfdt: every match
+ * in tree order, the root included, for strings sampled from the tree
+ * (each a single linear libfdt chain), plus fixed and absent ones. */
+static void compare_compatible(const void *fdt)
+{
+    const char *names[48];
+    unsigned count = 0, index = 0;
+    names[count++] = "qcom,pm8941-pwrkey";
+    names[count++] = "gpio-keys";
+    names[count++] = "qcom,sde-kms";
+    names[count++] = "kshim,absent";
+    for (int node = 0; node >= 0 && count < 48; node = fdt_next_node(fdt, node, NULL), ++index) {
+        const char *compatible = fdt_getprop(fdt, node, "compatible", NULL);
+        if (compatible && (node == 0 || index % 113 == 0)) names[count++] = compatible;
+    }
+    for (unsigned i = 0; i < count; ++i) {
+        int expected = -1, got = -1;
+        do {
+            expected = fdt_node_offset_by_compatible(fdt, expected, names[i]);
+            got = dt_node_by_compatible(fdt, got, names[i]);
+            assert(got == expected);
+        } while (expected >= 0);
+        assert(expected == -FDT_ERR_NOTFOUND);
+    }
+    /* A start offset that is not a node start falls back to libfdt. */
+    assert(dt_node_by_compatible(fdt, 1, names[0]) == fdt_node_offset_by_compatible(fdt, 1, names[0]));
+}
+
+/* dt_phandle()'s full walk before the index: strict, unique, available. */
+static int ref_phandle(const void *f, uint32_t handle)
+{
+    if (!handle || handle == UINT32_MAX) return -1;
+    int found = -1;
+    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
+        int alen, blen;
+        const fdt32_t *a = fdt_getprop(f, n, "phandle", &alen);
+        const fdt32_t *b = fdt_getprop(f, n, "linux,phandle", &blen);
+        if ((a && alen != 4) || (b && blen != 4)) return -1;
+        if (a && b && fdt32_to_cpu(*a) != fdt32_to_cpu(*b)) return -1;
+        if ((a && fdt32_to_cpu(*a) == handle) || (b && fdt32_to_cpu(*b) == handle)) {
+            if (found >= 0) return -1;
+            found = n;
+        }
+    }
+    return found >= 0 && dt_available(f, found) ? found : -1;
+}
+
 static unsigned compare_all(const void *fdt)
 {
     /* Without the index every lookup is libfdt's O(n) walk: sample then. */
@@ -46,12 +93,15 @@ static unsigned compare_all(const void *fdt)
                 assert(dt_node_by_phandle(fdt, phandle) == node);
             if (phandles % 17 == 0)
                 assert(fdt_node_offset_by_phandle(fdt, phandle) == node);
+            if (phandles % 37 == 0)
+                assert(dt_phandle(fdt, phandle) == ref_phandle(fdt, phandle));
             ++phandles;
         }
         ++nodes;
     }
     assert(dt_node_by_phandle(fdt, 0x7ffffff0U) == -FDT_ERR_NOTFOUND);
     assert(dt_node_by_phandle(fdt, 0) < 0 && dt_node_by_phandle(fdt, UINT32_MAX) < 0);
+    compare_compatible(fdt);
     printf("  %u nodes, %u phandles\n", nodes, phandles);
     return nodes;
 }
@@ -93,6 +143,45 @@ static void check(const char *path)
         assert(dt_index_nodes(blob) == (int)nodes && compare_all(blob) == nodes);
         printf("  shifted-offset edit re-indexed\n");
     }
+    /* dt_phandle() refuses a duplicate: give a second node the first one's
+     * phandle in place (no size changes; only the content hash sees it). */
+    int first = -1, second = -1;
+    for (int node = fdt_next_node(blob, -1, NULL); node >= 0 && second < 0; node = fdt_next_node(blob, node, NULL)) {
+        int length;
+        if (!fdt_getprop(blob, node, "phandle", &length) || length != 4 ||
+            fdt_getprop(blob, node, "linux,phandle", NULL)) continue;
+        if (first < 0) first = node; else second = node;
+    }
+    assert(first >= 0 && second >= 0);
+    uint32_t p1 = fdt_get_phandle(blob, first), p2 = fdt_get_phandle(blob, second);
+    assert(dt_validate(blob, room) == 0 && dt_phandle(blob, p1) == ref_phandle(blob, p1));
+    assert(fdt_setprop_inplace_u32(blob, second, "phandle", p1) == 0);
+    assert(dt_validate(blob, room) == 0);
+    assert(ref_phandle(blob, p1) == -1 && dt_phandle(blob, p1) == -1);
+    assert(fdt_setprop_inplace_u32(blob, second, "phandle", p2) == 0);
+    assert(dt_validate(blob, room) == 0 && dt_phandle(blob, p2) == ref_phandle(blob, p2));
+    /* A mismatched linux,phandle anywhere makes every reference untrusted. */
+    assert(fdt_setprop_u32(blob, second, "linux,phandle", p2 + 1) == 0);
+    assert(dt_validate(blob, room) == 0);
+    assert(ref_phandle(blob, p1) == -1 && dt_phandle(blob, p1) == -1);
+    for (int node = fdt_next_node(blob, -1, NULL); node >= 0; node = fdt_next_node(blob, node, NULL))
+        if (fdt_getprop(blob, node, "linux,phandle", NULL) && fdt_get_phandle(blob, node) == p2) {
+            assert(fdt_delprop(blob, node, "linux,phandle") == 0);
+            break;
+        }
+    assert(dt_validate(blob, room) == 0 && dt_phandle(blob, p1) == ref_phandle(blob, p1));
+    /* Corruption in place, every header size unchanged: a previously
+     * accepted blob is still checked again, and refused. */
+    first = fdt_path_offset(blob, "/");
+    int victim = fdt_next_node(blob, first, NULL);
+    assert(victim > 0);
+    fdt32_t *tag = (fdt32_t *)((char *)blob + fdt_off_dt_struct(blob) + victim);
+    fdt32_t saved = *tag;
+    *tag = cpu_to_fdt32(0x7fffffffU);
+    assert(dt_validate(blob, room) != 0 && dt_index_nodes(blob) == -1);
+    *tag = saved;
+    assert(dt_validate(blob, room) == 0 && dt_index_nodes(blob) == (int)nodes);
+    printf("  phandle uniqueness and in-place corruption checked\n");
     free(blob);
 }
 

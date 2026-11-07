@@ -59,8 +59,8 @@ static unsigned ctz32(uint32_t v)
 /* debounce-interval of the gpio-keys child whose `gpios` is this TLMM pin. */
 static uint32_t gpio_key_debounce(const void *fdt, uint32_t pin)
 {
-    for (int parent = fdt_node_offset_by_compatible(fdt, -1, "gpio-keys"); parent >= 0;
-         parent = fdt_node_offset_by_compatible(fdt, parent, "gpio-keys")) {
+    for (int parent = dt_node_by_compatible(fdt, -1, "gpio-keys"); parent >= 0;
+         parent = dt_node_by_compatible(fdt, parent, "gpio-keys")) {
         int child;
         fdt_for_each_subnode(child, fdt, parent) {
             struct dt_spec spec;

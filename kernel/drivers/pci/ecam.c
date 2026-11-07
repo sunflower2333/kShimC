@@ -112,8 +112,8 @@ static int map_one(struct kshim_resources *r, void *context)
 int kshim_pci_ecam_map(const void *f, struct kshim_resources *r)
 {
     struct ecam_host scratch;
-    for (int n = fdt_node_offset_by_compatible(f, -1, ECAM_COMPATIBLE); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, ECAM_COMPATIBLE)) {
+    for (int n = dt_node_by_compatible(f, -1, ECAM_COMPATIBLE); n >= 0;
+         n = dt_node_by_compatible(f, n, ECAM_COMPATIBLE)) {
         if (!dt_available(f, n)) continue;
         if (parse(f, n, &scratch)) {
             kshim_pci_mark_node(n, false);
@@ -128,8 +128,8 @@ int kshim_pci_ecam_map(const void *f, struct kshim_resources *r)
 int kshim_pci_ecam_probe(const void *f)
 {
     int result = 0;
-    for (int n = fdt_node_offset_by_compatible(f, -1, ECAM_COMPATIBLE); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, ECAM_COMPATIBLE)) {
+    for (int n = dt_node_by_compatible(f, -1, ECAM_COMPATIBLE); n >= 0;
+         n = dt_node_by_compatible(f, n, ECAM_COMPATIBLE)) {
         if (!dt_available(f, n) || kshim_pci_node_unmapped(n)) continue;
         if (EcamCount == KSHIM_PCI_MAX_HOSTS) break;
         struct ecam_host *e = &Ecam[EcamCount];

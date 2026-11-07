@@ -6,6 +6,7 @@
  * touches anything and again after the handoff teardown.
  */
 #include <arm64_exception.h>
+#include <dt.h>
 #include <irq_selftest.h>
 #include <config.h>
 
@@ -340,8 +341,8 @@ static int test_rx(const void *fdt)
 {
     uintptr_t base = (uintptr_t)kshim_console_base();
     int node = -1;
-    for (int n = fdt_node_offset_by_compatible(fdt, -1, "arm,pl011"); n >= 0;
-         n = fdt_node_offset_by_compatible(fdt, n, "arm,pl011")) {
+    for (int n = dt_node_by_compatible(fdt, -1, "arm,pl011"); n >= 0;
+         n = dt_node_by_compatible(fdt, n, "arm,pl011")) {
         struct dt_range reg;
         if (!dt_reg(fdt, n, 0, &reg) && reg.base == base) node = n;
     }

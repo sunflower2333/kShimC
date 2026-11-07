@@ -92,8 +92,8 @@ int kshim_dt_usb_acm(const void *f, struct kshim_usb_acm_resource *out)
     uint64_t hint = controller_hint(f);
     int chosen = -1;
     struct dt_range chosen_reg = {0, 0};
-    for (int n = fdt_node_offset_by_compatible(f, -1, "snps,dwc3"); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, "snps,dwc3")) {
+    for (int n = dt_node_by_compatible(f, -1, "snps,dwc3"); n >= 0;
+         n = dt_node_by_compatible(f, n, "snps,dwc3")) {
         int parent = dt_parent_offset(f, n);
         if (parent < 0 || !qcom_wrapper(f, parent) || !dt_available(f, n)) continue;
         const char *mode = dt_string(f, n, "dr_mode");

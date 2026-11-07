@@ -7,9 +7,12 @@
  * a phandle's node by walking the whole structure block, and kShimC does such
  * lookups inside loops over nodes (interrupt parents, pinctrl, supplies). On
  * the 4291-node SM8450 Android tree that was O(n^2) work before the boot menu.
- * The index holds every node offset in tree order with its parent, plus the
- * phandles sorted; lookups are binary searches. Every successful
- * dt_validate() rebuilds it, and it is ignored if the blob's header changed.
+ * The index holds every node offset in tree order with its parent and its
+ * compatible list, plus the phandles sorted; lookups are binary searches.
+ * Compatible searches still scan, but over the index (no per-node property
+ * search): libfdt's took ~30 ms per search on that tree, and key discovery
+ * alone runs ten. Every successful dt_validate() rebuilds the index, and it
+ * is ignored if the blob's header changed.
  */
 #define DT_INDEX_MAX_NODES 8192
 #define DT_INDEX_MAX_DEPTH 64
@@ -17,9 +20,16 @@ struct dt_phandle { uint32_t phandle; int node; };
 static struct {
     const void *fdt;
     uint32_t totalsize, size_struct, size_strings;
+    uint64_t hash; /* of the validated blob: dt_validate() skips an unchanged one */
     int count, phandles;
+    /* A phandle or linux,phandle that is not 4 bytes, or the two disagree:
+     * dt_phandle() then trusts no reference, as its full walk did. */
+    bool phandle_malformed;
     int offsets[DT_INDEX_MAX_NODES];
     int parents[DT_INDEX_MAX_NODES];
+    /* "compatible" value: byte offset into the blob and length (0: none). */
+    int compat_offset[DT_INDEX_MAX_NODES];
+    int compat_length[DT_INDEX_MAX_NODES];
     struct dt_phandle by_phandle[DT_INDEX_MAX_NODES];
 } Index;
 
@@ -30,9 +40,24 @@ static bool index_valid(const void *fdt)
         Index.size_strings == fdt_size_dt_strings(fdt);
 }
 
-static void index_build(const void *fdt)
+/* FNV-1a over 64-bit words; the blob is 8-byte aligned (dt_validate). Not
+ * a guard against an adversary, only against in-place edits. */
+static uint64_t blob_hash(const void *fdt, size_t size)
+{
+    const uint64_t *word = fdt;
+    uint64_t hash = UINT64_C(0xcbf29ce484222325);
+    size_t words = size / 8;
+    for (size_t i = 0; i < words; ++i)
+        hash = (hash ^ word[i]) * UINT64_C(0x100000001b3);
+    for (size_t i = words * 8; i < size; ++i)
+        hash = (hash ^ ((const uint8_t *)fdt)[i]) * UINT64_C(0x100000001b3);
+    return hash ^ size;
+}
+
+static void index_build(const void *fdt, uint64_t hash)
 {
     int stack[DT_INDEX_MAX_DEPTH], depth = -1, count = 0, phandles = 0; /* root at depth 0 */
+    bool malformed = false;
     Index.fdt = NULL;
     for (int node = fdt_next_node(fdt, -1, &depth); node >= 0;
          node = fdt_next_node(fdt, node, &depth)) {
@@ -42,7 +67,16 @@ static void index_build(const void *fdt)
             return; /* too large: lookups fall back to libfdt */
         stack[depth] = node;
         Index.offsets[count] = node;
-        Index.parents[count++] = depth ? stack[depth - 1] : -FDT_ERR_NOTFOUND;
+        Index.parents[count] = depth ? stack[depth - 1] : -FDT_ERR_NOTFOUND;
+        int length;
+        const char *compatible = fdt_getprop(fdt, node, "compatible", &length);
+        Index.compat_offset[count] = compatible ? (int)(compatible - (const char *)fdt) : 0;
+        Index.compat_length[count++] = compatible && length > 0 ? length : 0;
+        int alen, blen;
+        const fdt32_t *a = fdt_getprop(fdt, node, "phandle", &alen);
+        const fdt32_t *b = fdt_getprop(fdt, node, "linux,phandle", &blen);
+        if ((a && alen != 4) || (b && blen != 4) || (a && b && fdt32_to_cpu(*a) != fdt32_to_cpu(*b)))
+            malformed = true;
         uint32_t phandle = fdt_get_phandle(fdt, node);
         if (phandle && phandle != UINT32_MAX) {
             int at = phandles++;
@@ -56,6 +90,8 @@ static void index_build(const void *fdt)
     }
     Index.count = count;
     Index.phandles = phandles;
+    Index.phandle_malformed = malformed;
+    Index.hash = hash;
     Index.totalsize = fdt_totalsize(fdt);
     Index.size_struct = fdt_size_dt_struct(fdt);
     Index.size_strings = fdt_size_dt_strings(fdt);
@@ -67,32 +103,63 @@ int dt_index_nodes(const void *fdt)
     return index_valid(fdt) ? Index.count : -1;
 }
 
+/* Position of node in the index, or -1. */
+static int index_position(int node)
+{
+    int lo = 0, hi = Index.count - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (Index.offsets[mid] == node) return mid;
+        if (Index.offsets[mid] < node) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return -1;
+}
+
 int dt_parent_offset(const void *fdt, int node)
 {
     if (node >= 0 && index_valid(fdt)) {
-        int lo = 0, hi = Index.count - 1;
-        while (lo <= hi) {
-            int mid = lo + (hi - lo) / 2;
-            if (Index.offsets[mid] == node) return Index.parents[mid];
-            if (Index.offsets[mid] < node) lo = mid + 1;
-            else hi = mid - 1;
-        }
+        int at = index_position(node);
+        if (at >= 0) return Index.parents[at];
     }
     return fdt_parent_offset(fdt, node);
+}
+
+int dt_node_by_compatible(const void *fdt, int start, const char *compatible)
+{
+    if (compatible && index_valid(fdt)) {
+        int at = start < 0 ? 0 : index_position(start);
+        if (at >= 0) {
+            for (int i = start < 0 ? 0 : at + 1; i < Index.count; ++i)
+                if (Index.compat_length[i] &&
+                    fdt_stringlist_contains((const char *)fdt + Index.compat_offset[i],
+                                            Index.compat_length[i], compatible))
+                    return Index.offsets[i];
+            return -FDT_ERR_NOTFOUND;
+        }
+    }
+    return fdt_node_offset_by_compatible(fdt, start, compatible);
+}
+
+/* Position of one by_phandle entry for phandle, or -1. */
+static int phandle_position(uint32_t phandle)
+{
+    int lo = 0, hi = Index.phandles - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (Index.by_phandle[mid].phandle == phandle) return mid;
+        if (Index.by_phandle[mid].phandle < phandle) lo = mid + 1;
+        else hi = mid - 1;
+    }
+    return -1;
 }
 
 int dt_node_by_phandle(const void *fdt, uint32_t phandle)
 {
     if (index_valid(fdt)) {
         if (!phandle || phandle == UINT32_MAX) return -FDT_ERR_BADPHANDLE;
-        int lo = 0, hi = Index.phandles - 1;
-        while (lo <= hi) {
-            int mid = lo + (hi - lo) / 2;
-            if (Index.by_phandle[mid].phandle == phandle) return Index.by_phandle[mid].node;
-            if (Index.by_phandle[mid].phandle < phandle) lo = mid + 1;
-            else hi = mid - 1;
-        }
-        return -FDT_ERR_NOTFOUND;
+        int at = phandle_position(phandle);
+        return at >= 0 ? Index.by_phandle[at].node : -FDT_ERR_NOTFOUND;
     }
     return fdt_node_offset_by_phandle(fdt, phandle);
 }
@@ -103,10 +170,15 @@ int dt_validate(const void *fdt, size_t available)
         return -FDT_ERR_TRUNCATED;
     if (fdt_check_header(fdt)) return -FDT_ERR_BADMAGIC;
     if (fdt_totalsize(fdt) > available) return -FDT_ERR_TRUNCATED;
+    /* Subsystems re-validate the runtime FDT on entry; on the SM8450 tree a
+     * full check plus re-index costs ~36 ms on the device. The same bytes
+     * as the last accepted blob need neither. Any in-place edit, including
+     * one that shifts node offsets while every header size stays equal,
+     * changes the hash and is checked and indexed again. */
+    uint64_t hash = blob_hash(fdt, fdt_totalsize(fdt));
+    if (index_valid(fdt) && Index.hash == hash) return 0;
     int status = fdt_check_full(fdt, available);
-    /* Always rebuild: an in-place edit can shift node offsets while the
-     * header sizes stay equal (one property grows, another shrinks). */
-    if (!status) index_build(fdt);
+    if (!status) index_build(fdt, hash);
     else if (Index.fdt == fdt) Index.fdt = NULL;
     return status;
 }
@@ -167,6 +239,15 @@ int dt_bool(const void *f, int node, const char *property, bool *value)
 int dt_phandle(const void *f, uint32_t handle)
 {
     if (!handle || handle == UINT32_MAX) return -1;
+    if (index_valid(f)) {
+        if (Index.phandle_malformed) return -1;
+        int at = phandle_position(handle);
+        if (at < 0 || (at > 0 && Index.by_phandle[at - 1].phandle == handle) ||
+            (at + 1 < Index.phandles && Index.by_phandle[at + 1].phandle == handle))
+            return -1; /* absent, or not unique */
+        int node = Index.by_phandle[at].node;
+        return dt_available(f, node) ? node : -1;
+    }
     int found = -1;
     for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
         uint32_t h, legacy;

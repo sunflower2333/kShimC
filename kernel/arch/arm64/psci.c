@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include <psci.h>
+#include <dt.h>
 
 #include <libfdt.h>
 
@@ -120,9 +121,9 @@ int kshim_psci_init(const void *fdt)
     if (fdt == NULL || fdt_check_header(fdt) != 0)
         return KSHIM_PSCI_INVALID_PARAMETERS;
 
-    node = fdt_node_offset_by_compatible(fdt, -1, "arm,psci-1.0");
+    node = dt_node_by_compatible(fdt, -1, "arm,psci-1.0");
     if (node < 0)
-        node = fdt_node_offset_by_compatible(fdt, -1, "arm,psci-0.2");
+        node = dt_node_by_compatible(fdt, -1, "arm,psci-0.2");
     if (node < 0 || !node_available(fdt, node))
         return KSHIM_PSCI_NOT_PRESENT;
 

@@ -647,8 +647,8 @@ int kshim_touch_framework_start(const void *fdt, uint32_t output_width, uint32_t
     for (const struct kshim_touch_driver *const *d = kshim_touch_drivers; *d; ++d) {
         const struct kshim_touch_driver *drv = *d;
         for (const char *const *c = drv->compatibles; c && *c; ++c) {
-            for (int n = fdt_node_offset_by_compatible(fdt, -1, *c); n >= 0;
-                 n = fdt_node_offset_by_compatible(fdt, n, *c)) {
+            for (int n = dt_node_by_compatible(fdt, -1, *c); n >= 0;
+                 n = dt_node_by_compatible(fdt, n, *c)) {
                 if (!dt_available(fdt, n)) continue;
                 int status = try_node(drv, fdt, n);
                 if (!status) {

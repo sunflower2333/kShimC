@@ -5,6 +5,7 @@
  * and the host tests.
  */
 #include <kshim_irq_dt.h>
+#include <dt.h>
 #include <kshim/irq.h>
 
 #include <string.h>
@@ -106,8 +107,8 @@ int kshim_irq_from_fdt(const void *f, int node, int index, uint32_t *intid, unsi
 
 static int find_compatible(const void *f, const char *compatible)
 {
-    for (int n = fdt_node_offset_by_compatible(f, -1, compatible); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, compatible))
+    for (int n = dt_node_by_compatible(f, -1, compatible); n >= 0;
+         n = dt_node_by_compatible(f, n, compatible))
         if (dt_available(f, n)) return n;
     return -1;
 }

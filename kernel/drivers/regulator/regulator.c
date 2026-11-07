@@ -163,8 +163,8 @@ static int find_rsc(const void *f)
 static int find_cmd_db(const void *f, struct dt_range *range)
 {
     int db = -1;
-    for (int n = fdt_node_offset_by_compatible(f, -1, "qcom,cmd-db"); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, "qcom,cmd-db")) {
+    for (int n = dt_node_by_compatible(f, -1, "qcom,cmd-db"); n >= 0;
+         n = dt_node_by_compatible(f, n, "qcom,cmd-db")) {
         if (!dt_available(f, n)) continue;
         if (db >= 0 || dt_reg(f, n, 0, range)) return -1;
         db = n;

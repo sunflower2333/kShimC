@@ -128,7 +128,7 @@ static int QcomFdtFindCompatible(
     return -1;
   Node = StartNode;
   for (;;) {
-    Node = fdt_node_offset_by_compatible(
+    Node = dt_node_by_compatible(
         Adapter->Blob, StartNode, Compatible);
     if (Node < 0 || QcomFdtNodeAvailable(Adapter->Blob, Node))
       return Node;

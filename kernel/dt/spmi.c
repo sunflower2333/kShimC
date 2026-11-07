@@ -9,8 +9,9 @@ int kshim_dt_spmi(const void *f, struct kshim_resources *r)
         "core", "chnls", "obsrvr", "intr", "cnfg", "chnls-map", "chnls-owner"
     };
     r->spmi_count = 0;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
-        if (!controller_node(f, n)) continue;
+    for (int n = dt_node_by_compatible(f, -1, "qcom,spmi-pmic-arb"); n >= 0;
+         n = dt_node_by_compatible(f, n, "qcom,spmi-pmic-arb")) {
+        if (!dt_available(f, n)) continue;
         if (r->spmi_count == KSHIM_SPMI_MAX) return -1;
         struct kshim_spmi_resource *s = &r->spmi[r->spmi_count];
         memset(s, 0, sizeof(*s)); s->node = n;
@@ -50,8 +51,9 @@ int kshim_dt_spmi_identity(const void *f, int node, uint8_t *controller,
     if (fdt_getprop(f, arb, "qcom,bus-id", NULL) && dt_u32(f, arb, "qcom,bus-id", &id)) return -1;
     if (id > 3) return -1;
     unsigned index = 0;
-    for (int n = fdt_next_node(f, -1, NULL); n >= 0; n = fdt_next_node(f, n, NULL)) {
-        if (!controller_node(f, n)) continue;
+    for (int n = dt_node_by_compatible(f, -1, "qcom,spmi-pmic-arb"); n >= 0;
+         n = dt_node_by_compatible(f, n, "qcom,spmi-pmic-arb")) {
+        if (!dt_available(f, n)) continue;
         if (n == arb) {
             if (index >= KSHIM_SPMI_MAX) return -1;
             *controller = index; *bus = id; *sid = fdt32_to_cpu(reg[0]);

@@ -77,8 +77,8 @@ static int alias_index(const void *f, int node, const char *prefix)
 
 static int find_ufs(const void *f, struct kshim_storage_dt *out)
 {
-    for (int n = fdt_node_offset_by_compatible(f, -1, "qcom,ufshc"); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, "qcom,ufshc")) {
+    for (int n = dt_node_by_compatible(f, -1, "qcom,ufshc"); n >= 0;
+         n = dt_node_by_compatible(f, n, "qcom,ufshc")) {
         if (!dt_available(f, n)) continue;
         if (out->ufs_count == KSHIM_STORAGE_MAX_UFS) return -1; /* ambiguous */
         struct kshim_dt_ufs *u = &out->ufs[out->ufs_count];
@@ -117,8 +117,8 @@ static void card_detect(const void *f, struct kshim_dt_sdhc *s)
 
 static int find_sdhc(const void *f, struct kshim_storage_dt *out)
 {
-    for (int n = fdt_node_offset_by_compatible(f, -1, "qcom,sdhci-msm-v5"); n >= 0;
-         n = fdt_node_offset_by_compatible(f, n, "qcom,sdhci-msm-v5")) {
+    for (int n = dt_node_by_compatible(f, -1, "qcom,sdhci-msm-v5"); n >= 0;
+         n = dt_node_by_compatible(f, n, "qcom,sdhci-msm-v5")) {
         if (!dt_available(f, n)) continue;
         if (out->sdhc_count == KSHIM_STORAGE_MAX_SDHC) break;
         struct kshim_dt_sdhc *s = &out->sdhc[out->sdhc_count];
@@ -190,8 +190,8 @@ static int find_rpmh(const void *f, struct kshim_storage_dt *out)
     }
     if (controller < 0 || rsc(f, controller, &out->rpmh)) return -1;
     struct dt_range range;
-    for (int p = fdt_node_offset_by_compatible(f, -1, "qcom,cmd-db"); p >= 0;
-         p = fdt_node_offset_by_compatible(f, p, "qcom,cmd-db")) {
+    for (int p = dt_node_by_compatible(f, -1, "qcom,cmd-db"); p >= 0;
+         p = dt_node_by_compatible(f, p, "qcom,cmd-db")) {
         if (!dt_available(f, p)) continue;
         if (db >= 0 || dt_reg(f, p, 0, &range)) return -1;
         db = p;

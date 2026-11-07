@@ -29,6 +29,7 @@
  * anything else back to its state at entry.
  */
 #include "qcom.h"
+#include <dt.h>
 
 #include <config.h>
 #include <kshim/clk.h>
@@ -500,7 +501,7 @@ static int find_tlmm(struct qcom_pcie *qp)
                                        "qcom,sm8250-tlmm", "qcom,kona-pinctrl",
                                        "qcom,sm8150-pinctrl", NULL};
     for (unsigned i = 0; tlmm[i]; ++i) {
-        int n = fdt_node_offset_by_compatible(qp->fdt, -1, tlmm[i]);
+        int n = dt_node_by_compatible(qp->fdt, -1, tlmm[i]);
         if (n >= 0) return n;
     }
     return -1;
