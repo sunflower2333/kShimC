@@ -8,8 +8,8 @@
  * lookups inside loops over nodes (interrupt parents, pinctrl, supplies). On
  * the 4291-node SM8450 Android tree that was O(n^2) work before the boot menu.
  * The index holds every node offset in tree order with its parent, plus the
- * phandles sorted; lookups are binary searches. It is rebuilt whenever a
- * different blob is validated and ignored if the blob's header changed.
+ * phandles sorted; lookups are binary searches. Every successful
+ * dt_validate() rebuilds it, and it is ignored if the blob's header changed.
  */
 #define DT_INDEX_MAX_NODES 8192
 #define DT_INDEX_MAX_DEPTH 64
@@ -104,7 +104,10 @@ int dt_validate(const void *fdt, size_t available)
     if (fdt_check_header(fdt)) return -FDT_ERR_BADMAGIC;
     if (fdt_totalsize(fdt) > available) return -FDT_ERR_TRUNCATED;
     int status = fdt_check_full(fdt, available);
-    if (!status && !index_valid(fdt)) index_build(fdt);
+    /* Always rebuild: an in-place edit can shift node offsets while the
+     * header sizes stay equal (one property grows, another shrinks). */
+    if (!status) index_build(fdt);
+    else if (Index.fdt == fdt) Index.fdt = NULL;
     return status;
 }
 const char *dt_string(const void *f, int node, const char *property)

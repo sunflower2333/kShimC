@@ -72,6 +72,27 @@ static void check(const char *path)
     /* Re-validating the edited blob indexes it again. */
     assert(dt_validate(blob, room) == 0);
     assert(dt_index_nodes(blob) == (int)nodes && compare_all(blob) == nodes);
+    /* An in-place edit that shifts node offsets but keeps every header size:
+     * one status grows "okay" -> "disabled", a later one shrinks back. */
+    int grow = -1, shrink = -1;
+    for (int node = fdt_next_node(blob, -1, NULL); node >= 0; node = fdt_next_node(blob, node, NULL)) {
+        const char *status = fdt_getprop(blob, node, "status", NULL);
+        if (status && grow < 0 && !strcmp(status, "okay")) grow = node;
+        else if (status && grow >= 0 && !strcmp(status, "disabled")) { shrink = node; break; }
+    }
+    if (grow >= 0 && shrink >= 0) {
+        char shrink_path[512];
+        assert(fdt_get_path(blob, shrink, shrink_path, sizeof(shrink_path)) == 0);
+        uint32_t sizes[3] = {fdt_totalsize(blob), fdt_size_dt_struct(blob), fdt_size_dt_strings(blob)};
+        assert(fdt_setprop_string(blob, grow, "status", "disabled") == 0);
+        shrink = fdt_path_offset(blob, shrink_path);
+        assert(shrink >= 0 && fdt_setprop_string(blob, shrink, "status", "okay") == 0);
+        assert(sizes[0] == fdt_totalsize(blob) && sizes[1] == fdt_size_dt_struct(blob) &&
+               sizes[2] == fdt_size_dt_strings(blob));
+        assert(dt_validate(blob, room) == 0);
+        assert(dt_index_nodes(blob) == (int)nodes && compare_all(blob) == nodes);
+        printf("  shifted-offset edit re-indexed\n");
+    }
     free(blob);
 }
 
