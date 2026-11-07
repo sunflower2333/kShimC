@@ -43,7 +43,7 @@ static void uart(void)
     u.size=0x100; assert(CrDebugUartPollInit(&u)==CR_BUS_INVALID); assert(!m.reads);
     u.size=0x1000; m.reg[0x64/4]=1; assert(CrDebugUartPollInit(&u)==CR_BUS_UNSUPPORTED); assert(!m.writes);
     m.reg[0x64/4]=0; assert(!CrDebugUartPollInit(&u));
-    assert(m.reg[0x260/4]==0x7f8fe && m.reg[0x264/4]==0xffefe);
+    assert(m.reg[0x260/4]==0x4380e && m.reg[0x264/4]==0xc3e0e);
     uint8_t b=0; assert(!CrDebugUartPollRead(&u,&b));
     m.reg[0x804/4]=(1U<<31)|(3U<<28)|1;
     assert(CrDebugUartPollRead(&u,&b)==1 && b==0x11);
@@ -59,7 +59,7 @@ static void uart(void)
     m.stall=m.abort_stall=true; assert(CrDebugUartPollWrite(&u,"z",1)==CR_BUS_TIMEOUT); assert(u.poisoned);
     unsigned before=m.writes; assert(CrDebugUartPollWrite(&u,"z",1)==CR_BUS_BUSY); assert(m.writes==before);
     assert(CrDebugUartPollQuiesce(&u)==CR_BUS_TIMEOUT); assert(u.claimed);
-    assert(m.reg[0x260/4]==0x7f8fe); /* Failed abort cannot release configuration. */
+    assert(m.reg[0x260/4]==0x4380e); /* Failed abort cannot release configuration. */
     m.abort_stall=false; assert(!CrDebugUartPollQuiesce(&u));
     assert(!u.claimed && !u.initialized && !u.poisoned);
     assert(m.reg[0x260/4]==0xdead && m.reg[0xe1c/4]==0xf);

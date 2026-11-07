@@ -5,7 +5,7 @@
   "patches": [
     {
       "file": "0001-freestanding-resources.patch",
-      "sha256": "d5bb73e9f7e3a0edd1a9bea511f3283e06488de7a2be00aeb91e56947fcbfb6e"
+      "sha256": "ea84ab59bfc36986e07b490fe7c567dc9ef742006331854e7f231e311c557ed2"
     }
   ]
 }

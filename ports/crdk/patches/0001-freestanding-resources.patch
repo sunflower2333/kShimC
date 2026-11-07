@@ -1535,9 +1535,9 @@ index 0000000..0a1eb77
 +    wr(u, 0x618, UINT32_MAX); wr(u, 0x648, UINT32_MAX);
 +    wr(u, 0x28, rd(u, 0x28) | 0x7f); wr(u, 0x24, rd(u, 0x24) | 0x7f);
 +    wr(u, 0x254, 0);
-+    /* Four sequential byte lanes in one FIFO word, LSB first. */
++    /* Four byte lanes per FIFO word, each sent LSB first (UART, not I2C/SPI). */
 +    uint32_t v[4];
-+    for (unsigned i = 0; i < 4; ++i) v[i] = ((i * 8 + 7) << 5) | (1U << 4) | (7U << 1);
++    for (unsigned i = 0; i < 4; ++i) v[i] = ((i * 8) << 5) | (7U << 1);
 +    v[3] |= 1;
 +    wr(u, 0x260, v[0] | (v[1] << 10)); wr(u, 0x264, v[2] | (v[3] << 10));
 +    wr(u, 0x284, v[0] | (v[1] << 10)); wr(u, 0x288, v[2] | (v[3] << 10));
